@@ -736,6 +736,12 @@ func TestConfig_ValidateBounds(t *testing.T) {
 			errorContains: []string{"HTTP_TIMEOUT", "-1"},
 		},
 		{
+			name:          "WRAP_WIDTH negative",
+			config:        Config{WrapWidth: -1},
+			expectError:   true,
+			errorContains: []string{"WRAP_WIDTH", "-1"},
+		},
+		{
 			name: "zero values all valid (explicit)",
 			config: Config{
 				MaxToolTurns:       0,

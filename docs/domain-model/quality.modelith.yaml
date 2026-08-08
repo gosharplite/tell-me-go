@@ -148,8 +148,9 @@ entities:
     definition: >
       The coverage measurement produced by `make test-coverage`: a per-package
       profile from `go test -coverprofile`, with test-double directories
-      (agenttest/, orchestratortest/, configtest/, analysistest/,
-      internal/infrastructure/testing/) explicitly excluded. Drives the triage
+      (agenttest/, orchestratortest/, configtest/, analysistest/, clitest/,
+      eventstest/, persistencetest/, toolstest/, internal/infrastructure/testing/)
+      explicitly excluded. Drives the triage
       loop — each identified gap is either fixed, accepted as an
       `IntentionalNonFix`, or rejected as out of scope.
     relationships:
@@ -167,7 +168,7 @@ entities:
         description: The documented test-double directories filtered out of the metrics.
     invariants:
       - id: coverage-exclusions-explicit
-        statement: "The `CoverageReport` excludes exactly the documented test-double directories (agenttest/, orchestratortest/, configtest/, analysistest/, internal/infrastructure/testing/); new test helpers must be added to the exclusion list, never silently included or omitted."
+        statement: "The `CoverageReport` excludes exactly the documented test-double directories (agenttest/, orchestratortest/, configtest/, analysistest/, clitest/, eventstest/, persistencetest/, toolstest/, internal/infrastructure/testing/); new test helpers must be added to the exclusion list, never silently included or omitted."
 
   ComplexityMetric:
     definition: >

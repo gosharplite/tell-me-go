@@ -103,7 +103,7 @@ The cyclomatic complexity score per function produced by the complexity tooling.
 
 ### `CoverageReport`
 
-The coverage measurement produced by `make test-coverage`: a per-package profile from `go test -coverprofile`, with test-double directories (agenttest/, orchestratortest/, configtest/, analysistest/, internal/infrastructure/testing/) explicitly excluded. Drives the triage loop — each identified gap is either fixed, accepted as an `IntentionalNonFix`, or rejected as out of scope.
+The coverage measurement produced by `make test-coverage`: a per-package profile from `go test -coverprofile`, with test-double directories (agenttest/, orchestratortest/, configtest/, analysistest/, clitest/, eventstest/, persistencetest/, toolstest/, internal/infrastructure/testing/) explicitly excluded. Drives the triage loop — each identified gap is either fixed, accepted as an `IntentionalNonFix`, or rejected as out of scope.
 
 **Relationships**
 
@@ -118,7 +118,7 @@ The coverage measurement produced by `make test-coverage`: a per-package profile
 
 **Invariants**
 
-- **coverage-exclusions-explicit** — The `CoverageReport` excludes exactly the documented test-double directories (agenttest/, orchestratortest/, configtest/, analysistest/, internal/infrastructure/testing/); new test helpers must be added to the exclusion list, never silently included or omitted.
+- **coverage-exclusions-explicit** — The `CoverageReport` excludes exactly the documented test-double directories (agenttest/, orchestratortest/, configtest/, analysistest/, clitest/, eventstest/, persistencetest/, toolstest/, internal/infrastructure/testing/); new test helpers must be added to the exclusion list, never silently included or omitted.
 
 ### `DomainModel`
 
@@ -319,7 +319,7 @@ verify-mock-pattern fails on a new testify/mock import. The `QualityPipeline` st
 
 **Invariants touched**
 
-- **coverage-exclusions-explicit** — The `CoverageReport` excludes exactly the documented test-double directories (agenttest/, orchestratortest/, configtest/, analysistest/, internal/infrastructure/testing/); new test helpers must be added to the exclusion list, never silently included or omitted.
+- **coverage-exclusions-explicit** — The `CoverageReport` excludes exactly the documented test-double directories (agenttest/, orchestratortest/, configtest/, analysistest/, clitest/, eventstest/, persistencetest/, toolstest/, internal/infrastructure/testing/); new test helpers must be added to the exclusion list, never silently included or omitted.
 - **triage-loop-closed** — Every gap in a `CoverageReport` or alert in a `ComplexityMetric` is either fixed, accepted as an `IntentionalNonFix` with a class and rationale, or explicitly rejected — none are silently dropped.
 - **nonfix-has-acceptance-class** — Every `IntentionalNonFix` entry carries an acceptance class and a rationale; an entry without both is invalid.
 - **nonfix-references-code** — Every `IntentionalNonFix` entry references the code locations it documents — file paths, and commit or line numbers where relevant.

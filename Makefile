@@ -726,14 +726,17 @@ check-full: fmt tidy build
 	@echo "All checks passed (including race detection)."
 
 # Generate coverage report excluding mocks, generated files, and the
-# agentinternal delegation bridge (ADR-022 / issue #138).
+# agentinternal delegation bridge (ADR-022 / issue #138). Excludes the
+# complete documented test-double set — all nine directories named by the
+# coverage-exclusions-explicit invariant in
+# docs/domain-model/quality.modelith.yaml.
 .PHONY: test-coverage
 test-coverage:
 	go test -coverprofile=coverage.raw ./...
 ifeq ($(IS_POSIX),true)
-	@grep -v -E "(internal/agent/agenttest/|internal/agent/orchestrator/orchestratortest/|internal/domain/config/configtest/|internal/tools/analysis/analysistest/|internal/infrastructure/testing/)" coverage.raw > coverage.out
+	@grep -v -E "(internal/agent/agenttest/|internal/agent/orchestrator/orchestratortest/|internal/domain/config/configtest/|internal/tools/analysis/analysistest/|internal/cli/clitest/|internal/domain/events/eventstest/|internal/infrastructure/persistence/persistencetest/|internal/tools/toolstest/|internal/infrastructure/testing/)" coverage.raw > coverage.out
 else
-	@findstr /V /R "internal/agent/agenttest/ internal/agent/orchestrator/orchestratortest/ internal/domain/config/configtest/ internal/tools/analysis/analysistest/ internal/infrastructure/testing/" coverage.raw > coverage.out
+	@findstr /V /R "internal/agent/agenttest/ internal/agent/orchestrator/orchestratortest/ internal/domain/config/configtest/ internal/tools/analysis/analysistest/ internal/cli/clitest/ internal/domain/events/eventstest/ internal/infrastructure/persistence/persistencetest/ internal/tools/toolstest/ internal/infrastructure/testing/" coverage.raw > coverage.out
 endif
 	go tool cover -func=coverage.out
 
