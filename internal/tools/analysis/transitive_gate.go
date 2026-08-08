@@ -29,22 +29,24 @@ import (
 // node, so its own closure is the derived constant and is NOT attributed to
 // its importers. A consumer is self-justifying when its closure adds no
 // family its direct domain imports do not already justify.
+//
+// The gate's evaluation API (buildInternalImportGraph, domainClosure, classifyConsumer, ...) is package-private: its only consumers are the in-package arch tests (real_architecture_test.go, transitive_gate_test.go). Do not re-export without an architect decision.
 
-// PortsConsumerPath is the module-relative path of the derived-constant hub.
-const PortsConsumerPath = "internal/domain/ports"
+// portsConsumerPath is the module-relative path of the derived-constant hub.
+const portsConsumerPath = "internal/domain/ports"
 
-// DerivedAllowedMarker is the literal value of the ports entry's allowed
+// derivedAllowedMarker is the literal value of the ports entry's allowed
 // list: the gate computes Dom(ports) instead of reading a fixed list.
-const DerivedAllowedMarker = "<derived>"
+const derivedAllowedMarker = "<derived>"
 
-// DerivedPortsFamilies is the documented 9-family transitive closure of
+// derivedPortsFamilies is the documented 9-family transitive closure of
 // internal/domain/ports (ADR-056, Decision 2): the hub's closure must equal
 // this set. The gate treats it as a fixed point — if ports' closure ever
 // grows beyond these 9 families, the gate reports it as accidental growth
 // that becomes decided policy only when the architect ratifies it.
 //
 // Read-only: treat as a constant.
-var DerivedPortsFamilies = []string{
+var derivedPortsFamilies = []string{
 	"config", "events", "llm", "persistence", "pricing",
 	"security", "skills", "telemetry", "tools",
 }
@@ -53,48 +55,48 @@ var DerivedPortsFamilies = []string{
 // transitive-import whitelist relative to the module root.
 var defaultTransitiveWhitelistPath = filepath.Join("docs", "architect", "TRANSITIVE_IMPORT_WHITELIST.md")
 
-// ConsumerStatus is the classification outcome for one consumer package.
-type ConsumerStatus string
+// consumerStatus is the classification outcome for one consumer package.
+type consumerStatus string
 
 const (
-	// StatusApprovedConstant marks a consumer whose closure is fully
+	// statusApprovedConstant marks a consumer whose closure is fully
 	// justified: whitelisted (dom ⊆ allowed), self-justifying (dom ⊆
 	// direct domain imports), or the derived-constant hub itself.
-	StatusApprovedConstant ConsumerStatus = "approved-constant"
-	// StatusDecisionRequired marks a consumer whose closure exceeds its
+	statusApprovedConstant consumerStatus = "approved-constant"
+	// statusDecisionRequired marks a consumer whose closure exceeds its
 	// whitelist or its direct domain imports — a payer pending the
 	// architect's split-vs-accept decision.
-	StatusDecisionRequired ConsumerStatus = "decision-required"
+	statusDecisionRequired consumerStatus = "decision-required"
 )
 
-// WhitelistEntry is one `## consumer:` block from the whitelist. Allowed is
+// whitelistEntry is one `## consumer:` block from the whitelist. Allowed is
 // the sorted family list; Derived is true only for internal/domain/ports
 // whose allowed value is the <derived> marker.
-type WhitelistEntry struct {
+type whitelistEntry struct {
 	Consumer string
 	Allowed  []string
 	Derived  bool
 }
 
-// TransitiveWhitelist is the parsed architect-curated whitelist.
-type TransitiveWhitelist struct {
+// transitiveWhitelist is the parsed architect-curated whitelist.
+type transitiveWhitelist struct {
 	// Decisions records the `## decision:` notes (e.g. "events → telemetry").
 	Decisions []string
 	// Consumers maps module-relative consumer paths to their entries.
-	Consumers map[string]WhitelistEntry
+	Consumers map[string]whitelistEntry
 }
 
-// Entry returns the whitelist entry for consumer. Nil-safe.
-func (w *TransitiveWhitelist) Entry(consumer string) (WhitelistEntry, bool) {
+// entry returns the whitelist entry for consumer. Nil-safe.
+func (w *transitiveWhitelist) entry(consumer string) (whitelistEntry, bool) {
 	if w == nil {
-		return WhitelistEntry{}, false
+		return whitelistEntry{}, false
 	}
 	e, ok := w.Consumers[consumer]
 	return e, ok
 }
 
-// ConsumerClassification is one consumer's gate verdict.
-type ConsumerClassification struct {
+// consumerClassification is one consumer's gate verdict.
+type consumerClassification struct {
 	Consumer    string
 	Whitelisted bool
 	Derived     bool // internal/domain/ports derived-constant row
@@ -102,7 +104,7 @@ type ConsumerClassification struct {
 	DirectDom   []string
 	Allowed     []string
 	Excess      []string
-	Status      ConsumerStatus
+	Status      consumerStatus
 	Detail      string
 }
 
@@ -156,7 +158,7 @@ func mergeUnique(dst, src []string) []string {
 	return dst
 }
 
-// BuildInternalImportGraph builds the module-internal direct-import graph
+// buildInternalImportGraph builds the module-internal direct-import graph
 // from the indexer's loaded packages, mirroring
 // indexedPackageProvider.collectTrackedImports: for each tracked package the
 // edges are its module-internal imports (module path prefix only; the
@@ -166,7 +168,7 @@ func mergeUnique(dst, src []string) []string {
 // consumer whose closure covers the production surface and its tests. The
 // result is a map from full package path to a sorted, deduplicated list of
 // module-internal import paths.
-func BuildInternalImportGraph(pkgs []*packages.Package, modulePath string) map[string][]string {
+func buildInternalImportGraph(pkgs []*packages.Package, modulePath string) map[string][]string {
 	graph := make(map[string][]string)
 	for _, pkg := range pkgs {
 		base := consumerPath(pkg.PkgPath)
@@ -262,24 +264,24 @@ func extractDomainFamilies(nodes map[string]bool, consumer, ports, modulePath st
 	return fams
 }
 
-// DomainClosure returns Dom(consumer): the sorted set of internal/domain/
+// domainClosure returns Dom(consumer): the sorted set of internal/domain/
 // <family> packages reachable from consumer over the internal edge graph,
 // with traversal THROUGH internal/domain/ports excluded. The ports hub is a
 // whitelisted node: its own closure is the derived constant and is not
 // attributed to its importers, and the ports family itself is never
 // attributed either. When consumer IS ports (the derived-constant check), the
 // hub's own edges are traversed so Dom(ports) is the derived constant.
-func DomainClosure(graph map[string][]string, consumer, modulePath string) []string {
-	ports := modulePath + "/" + PortsConsumerPath
+func domainClosure(graph map[string][]string, consumer, modulePath string) []string {
+	ports := modulePath + "/" + portsConsumerPath
 	nodes := collectReachableNodes(graph, consumer, ports)
 	return extractDomainFamilies(nodes, consumer, ports, modulePath)
 }
 
-// DirectDomainFamilies returns the sorted set of domain families of C's
+// directDomainFamilies returns the sorted set of domain families of C's
 // direct module-internal domain imports, with internal/domain/ports excluded
 // (the hub's approval is the derived constant, not a direct import).
-func DirectDomainFamilies(graph map[string][]string, consumer, modulePath string) []string {
-	ports := modulePath + "/" + PortsConsumerPath
+func directDomainFamilies(graph map[string][]string, consumer, modulePath string) []string {
+	ports := modulePath + "/" + portsConsumerPath
 	seen := make(map[string]bool)
 	var fams []string
 	for _, imp := range graph[consumer] {
@@ -337,7 +339,7 @@ func parseFamilyList(list string) []string {
 	return fams
 }
 
-// ParseTransitiveWhitelist parses the architect-curated whitelist markdown.
+// parseTransitiveWhitelist parses the architect-curated whitelist markdown.
 // The pinned format:
 //
 //	# Transitive Import Whitelist — ADR-056, Decision 2
@@ -357,8 +359,8 @@ func parseFamilyList(list string) []string {
 // line, duplicate consumers, an empty or invalid allowed list, the derived
 // marker on a non-ports consumer, an untracked consumer path, or prose
 // inside a consumer block.
-func ParseTransitiveWhitelist(data string) (*TransitiveWhitelist, error) {
-	wl := &TransitiveWhitelist{Consumers: make(map[string]WhitelistEntry)}
+func parseTransitiveWhitelist(data string) (*transitiveWhitelist, error) {
+	wl := &transitiveWhitelist{Consumers: make(map[string]whitelistEntry)}
 	inConsumer := false
 	curConsumer := ""
 
@@ -397,7 +399,7 @@ func ParseTransitiveWhitelist(data string) (*TransitiveWhitelist, error) {
 // parseDecisionNote handles a `## decision:` directive: the note must be
 // non-empty, is appended to Decisions, and the caller exits any open consumer
 // block (state transition owned by the scanner loop).
-func parseDecisionNote(line string, wl *TransitiveWhitelist) error {
+func parseDecisionNote(line string, wl *transitiveWhitelist) error {
 	note := strings.TrimSpace(strings.TrimPrefix(line, "## decision:"))
 	if note == "" {
 		return fmt.Errorf("transitive whitelist: empty decision note")
@@ -410,7 +412,7 @@ func parseDecisionNote(line string, wl *TransitiveWhitelist) error {
 // tracked internal/ or cmd/ path, the consumer must not already be registered
 // (duplicate consumers are rejected), and the empty entry is registered
 // before the consumer name is returned to the scanner loop.
-func parseConsumerHeading(line string, wl *TransitiveWhitelist) (string, error) {
+func parseConsumerHeading(line string, wl *transitiveWhitelist) (string, error) {
 	consumer := strings.TrimSpace(strings.TrimPrefix(line, "## consumer:"))
 	if !validConsumerPath(consumer) {
 		return "", fmt.Errorf("transitive whitelist: consumer %q is not a tracked internal/ or cmd/ path", consumer)
@@ -418,7 +420,7 @@ func parseConsumerHeading(line string, wl *TransitiveWhitelist) (string, error) 
 	if _, dup := wl.Consumers[consumer]; dup {
 		return "", fmt.Errorf("transitive whitelist: duplicate consumer %q", consumer)
 	}
-	wl.Consumers[consumer] = WhitelistEntry{Consumer: consumer}
+	wl.Consumers[consumer] = whitelistEntry{Consumer: consumer}
 	return consumer, nil
 }
 
@@ -426,7 +428,7 @@ func parseConsumerHeading(line string, wl *TransitiveWhitelist) (string, error) 
 // an open consumer block and exactly once per consumer; the value is either
 // the <derived> marker (valid only for internal/domain/ports) or a parsed
 // family list.
-func applyAllowedDirective(line string, wl *TransitiveWhitelist, curConsumer string, inConsumer bool) error {
+func applyAllowedDirective(line string, wl *transitiveWhitelist, curConsumer string, inConsumer bool) error {
 	if !inConsumer {
 		return fmt.Errorf("transitive whitelist: allowed: line outside a consumer block")
 	}
@@ -435,7 +437,7 @@ func applyAllowedDirective(line string, wl *TransitiveWhitelist, curConsumer str
 		return fmt.Errorf("transitive whitelist: duplicate allowed: for consumer %q", curConsumer)
 	}
 	list := strings.TrimSpace(strings.TrimPrefix(line, "allowed:"))
-	if list == DerivedAllowedMarker {
+	if list == derivedAllowedMarker {
 		return applyDerivedMarker(wl, curConsumer)
 	}
 	fams, err := parseAllowedFamilies(list, curConsumer)
@@ -450,9 +452,9 @@ func applyAllowedDirective(line string, wl *TransitiveWhitelist, curConsumer str
 // applyDerivedMarker applies the <derived> marker to the ports entry: valid
 // only for internal/domain/ports, whose closure the gate computes instead of
 // reading a fixed list.
-func applyDerivedMarker(wl *TransitiveWhitelist, consumer string) error {
-	if consumer != PortsConsumerPath {
-		return fmt.Errorf("transitive whitelist: <derived> is valid only for %s, got %q", PortsConsumerPath, consumer)
+func applyDerivedMarker(wl *transitiveWhitelist, consumer string) error {
+	if consumer != portsConsumerPath {
+		return fmt.Errorf("transitive whitelist: <derived> is valid only for %s, got %q", portsConsumerPath, consumer)
 	}
 	entry := wl.Consumers[consumer]
 	entry.Derived = true
@@ -479,7 +481,7 @@ func parseAllowedFamilies(list, curConsumer string) ([]string, error) {
 // handleWhitelistBodyLine handles a non-directive body line: headings and
 // comments are skipped; prose inside an open consumer block is an error;
 // prose under the header or a decision note is ignored.
-func handleWhitelistBodyLine(line string, wl *TransitiveWhitelist, inConsumer bool) error {
+func handleWhitelistBodyLine(line string, wl *transitiveWhitelist, inConsumer bool) error {
 	if strings.HasPrefix(line, "#") {
 		return nil // headings and comments — not directives
 	}
@@ -492,7 +494,7 @@ func handleWhitelistBodyLine(line string, wl *TransitiveWhitelist, inConsumer bo
 
 // validateWhitelistEntries enforces the trailing parse invariant: every
 // non-derived consumer block must have an allowed: list.
-func validateWhitelistEntries(wl *TransitiveWhitelist) error {
+func validateWhitelistEntries(wl *transitiveWhitelist) error {
 	for consumer, e := range wl.Consumers {
 		if !e.Derived && e.Allowed == nil {
 			return fmt.Errorf("transitive whitelist: consumer %q has no allowed: list", consumer)
@@ -525,12 +527,12 @@ func findModuleRoot() (string, error) {
 	}
 }
 
-// LoadTransitiveWhitelist loads and parses
+// loadTransitiveWhitelist loads and parses
 // docs/architect/TRANSITIVE_IMPORT_WHITELIST.md anchored at the module root
 // via findModuleRoot — the loadNonFixCatalog precedent. Unlike the catalog,
 // a missing or malformed whitelist is an error: the gate cannot run without
 // the architect's curated decisions.
-func LoadTransitiveWhitelist() (*TransitiveWhitelist, error) {
+func loadTransitiveWhitelist() (*transitiveWhitelist, error) {
 	root, err := findModuleRoot()
 	if err != nil {
 		return nil, fmt.Errorf("transitive whitelist: %w", err)
@@ -539,10 +541,10 @@ func LoadTransitiveWhitelist() (*TransitiveWhitelist, error) {
 	if err != nil {
 		return nil, fmt.Errorf("transitive whitelist: %w", err)
 	}
-	return ParseTransitiveWhitelist(string(data))
+	return parseTransitiveWhitelist(string(data))
 }
 
-// ClassifyConsumer classifies one consumer given its closure dom, its direct
+// classifyConsumer classifies one consumer given its closure dom, its direct
 // domain families, and the whitelist:
 //
 //   - internal/domain/ports: derived-constant check — dom must equal the
@@ -553,39 +555,39 @@ func LoadTransitiveWhitelist() (*TransitiveWhitelist, error) {
 //     (self-justifying — the closure adds no family the consumer's direct
 //     domain imports do not already justify); else decision required
 //     (pure-bloat payer: the closure pulls families never directly imported).
-func ClassifyConsumer(consumer string, dom, directDom []string, wl *TransitiveWhitelist) ConsumerClassification {
-	c := ConsumerClassification{
+func classifyConsumer(consumer string, dom, directDom []string, wl *transitiveWhitelist) consumerClassification {
+	c := consumerClassification{
 		Consumer:  consumer,
 		Dom:       dom,
 		DirectDom: directDom,
 	}
 
-	if consumer == PortsConsumerPath {
+	if consumer == portsConsumerPath {
 		c.Derived = true
-		excess := setDiff(dom, DerivedPortsFamilies)
-		missing := setDiff(DerivedPortsFamilies, dom)
+		excess := setDiff(dom, derivedPortsFamilies)
+		missing := setDiff(derivedPortsFamilies, dom)
 		c.Excess = excess
 		if len(excess) == 0 && len(missing) == 0 {
-			c.Status = StatusApprovedConstant
-			c.Detail = fmt.Sprintf("derived constant: closure equals documented %d families", len(DerivedPortsFamilies))
+			c.Status = statusApprovedConstant
+			c.Detail = fmt.Sprintf("derived constant: closure equals documented %d families", len(derivedPortsFamilies))
 			return c
 		}
-		c.Status = StatusDecisionRequired
-		c.Detail = fmt.Sprintf("derived-constant drift: closure %v ≠ documented %v (missing: %v)", dom, DerivedPortsFamilies, missing)
+		c.Status = statusDecisionRequired
+		c.Detail = fmt.Sprintf("derived-constant drift: closure %v ≠ documented %v (missing: %v)", dom, derivedPortsFamilies, missing)
 		return c
 	}
 
-	if entry, ok := wl.Entry(consumer); ok {
+	if entry, ok := wl.entry(consumer); ok {
 		c.Whitelisted = true
 		c.Allowed = entry.Allowed
 		excess := setDiff(dom, entry.Allowed)
 		c.Excess = excess
 		if len(excess) == 0 {
-			c.Status = StatusApprovedConstant
+			c.Status = statusApprovedConstant
 			c.Detail = "whitelisted: closure ⊆ allowed"
 			return c
 		}
-		c.Status = StatusDecisionRequired
+		c.Status = statusDecisionRequired
 		c.Detail = fmt.Sprintf("excess beyond whitelist: %v", excess)
 		return c
 	}
@@ -593,31 +595,31 @@ func ClassifyConsumer(consumer string, dom, directDom []string, wl *TransitiveWh
 	excess := setDiff(dom, directDom)
 	c.Excess = excess
 	if len(excess) == 0 {
-		c.Status = StatusApprovedConstant
+		c.Status = statusApprovedConstant
 		c.Detail = "self-justifying: closure ⊆ direct domain imports"
 		return c
 	}
-	c.Status = StatusDecisionRequired
+	c.Status = statusDecisionRequired
 	c.Detail = fmt.Sprintf("pure-bloat payer: closure pulls families never directly imported: %v", excess)
 	return c
 }
 
-// ClassifyAllConsumers classifies every consumer in the graph in sorted
+// classifyAllConsumers classifies every consumer in the graph in sorted
 // package order. The consumer path used for whitelist lookups and the ports
 // derived check is the module-relative form.
-func ClassifyAllConsumers(graph map[string][]string, wl *TransitiveWhitelist, modulePath string) []ConsumerClassification {
+func classifyAllConsumers(graph map[string][]string, wl *transitiveWhitelist, modulePath string) []consumerClassification {
 	consumers := make([]string, 0, len(graph))
 	for c := range graph {
 		consumers = append(consumers, c)
 	}
 	sort.Strings(consumers)
 
-	out := make([]ConsumerClassification, 0, len(consumers))
+	out := make([]consumerClassification, 0, len(consumers))
 	for _, c := range consumers {
 		rel := relPath(c, modulePath)
-		dom := DomainClosure(graph, c, modulePath)
-		direct := DirectDomainFamilies(graph, c, modulePath)
-		out = append(out, ClassifyConsumer(rel, dom, direct, wl))
+		dom := domainClosure(graph, c, modulePath)
+		direct := directDomainFamilies(graph, c, modulePath)
+		out = append(out, classifyConsumer(rel, dom, direct, wl))
 	}
 	return out
 }
@@ -631,10 +633,10 @@ func joinList(fams []string) string {
 }
 
 // expectedColumn renders the "whitelist-or-expected" report column for a row.
-func expectedColumn(c ConsumerClassification) string {
+func expectedColumn(c consumerClassification) string {
 	switch {
 	case c.Derived:
-		return fmt.Sprintf("expected: derived-%d", len(DerivedPortsFamilies))
+		return fmt.Sprintf("expected: derived-%d", len(derivedPortsFamilies))
 	case c.Whitelisted:
 		return "allowed: " + joinList(c.Allowed)
 	default:
@@ -642,11 +644,11 @@ func expectedColumn(c ConsumerClassification) string {
 	}
 }
 
-// FormatTransitiveGateReport renders the v1 gate report: a "decision
+// formatTransitiveGateReport renders the v1 gate report: a "decision
 // required" section (consumer, whitelist-or-expected, closure, excess
 // families — every payer row is pending split-vs-accept) and an "approved
 // constant" section (count + list). Payer rows carry no invented rationales.
-func FormatTransitiveGateReport(classifications []ConsumerClassification, wl *TransitiveWhitelist) string {
+func formatTransitiveGateReport(classifications []consumerClassification, wl *transitiveWhitelist) string {
 	var sb strings.Builder
 
 	var decisions []string
@@ -663,10 +665,10 @@ func FormatTransitiveGateReport(classifications []ConsumerClassification, wl *Tr
 		}
 	}
 
-	var decisionRequired, approved []ConsumerClassification
+	var decisionRequired, approved []consumerClassification
 	for _, c := range classifications {
 		switch c.Status {
-		case StatusDecisionRequired:
+		case statusDecisionRequired:
 			decisionRequired = append(decisionRequired, c)
 		default:
 			approved = append(approved, c)

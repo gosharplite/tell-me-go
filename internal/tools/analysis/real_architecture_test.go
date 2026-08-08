@@ -62,19 +62,19 @@ func TestVerifyTransitiveClosureGate(t *testing.T) {
 		t.Fatal("failed to detect module path for transitive gate")
 	}
 
-	graph := BuildInternalImportGraph(pkgs, modulePath)
-	wl, err := LoadTransitiveWhitelist()
+	graph := buildInternalImportGraph(pkgs, modulePath)
+	wl, err := loadTransitiveWhitelist()
 	if err != nil {
 		t.Fatalf("failed to load transitive import whitelist: %v", err)
 	}
 
-	classifications := ClassifyAllConsumers(graph, wl, modulePath)
-	report := FormatTransitiveGateReport(classifications, wl)
+	classifications := classifyAllConsumers(graph, wl, modulePath)
+	report := formatTransitiveGateReport(classifications, wl)
 	fmt.Print(report)
 
 	var decisionRequired int
 	for _, c := range classifications {
-		if c.Status == StatusDecisionRequired {
+		if c.Status == statusDecisionRequired {
 			decisionRequired++
 		}
 	}

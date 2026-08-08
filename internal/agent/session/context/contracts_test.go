@@ -28,7 +28,7 @@ func TestContextMetadata_Clone(t *testing.T) {
 		},
 	}
 
-	cloned := original.Clone()
+	cloned := original.clone()
 
 	if !reflect.DeepEqual(original, cloned) {
 		t.Errorf("expected cloned to be equal to original")

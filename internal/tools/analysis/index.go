@@ -293,7 +293,7 @@ func (idx *indexer) loadPackages(ctx context.Context, fset *token.FileSet) ([]*p
 		Context: ctx,
 		// BuildFlags: -tags=arch makes arch-gated consumers visible so
 		// arch-only symbols are not mis-flagged DEAD/PRIVATE. The concrete
-		// case: LoadTransitiveWhitelist's only caller is
+		// case: loadTransitiveWhitelist's only caller is
 		// real_architecture_test.go:66, behind //go:build arch — without
 		// this flag the scan reported it DEAD. Only two files in the module
 		// are arch-tagged (real_architecture_test.go,
