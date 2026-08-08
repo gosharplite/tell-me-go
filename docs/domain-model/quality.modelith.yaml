@@ -191,10 +191,10 @@ entities:
         description: The cyclomatic complexity value.
       - name: threshold
         type: integer
-        description: "The policy threshold — scores below 10 are acceptable without rationale."
+        description: "The policy threshold — scores of 10 or below are acceptable without rationale."
     invariants:
       - id: complexity-threshold-policy
-        statement: "A function with CC below 10 is acceptable by policy; CC at or above 10 requires either a refactor or a documented `IntentionalNonFix` entry."
+        statement: "A function with CC of 10 or below is acceptable by policy; CC above 10 (11 or more) requires either a refactor or a documented `IntentionalNonFix` entry."
 
   NonFixCatalog:
     definition: >

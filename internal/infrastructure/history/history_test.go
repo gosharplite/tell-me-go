@@ -1526,3 +1526,40 @@ func TestGetModelTurn(t *testing.T) {
 		}
 	})
 }
+
+// captureLogger is a local stub implementing ports.Logger for
+// TestManager_WithLogger. It captures nothing — it exists only to verify
+// that WithLogger stores the injected logger. No new imports needed.
+type captureLogger struct{}
+
+func (l *captureLogger) Error(msg string, args ...any) {}
+func (l *captureLogger) Warn(msg string, args ...any)  {}
+func (l *captureLogger) Info(msg string, args ...any)  {}
+func (l *captureLogger) Debug(msg string, args ...any) {}
+
+func TestManager_WithLogger(t *testing.T) {
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "h.json"), filepath.Join(t.TempDir(), "h.archive.jsonl"))
+
+	// Default logger is a NoOpLogger.
+	if _, ok := m.logger.(*ports.NoOpLogger); !ok {
+		t.Errorf("expected default logger *ports.NoOpLogger, got %T", m.logger)
+	}
+
+	// WithLogger(nil) is a nil-guard no-op and remains chainable.
+	got := m.WithLogger(nil)
+	if got != m {
+		t.Errorf("expected WithLogger(nil) to return the same manager, got %p", got)
+	}
+	if _, ok := m.logger.(*ports.NoOpLogger); !ok {
+		t.Errorf("expected logger to remain *ports.NoOpLogger after WithLogger(nil), got %T", m.logger)
+	}
+
+	// A real logger is stored and the method is chainable.
+	got = m.WithLogger(&captureLogger{})
+	if got != m {
+		t.Errorf("expected WithLogger(&captureLogger{}) to return the same manager, got %p", got)
+	}
+	if _, ok := m.logger.(*captureLogger); !ok {
+		t.Errorf("expected logger to be *captureLogger, got %T", m.logger)
+	}
+}
