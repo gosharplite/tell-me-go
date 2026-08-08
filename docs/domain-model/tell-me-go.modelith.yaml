@@ -535,7 +535,7 @@ entities:
       the in-memory working set bounded. The archive supports O(1) lazy
       navigation via byte-offset indexing (`file.Seek`) — it is never loaded
       fully into memory. Patches are merged into clean base records during
-      compaction (triggered by `save` or `rollback`). Separate from the
+      compaction (triggered by `save`, `rollback`, `edit`, and per-turn pipeline rewrites). Separate from the
       in-memory `Session` state.
     attributes:
       - name: turns

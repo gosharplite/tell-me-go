@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,7 +16,7 @@ func TestToolResponseCleaner_Transform(t *testing.T) {
 	cleaner := &toolResponseCleaner{}
 
 	t.Run("Removes empty ID tool calls and responses", func(t *testing.T) {
-		req := &ports.ContextRequest{
+		req := &ContextRequest{
 			History: []*llm.Content{
 				{
 					Role: "model",
@@ -47,7 +46,7 @@ func TestToolResponseCleaner_Transform(t *testing.T) {
 	})
 
 	t.Run("Removes entire message if all parts are invalid", func(t *testing.T) {
-		req := &ports.ContextRequest{
+		req := &ContextRequest{
 			History: []*llm.Content{
 				{
 					Role: "user",
@@ -78,7 +77,7 @@ func TestToolResponseCleaner_Transform(t *testing.T) {
 	})
 
 	t.Run("No changes if everything is valid", func(t *testing.T) {
-		req := &ports.ContextRequest{
+		req := &ContextRequest{
 			History: []*llm.Content{
 				{
 					Role: "user",
@@ -96,7 +95,7 @@ func TestToolResponseCleaner_Transform(t *testing.T) {
 	})
 
 	t.Run("Preserves natively empty content", func(t *testing.T) {
-		req := &ports.ContextRequest{
+		req := &ContextRequest{
 			History: []*llm.Content{
 				{
 					Role:  "user",

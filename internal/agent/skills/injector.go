@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
@@ -31,11 +32,11 @@ func WithSkillEcosystemIntro(intro string) SkillInjectorOption {
 	return func(si *skillInjector) { si.ecosystemIntro = intro }
 }
 
-// NewSkillInjector creates a ports.ContextTransformer that injects skills
+// NewSkillInjector creates a sessctx.ContextTransformer that injects skills
 // into the context. It exists as a constructor so the session/ package can
 // inject skill selection into the session/context pipeline without the
 // context/ sub-package importing domain/skills.
-func NewSkillInjector(selector skills.SkillSelector, logger ports.Logger, opts ...SkillInjectorOption) ports.ContextTransformer {
+func NewSkillInjector(selector skills.SkillSelector, logger ports.Logger, opts ...SkillInjectorOption) sessctx.ContextTransformer {
 	si := &skillInjector{Selector: selector, Logger: logger}
 	for _, opt := range opts {
 		opt(si)
@@ -43,7 +44,7 @@ func NewSkillInjector(selector skills.SkillSelector, logger ports.Logger, opts .
 	return si
 }
 
-func (t *skillInjector) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *skillInjector) Transform(ctx context.Context, req *sessctx.ContextRequest) error {
 	if t.Selector == nil || len(req.History) == 0 {
 		return nil
 	}
@@ -82,7 +83,7 @@ func (t *skillInjector) Transform(ctx context.Context, req *ports.ContextRequest
 // a new one. It also guards against double-injection. The persist
 // flag controls whether req.PersistHistory is set — it should be
 // true only when skill content is injected, not for ecosystem intro.
-func (t *skillInjector) injectIfNeeded(req *ports.ContextRequest, injection string, persist bool) {
+func (t *skillInjector) injectIfNeeded(req *sessctx.ContextRequest, injection string, persist bool) {
 	if req.History[0].Role == "system" {
 		if t.isAlreadyInjected(req.History[0]) {
 			return
@@ -141,7 +142,7 @@ func (t *skillInjector) isAlreadyInjected(content *llm.Content) bool {
 	return false
 }
 
-func (t *skillInjector) injectToExistingSystem(req *ports.ContextRequest, first *llm.Content, injection string, persist bool) {
+func (t *skillInjector) injectToExistingSystem(req *sessctx.ContextRequest, first *llm.Content, injection string, persist bool) {
 	first.Parts = append(first.Parts, &llm.Part{Text: injection})
 	first.Pinned = true
 	if persist {
@@ -149,7 +150,7 @@ func (t *skillInjector) injectToExistingSystem(req *ports.ContextRequest, first 
 	}
 }
 
-func (t *skillInjector) prependNewSystemMessage(req *ports.ContextRequest, injection string, persist bool) {
+func (t *skillInjector) prependNewSystemMessage(req *sessctx.ContextRequest, injection string, persist bool) {
 	newSystem := &llm.Content{
 		Role:   "system",
 		Pinned: true,

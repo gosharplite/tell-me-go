@@ -41,6 +41,8 @@ catalog a new gap no one reviewed. Policy:
 - **CC values in complexity entries are re-measured** whenever the referenced
   function changes; drift is recorded in the entry's rationale (see the
   2026-08 CC drift corrections for the pattern).
+- **Enforcement boundary**: complexity pins: mechanically verified by `verify-nonfix-catalog` on over-threshold functions; under-threshold pins are enforced at threshold-crossing, by construction; coverage pins: prose policy per ADR-054 consequences — the coverage matcher has no name axis to verify against.
+- **Coordination rule**: any legitimate catalog change (add/remove/re-anchor/CC re-verify) edits the partition test in the same PR.
 
 ---
 
@@ -575,6 +577,40 @@ catalog a new gap no one reviewed. Policy:
 - **See**: `internal/infrastructure/config/config.go` (`load`, `configureViper`,
   `YAMLConfigLoader`), `internal/infrastructure/config/watcher_test.go`
 
+### Split internal/agent façade (chatService vs lifecycle)
+
+- **Status**: REJECTED by architect (2026-08, issue #1299 architecture grilling)
+- **Rationale**: The "façade mixing four responsibilities" premise is false —
+  `internal/agent/agent.go` is one cohesive runtime owner (25 fields;
+  init/config/Chat/Shutdown/drift form one operational surface on one stateful
+  object), `chatService` is already type-separated with zero references to the
+  `*agent` type, and `agent → session/context` is documented ADR-026 intent, not
+  a bypass — all four candidate implementations of "route through session" fail.
+  A package move to `internal/application/chat` is mechanically coherent but is
+  metric-relabeling (fan-in is 8 production files vs domain/ports at 102),
+  creates an application→agent/subpackage half-state, and double-churns the
+  same consumers if followed by the ports split. Every cited metric was wrong
+  or normal ("14 imports" is agent.go's fan-out and unremarkable vs
+  container.go's 18; max cyclomatic complexity = 8; the test bridge at 11
+  methods is within ADR-037's envelope, trigger ≥13). The one real finding:
+  16 of 25 fields are init-only scaffolding (the `executor` field is
+  write-only) — ADR-007's accepted cost, now quantified; clarity-only, worth a
+  comment fix, not a refactor. The concrete `*sessctx.Manager` type coupling
+  (four holders: agent, orchestrator Engine, orchestrator Turn, and
+  session.InternalTools — note `TurnState.Metadata` at engine_types.go:170 is a
+  Metadata holder, not a Manager holder) is agent-layer and not cross-layer:
+  under the cross-layer criterion (ADR-056) it belongs at its consumer and, by the
+  clarity-only standard, it is an accepted-cost entry, not a refactor and not a
+  ports task.
+- **See**: `internal/agent/agent.go:39,44,104-149`, `internal/agent/service.go`,
+  `internal/agent/internal_bridge.go`, `internal/agent/session/context/doc.go:9`,
+  `internal/agent/orchestrator/engine.go:16,38,65,169`,
+  `internal/agent/orchestrator/engine_types.go:170`,
+  `internal/agent/session/internal_tools.go:30,37,178`,
+  `internal/infrastructure/factory/chatter_test.go:29,32`,
+  `internal/agent/agentinternal/doc.go`,
+  `docs/adr/2026-04-session-context-subpackage-extraction.md` (ADR-026)
+
 ---
 
 ## Coverage Gaps (ACCEPTED — 2026-07 Batch Triage)
@@ -760,7 +796,7 @@ catalog a new gap no one reviewed. Policy:
   test boilerplate assertions, not branching business logic. Same acceptance
   class as the existing structural concerns — test infrastructure where the cost
   of refactoring outweighs the maintainability benefit.
-- **See**: `tests/e2e/history_flags_test.go:142`
+- **See**: `tests/e2e/history_flags_test.go:161`
 
 ### cmd/tell-me-go/main.go — buildApp os.Getwd error path (non-Linux)
 
@@ -821,7 +857,7 @@ catalog a new gap no one reviewed. Policy:
   `internal/agent/session/ui/dispatcher.go`) would trade one well-understood
   Go pattern for another with no reduction in cognitive complexity. The code
   is already clean and well-structured.
-- **See**: `internal/ui/tui/progress/model.go`
+- **See**: `internal/ui/tui/progress/model.go:338`
 
 ### agent/session/ui/dispatcher.go — handleToolEvents (CC=10)
 
@@ -849,7 +885,7 @@ catalog a new gap no one reviewed. Policy:
   The complexity is structural, not cognitive — the same pattern appears in
   `handleUsageMetrics`, `handleTurnStatus`, `handleResponse`, and
   `handleSystemMessage`, each with identical comment documentation.
-- **See**: `internal/agent/session/ui/dispatcher.go`
+- **See**: `internal/agent/session/ui/dispatcher.go:147`
 
 ### Acceptance Rationale (Shared)
 
@@ -910,7 +946,7 @@ to reason about.
   function with no cognitive benefit. Same acceptance class as `handleDomainEvent`
   (type-switch dispatch pattern where CC is structural, not from branching
   business logic).
-- **See**: `internal/ui/tui/progress/model.go:250`
+- **See**: `internal/ui/tui/progress/model.go:251`
 
 ### ui/tui/progress/renderer.go — (*renderer).makeSubscriber (CC=11)
 
@@ -1032,7 +1068,7 @@ to reason about.
   is a single-line delegation or return. Same acceptance class as
   `handleDomainEvent` (CC=12) and `(*model).Update` (CC=14) — structural
   dispatch where CC is switch/branch count, not branching business logic.
-- **See**: `internal/agent/orchestrator/engine_phases.go:105`
+- **See**: `internal/agent/orchestrator/engine_phases.go:124`
 
 ---
 
@@ -1066,13 +1102,13 @@ to reason about.
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Sequential state-mutation test verifying text clearing and thought preservation through multiple update cycles. Steps are not independent — each mutates shared history state. Splitting would duplicate setup. Same acceptance class as `TestHistoryNavigation_CompleteWorkflow`.
-- **See**: `internal/infrastructure/history/history_test.go:1028`
+- **See**: `internal/infrastructure/history/history_test.go:1274`
 
 ### internal/infrastructure/history/history_test.go — TestUpdateTurnContent_AddTextWhenNone (CC=12)
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Same sequential state-mutation pattern as `TestUpdateTurnContent_ClearText`, verifying the complementary code path. CC is assertion boilerplate across dependent steps.
-- **See**: `internal/infrastructure/history/history_test.go:1115`
+- **See**: `internal/infrastructure/history/history_test.go:1361`
 
 ### internal/domain/llm/capabilities_test.go — TestResolveCapabilities (CC=13)
 
@@ -1108,7 +1144,7 @@ to reason about.
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Table-driven test with 5 subtests covering valid index, OOB negative, OOB pos, non-model role, and deep-copy isolation for `GetModelTurn`. Each subtest contains its own setup (temp dir, `NewManager`, `AddContent`). CC comes from subtest enumeration and assertion boilerplate, not branching business logic. Same acceptance class as `TestUpdateTurnContent_ClearText` (CC=12) and `TestUpdateTurnContent_AddTextWhenNone` (CC=12) in the same file.
-- **See**: `internal/infrastructure/history/history_test.go:1198`
+- **See**: `internal/infrastructure/history/history_test.go:1445`
 
 ### internal/infrastructure/history/history_test.go — TestHistoryManager_SetPinned_WithFunctionCall (CC=21)
 
@@ -1140,4 +1176,40 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13))*
+## Coverage Gaps (ACCEPTED — 2026-08 #1302 emergencySave double-append)
+
+### agent/orchestrator/engine_phases.go — ghost-response path (structurally unreachable)
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: The `IsTransient` branch in `PersistenceStep.Process` is structurally
+  unreachable for history-store errors — store errors are raw filesystem errors,
+  never transient (`IsTransient` matches only `ErrTransient`/`ErrRateLimit`,
+  gateway.go:36). The ghost-response path (partial success + hypothetically
+  transient store error → recovery re-infers and appends a fresh response while
+  the old stays) is therefore NOT reachable today. Same acceptance class as
+  defensive guards on internal pipeline state (2026-07 Batch Triage).
+- **Note**: The Sync-wrinkle disk-duplicate (store.go:252-283 — write succeeds,
+  deferred `Sync` fails) is accepted as out-of-scope for #1302; the durable fix
+  belongs in the history store package (fault-injection-required class — fsync
+  failure requires real I/O faults).
+- **See**: `internal/agent/orchestrator/engine_phases.go:79-92` (architect-acceptance comment + `IsTransient` classification)
+
+---
+
+## Coverage Gaps (ACCEPTED — 2026-08 coverage/complexity hygiene)
+
+### domain/ports/logger.go — NoOpLogger and NoOpTurnsLogger no-op stubs at 0%
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: `NoOpLogger.Error/Warn/Info/Debug` (empty bodies) and `NoOpTurnsLogger.HandleEvent`/`Listen`/`Close` exist solely to satisfy the `Logger`/`TurnsLogger` interface contracts. All are already exercised by `logger_test.go` (`TestNoOpLogger`, `TestNoOpTurnsLogger_HandleEvent`, `TestNoOpTurnsLogger_Listen`, `TestNoOpTurnsLogger_Close`, `TestNoOpTurnsLogger_Listen_DeadlineExceeded`); Go's coverage instrumentation does not count empty method bodies as covered (blocks report `count=1` with zero statements). Same acceptance class as the cataloged `NoOpEventBus` and `auth.Invalidate` entries — `interface-stub`.
+- **See**: `internal/domain/ports/logger.go:36-39,62-64`, `internal/domain/ports/logger_test.go`
+
+### infrastructure/security/policy.go — BypassConfirmation success path and confirmAction error branch
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: The entire success path of `BypassConfirmation` (`SetBypassActive(true)` + `kv.Set("bypass_confirmation","true")` + `Warn` + success return, `policy.go:300-308`) and the `confirmAction` error branch (`policy.go:293-295`) are structurally unreachable: `confirmAction` never returns an error, and it returns `true` only when `sm.IsBypassActive()` is already true — which short-circuits at the entry check (`policy.go:287`). Both checks read the same `bypassActive` field (`manager.go:22,90-100`) under the same `TerminalLock`, so no interleaving exists. The tool can only ever report "already enabled" or auto-decline; bypass is actually enabled via `di/session_factory.go:82-86`. A skipped test already documents the kv.Set path (`policy_test.go:596`, `t.Skip("[UNREACHABLE] ...")`). Same acceptance class as `json.Marshal` on all-string structs — `structurally-unreachable`.
+- **See**: `internal/infrastructure/security/policy.go:283-308`, `internal/infrastructure/security/policy_test.go:596`
+
+---
+
+*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08)*

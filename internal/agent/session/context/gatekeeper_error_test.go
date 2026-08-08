@@ -40,9 +40,9 @@ func (m *mockFailingSummarizer) SummarizeRange(ctx context.Context, turns int, f
 func TestGatekeeper_ErrorHandling(t *testing.T) {
 
 	ctx := context.Background()
-	req := &ports.ContextRequest{
+	req := &sessctx.ContextRequest{
 		History:  make([]*llm.Content, 20),
-		Metadata: ports.ContextMetadata{},
+		Metadata: sessctx.ContextMetadata{},
 	}
 	for i := 0; i < 20; i++ {
 		role := "user"
@@ -80,7 +80,7 @@ func TestManager_FirstMessageRoleError(t *testing.T) {
 
 func TestContextTransformers_HistoryRepairerEmpty(t *testing.T) {
 	hr := &sessctx.HistoryRepairer{}
-	req := &ports.ContextRequest{History: nil}
+	req := &sessctx.ContextRequest{History: nil}
 	err := hr.Transform(context.Background(), req)
 	if err != nil {
 		t.Errorf("Expected nil error for empty history, got: %v", err)
@@ -204,9 +204,9 @@ func TestSessionManager_ConfigError(t *testing.T) {
 
 func TestTokenGatekeeper_NilSummarizer(t *testing.T) {
 	ctx := context.Background()
-	req := &ports.ContextRequest{
+	req := &sessctx.ContextRequest{
 		History:  make([]*llm.Content, 20),
-		Metadata: ports.ContextMetadata{},
+		Metadata: sessctx.ContextMetadata{},
 	}
 	for i := 0; i < 20; i++ {
 		role := "user"
@@ -255,11 +255,11 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 		largeText += "token "
 	}
 
-	req := &ports.ContextRequest{
+	req := &sessctx.ContextRequest{
 		History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: largeText}}},
 		},
-		Metadata: ports.ContextMetadata{},
+		Metadata: sessctx.ContextMetadata{},
 	}
 
 	// 1. Test Transform (Should fail when emitting warning)

@@ -32,7 +32,7 @@ ifeq ($(OS),Windows_NT)
     endif
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-no-test-sleep verify-architecture verify-transitive-gate verify-nonfix-catalog verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -40,7 +40,10 @@ help:
 	@echo "  make test       - Run all tests (standard)"
 	@echo "  make test-race  - Run tests with race detector (AI-SAFE, package-by-package)"
 	@echo "  make verify-architecture - Verify Clean/Hexagonal Architecture layer discipline"
+	@echo "  make verify-transitive-gate - Print the ADR-056 transitive closure gate report (v1, report-only)"
+	@echo "  make verify-nonfix-catalog - Verify the complexity-pin catalog partition (issue #1297)"
 	@echo "  make verify-no-test-sleep - Verify no time.Sleep for synchronization in tests"
+	@echo "  make verify-tools-adapter-import - Verify tools adapter imports are confined to default_fs.go (ADR-055)"
 	@echo "  make test-coverage - Run tests with coverage (excludes mocks/generated)"
 	@echo "  make tidy       - Tidy and vendor dependencies"
 	@echo "  make fmt        - Format code"
@@ -62,7 +65,7 @@ help:
 build:
 	go build -ldflags="-X 'main.version=$(VERSION)'" -o tell-me-go ./cmd/tell-me-go
 
-test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock
+test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import
 	go test ./...
 
 # Verify ADR-021: no testutil packages (centralized test-double dump).
@@ -302,7 +305,7 @@ else
 endif
 
 # All ports.SessionProvider / ports.SessionStateProvider test doubles
-# must use agenttest.MockSessionProvider — the single canonical mock.
+# must use testfixtures.MockSessionProvider — the single canonical mock.
 # Hand-rolled mocks outside agenttest/ are forbidden. This guard catches
 # any new mock added to a _test.go file outside the canonical location.
 verify-session-provider-mock:
@@ -314,13 +317,13 @@ ifeq ($(IS_POSIX),true)
 	if [ -n "$$VIOLATIONS" ]; then \
 		echo ""; \
 		echo "❌ hand-rolled SessionProvider mock outside agenttest/."; \
-		echo "   Use agenttest.MockSessionProvider — the single canonical mock."; \
+		echo "   Use testfixtures.MockSessionProvider — the single canonical mock."; \
 		echo "   All other SessionProvider mocks were eliminated; new ones are forbidden."; \
 		echo ""; \
 		echo "Violating files:"; \
 		echo "$$VIOLATIONS"; \
 		echo ""; \
-		echo "Fix: replace with &agenttest.MockSessionProvider{}."; \
+		echo "Fix: replace with &testfixtures.MockSessionProvider{}."; \
 		exit 1; \
 	fi
 	@echo "  ✓ No hand-rolled SessionProvider mocks outside agenttest/."
@@ -338,15 +341,74 @@ else
 		if ($$violations.Count -gt 0) { \
 			Write-Host ''; \
 			Write-Host '❌ hand-rolled SessionProvider mock outside agenttest/.'; \
-			Write-Host '   Use agenttest.MockSessionProvider — the single canonical mock.'; \
+			Write-Host '   Use testfixtures.MockSessionProvider — the single canonical mock.'; \
 			Write-Host ''; \
 			$$violations | Sort-Object -Unique | ForEach-Object { Write-Host $$_ }; \
 			Write-Host ''; \
-			Write-Host 'Fix: replace with &agenttest.MockSessionProvider{}.'; \
+			Write-Host 'Fix: replace with &testfixtures.MockSessionProvider{}.'; \
 			exit 1 \
 		}; \
 		Write-Host '  ✓ No hand-rolled SessionProvider mocks outside agenttest/.' \
 	"
+endif
+
+# Verify ADR-055: the internal/infrastructure/persistence adapter import is
+# confined to the two sanctioned default_fs.go files in internal/tools/
+# (analysis, workspace). Every other tools-layer production file must use
+# the injected domain port (persistence.FileSystem).
+verify-tools-adapter-import:
+ifeq ($(IS_POSIX),true)
+	@echo "Checking for infrastructure/persistence adapter imports in tools production files (ADR-055)..."
+	@VIOLATIONS="$$( grep -rn 'github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"' internal/tools/ --include='*.go' \
+		| grep -v '_test\.go:' \
+		| grep -v '^internal/tools/analysis/default_fs\.go:' \
+		| grep -v '^internal/tools/workspace/default_fs\.go:' )"; \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ ADR-055 violation: adapter import outside the sanctioned default_fs.go files."; \
+		echo "   internal/tools production files may import internal/infrastructure/persistence"; \
+		echo "   only in internal/tools/analysis/default_fs.go and"; \
+		echo "   internal/tools/workspace/default_fs.go (each holds its package's defaultFS fallback)."; \
+		echo "   Every live tool path must use the injected domain port (persistence.FileSystem)."; \
+		echo "   See: docs/adr/2026-08-tools-filesystem-injection.md"; \
+		echo ""; \
+		echo "Violating files:"; \
+		echo "$$VIOLATIONS"; \
+		echo ""; \
+		echo "Fix: route through the injected FileSystem (ToolRegistrationParams.FileSystem →"; \
+		echo "workspace.Register → registerSystem → newshellTool) and construct the adapter"; \
+		echo "only in the package's default_fs.go."; \
+		exit 1; \
+	fi
+	@echo "  ✓ Adapter imports confined to the two default_fs.go files."
+else
+	@echo "Checking for infrastructure/persistence adapter imports in tools production files (ADR-055)..."
+	@powershell -Command " \
+		$$ErrorActionPreference = 'Stop'; \
+		$$violations = @(); \
+		Get-ChildItem -Path internal/tools -Recurse -Filter '*.go' | Where-Object { \
+			$$_.Name -notlike '*_test.go' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/analysis/default_fs\.go$$' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/workspace/default_fs\.go$$' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch '.git/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'vendor/' \
+		} | ForEach-Object { \
+			$$matches = Select-String -Path $$_.FullName -Pattern 'github\.com/gosharplite/tell-me-go/internal/infrastructure/persistence"'; \
+			if ($$matches) { foreach ($$m in $$matches) { $$violations += ('{0}:{1}' -f $$m.Path, $$m.LineNumber) } } \
+		}; \
+		if ($$violations.Count -gt 0) { \
+			Write-Host ''; \
+			Write-Host '❌ ADR-055 violation: adapter import outside the sanctioned default_fs.go files.'; \
+			Write-Host '   See: docs/adr/2026-08-tools-filesystem-injection.md'; \
+			Write-Host ''; \
+			$$violations | Sort-Object -Unique | ForEach-Object { Write-Host $$_ }; \
+			Write-Host ''; \
+			Write-Host 'Fix: route through the injected FileSystem and construct the adapter'; \
+			Write-Host 'only in the package default_fs.go.'; \
+			exit 1 \
+		} \
+	"
+	@echo "  ✓ Adapter imports confined to the two default_fs.go files."
 endif
 
 # Verify no time.Sleep for synchronization in test files (Issue #580 / ADR-036).
@@ -407,6 +469,33 @@ else
 	@go test -tags=arch -run TestVerifyRealArchitecture ./internal/tools/analysis -args -strict-arch=true
 	@echo "=== modelith-layers ==="
 	@$(MAKE) modelith-layers
+endif
+
+# Verify the ADR-056 transitive closure gate (issue #1300): prints the
+# report separating "decision required" rows from "approved constant" rows.
+# -v is required so go test surfaces the report's stdout on a passing run.
+# STRICT since the 2026-08 ratification (39/39 whitelist entries accepted):
+# any consumer whose closure exceeds its whitelist or direct imports now
+# FAILS the gate — new closure growth must be adjudicated. Flip back to
+# report-only (-transitive-gate-report-only=true) only for diagnosis.
+# Deliberately NOT wired into verify-architecture.
+verify-transitive-gate:
+ifeq ($(IS_POSIX),true)
+	@go test -v -tags=arch -run TestVerifyTransitiveClosureGate ./internal/tools/analysis -args -transitive-gate-report-only=false
+else
+	@go test -v -tags=arch -run TestVerifyTransitiveClosureGate ./internal/tools/analysis -args -transitive-gate-report-only=false
+endif
+
+# Verify the complexity-pin catalog partition (issue #1297): runs the real
+# GatherComplexities against the live INTENTIONAL_NON_FIXES.md catalog and
+# asserts the post-fix 25-cataloged / 1-alert partition by name (line +
+# recorded CC). RED-first: the gate must fail against a drifted catalog —
+# never weaken it to land green.
+verify-nonfix-catalog:
+ifeq ($(IS_POSIX),true)
+	@go test -tags=arch -run TestVerifyNonFixCatalog ./internal/tools/analysis
+else
+	@go test -tags=arch -run TestVerifyNonFixCatalog ./internal/tools/analysis
 endif
 
 # AI-SAFE RACE TEST: 
@@ -570,10 +659,14 @@ check: fmt tidy build
 	@$(MAKE) lint
 	@echo "=== verify-architecture ==="
 	@$(MAKE) verify-architecture
+	@echo "=== verify-nonfix-catalog ==="
+	@$(MAKE) verify-nonfix-catalog
 	@echo "=== verify-mock-pattern ==="
 	@$(MAKE) verify-mock-pattern
 	@echo "=== verify-session-provider-mock ==="
 	@$(MAKE) verify-session-provider-mock
+	@echo "=== verify-tools-adapter-import ==="
+	@$(MAKE) verify-tools-adapter-import
 	@echo "=== verify-no-test-sleep ==="
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="
@@ -600,10 +693,14 @@ check-full: fmt tidy build
 	@$(MAKE) lint
 	@echo "=== verify-architecture ==="
 	@$(MAKE) verify-architecture
+	@echo "=== verify-nonfix-catalog ==="
+	@$(MAKE) verify-nonfix-catalog
 	@echo "=== verify-mock-pattern ==="
 	@$(MAKE) verify-mock-pattern
 	@echo "=== verify-session-provider-mock ==="
 	@$(MAKE) verify-session-provider-mock
+	@echo "=== verify-tools-adapter-import ==="
+	@$(MAKE) verify-tools-adapter-import
 	@echo "=== verify-no-test-sleep ==="
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="

@@ -10,7 +10,7 @@
 //
 // Agent Lifecycle & Configuration:
 //   - Chatter / ChatterFactory / ChatExecutor / ChatConfigurator / ChatEventSource
-//   - SessionConfig / SessionDependencies / Session
+//   - ChatterComposer / Session
 //
 // Conversation Persistence:
 //   - HistoryManager / HistoryReader / HistoryWriter / HistoryModifier
@@ -29,10 +29,6 @@
 // Conversation Compression:
 //   - Summarizer
 //
-// Context Pipeline:
-//   - ContextTransformer / ContextRequest / ContextMetadata
-//   - PruningPolicy / ResultStrategy
-//
 // Persistence & State:
 //   - PersistenceProvider / SessionProvider / SessionStateProvider
 //   - TaskStore / TaskReader / TaskWriter / Task
@@ -46,7 +42,6 @@
 //   - SuggestionService / SuggestionProvider / PromptTracker
 //
 // Infrastructure Wiring:
-//   - LLMDependencyProvider / PersistenceDependencyProvider / InfrastructureDependencyProvider
 //   - HistoryManagerProvider / SuggestionProvider
 //
 // All interfaces in this package are designed for dependency injection.

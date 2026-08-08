@@ -20,7 +20,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/encoding"
-	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/pkg/filepathutil"
 )
 
@@ -58,11 +57,23 @@ type processExecutor struct {
 
 const maxScannerCapacity = 10 * 1024 * 1024
 
-// newprocessExecutor creates a new processExecutor.
+// newprocessExecutor creates a new processExecutor backed by the default
+// OS filesystem (defaultFS in default_fs.go — the package's single
+// sanctioned adapter construction site, ADR-055).
 func newprocessExecutor() *processExecutor {
-	return &processExecutor{
-		fs: infra_persistence.NewOSFileSystem(),
+	return newprocessExecutorWithFS(defaultFS)
+}
+
+// newprocessExecutorWithFS creates a processExecutor with an explicit
+// filesystem. A nil fs is a contract violation on a test-reachable seam:
+// in production the hub (validateRegistrationParams) guarantees non-nil.
+// Use the zero-arg newprocessExecutor() for the default OS filesystem
+// instead of passing nil here.
+func newprocessExecutorWithFS(fs persistence.FileSystem) *processExecutor {
+	if fs == nil {
+		panic("newprocessExecutorWithFS: nil fs — use newprocessExecutor() for the default OS filesystem")
 	}
+	return &processExecutor{fs: fs}
 }
 
 // RunCommand executes a single command.

@@ -95,11 +95,11 @@ The cyclomatic complexity score per function produced by the complexity tooling.
 | --- | --- | --- |
 | `function` | string | The fully qualified function name being measured. |
 | `score` | integer | The cyclomatic complexity value. |
-| `threshold` | integer | The policy threshold — scores below 10 are acceptable without rationale. |
+| `threshold` | integer | The policy threshold — scores of 10 or below are acceptable without rationale. |
 
 **Invariants**
 
-- **complexity-threshold-policy** — A function with CC below 10 is acceptable by policy; CC at or above 10 requires either a refactor or a documented `IntentionalNonFix` entry.
+- **complexity-threshold-policy** — A function with CC of 10 or below is acceptable by policy; CC above 10 (11 or more) requires either a refactor or a documented `IntentionalNonFix` entry.
 
 ### `CoverageReport`
 
@@ -341,7 +341,7 @@ Complexity tooling reports CC=12 on a type-switch dispatch handler. The `Archite
 
 **Invariants touched**
 
-- **complexity-threshold-policy** — A function with CC below 10 is acceptable by policy; CC at or above 10 requires either a refactor or a documented `IntentionalNonFix` entry.
+- **complexity-threshold-policy** — A function with CC of 10 or below is acceptable by policy; CC above 10 (11 or more) requires either a refactor or a documented `IntentionalNonFix` entry.
 - **nonfix-has-acceptance-class** — Every `IntentionalNonFix` entry carries an acceptance class and a rationale; an entry without both is invalid.
 - **catalog-architect-curated** — Only the `Architect` records or removes `IntentionalNonFix` entries; an `Agent` never edits the catalog unilaterally.
 

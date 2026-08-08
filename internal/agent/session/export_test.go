@@ -16,13 +16,16 @@ import (
 // Exported for external tests
 type SessionManagerInternal = sessionManager
 type SessionConfigInternal = sessionConfig
+
+// SessionDependenciesInternal is a legacy test alias kept for ADR-056:
+// renaming churns ~15 test sites for zero production value.
 type SessionDependenciesInternal = agenttest.StubChatterComposer
 
-func (o *sessionManager) ApplyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer, tuiOutput bool) (*ui.Bridge, error) {
+func (o *sessionManager) ApplyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer, tuiOutput bool) (*ui.Bridge, error) {
 	return o.applyConfiguration(ctx, chatAgent, sCfg, sd, capturer, tuiOutput)
 }
 
-func (o *sessionManager) RenderPostTUISummary(ts events.TurnStatus, sd ports.ChatterComposer, sc ports.SessionConfig, ic ports.Capturer) {
+func (o *sessionManager) RenderPostTUISummary(ts events.TurnStatus, sd ports.ChatterComposer, sc SessionConfig, ic ports.Capturer) {
 	o.renderPostTUISummary(ts, sd, sc, ic)
 }
 

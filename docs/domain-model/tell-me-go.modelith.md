@@ -96,7 +96,7 @@ The in-flight prompt payload assembled by the `Orchestrator` before each `Turn`.
 
 ### `History`
 
-The persisted record of a `Session`'s `Turn`s, stored as an append-only JSON Lines file (`history.jsonl`) with an incremental patch system for metadata updates (e.g. pinning). Older `Turn`s that have been summarised are moved to a separate archive file (`history.archive.jsonl`) to keep the in-memory working set bounded. The archive supports O(1) lazy navigation via byte-offset indexing (`file.Seek`) — it is never loaded fully into memory. Patches are merged into clean base records during compaction (triggered by `save` or `rollback`). Separate from the in-memory `Session` state.
+The persisted record of a `Session`'s `Turn`s, stored as an append-only JSON Lines file (`history.jsonl`) with an incremental patch system for metadata updates (e.g. pinning). Older `Turn`s that have been summarised are moved to a separate archive file (`history.archive.jsonl`) to keep the in-memory working set bounded. The archive supports O(1) lazy navigation via byte-offset indexing (`file.Seek`) — it is never loaded fully into memory. Patches are merged into clean base records during compaction (triggered by `save`, `rollback`, `edit`, and per-turn pipeline rewrites). Separate from the in-memory `Session` state.
 
 **Attributes**
 

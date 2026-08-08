@@ -623,8 +623,9 @@ func collectUpdatedParts(original []*llm.Part, newText string, newThought string
 }
 
 // UpdateTurnContent replaces the text and thought parts of the Content at
-// the given index, then persists via Save. The index must reference a
-// model-role entry. An empty newThought removes any thought part.
+// the given index. The replacement is persisted via Save before memory is
+// updated (durability-first). The index must reference a model-role entry.
+// An empty newThought removes any thought part.
 func (m *Manager) UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -636,11 +637,21 @@ func (m *Manager) UpdateTurnContent(ctx context.Context, index int, newText stri
 		return fmt.Errorf("index %d has role %q, expected \"model\"", index, m.Contents[index].Role)
 	}
 
-	m.Contents[index].Parts = collectUpdatedParts(m.Contents[index].Parts, newText, newThought)
-
-	if err := m.store.Save(ctx, m.Contents); err != nil {
+	newParts := collectUpdatedParts(m.Contents[index].Parts, newText, newThought)
+	copyOfContents := make([]*llm.Content, len(m.Contents))
+	for i, c := range m.Contents {
+		if i == index {
+			cc := *c // shallow struct copy — Content has no map fields
+			cc.Parts = newParts
+			copyOfContents[i] = &cc
+		} else {
+			copyOfContents[i] = c // safe: Save deep-clones its input
+		}
+	}
+	if err := m.store.Save(ctx, copyOfContents); err != nil {
 		return fmt.Errorf("save after updating turn %d: %w", index, err)
 	}
+	m.Contents[index].Parts = newParts
 	return nil
 }
 

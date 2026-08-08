@@ -239,7 +239,7 @@ func TestRegisterSystem_PartialFailure(t *testing.T) {
 			mockToolRegistry: &mockToolRegistry{},
 			failOnTool:       "execute_command",
 		}
-		err := registerSystem(registry, sm, validator, nil, nil)
+		err := registerSystem(registry, sm, validator, nil, nil, persistencetest.NewPlainOSFileSystem())
 		if err == nil {
 			t.Fatal("expected error from registerSystem")
 		}
@@ -253,7 +253,7 @@ func TestRegisterSystem_PartialFailure(t *testing.T) {
 			mockToolRegistry: &mockToolRegistry{},
 			failOnTool:       "pipe_commands",
 		}
-		err := registerSystem(registry, sm, validator, nil, nil)
+		err := registerSystem(registry, sm, validator, nil, nil, persistencetest.NewPlainOSFileSystem())
 		if err == nil {
 			t.Fatal("expected error from registerSystem")
 		}
@@ -268,7 +268,7 @@ func TestRegisterSystem_PartialFailure(t *testing.T) {
 			failOnTool:       "check_system_health",
 		}
 		mockHealth := &mockHealthCheckManager{}
-		err := registerSystem(registry, sm, validator, mockHealth, nil)
+		err := registerSystem(registry, sm, validator, mockHealth, nil, persistencetest.NewPlainOSFileSystem())
 		if err == nil {
 			t.Fatal("expected error from registerSystem")
 		}
@@ -430,7 +430,7 @@ func TestRegister_SystemToolsOnly(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	reg := registry.New()
 	// Register only system tools (skip git/files)
-	err := registerSystem(reg, sm, security.NewCommandValidator(sm, nil), nil, nil)
+	err := registerSystem(reg, sm, security.NewCommandValidator(sm, nil), nil, nil, persistencetest.NewPlainOSFileSystem())
 	if err != nil {
 		t.Fatalf("registerSystem failed: %v", err)
 	}
@@ -457,7 +457,7 @@ func TestRegister_WithHealth(t *testing.T) {
 		Components:    map[ports.Component]ports.ComponentReport{},
 		Timestamp:     time.Now(),
 	}}
-	err := registerSystem(reg, sm, security.NewCommandValidator(sm, nil), mockHealth, nil)
+	err := registerSystem(reg, sm, security.NewCommandValidator(sm, nil), mockHealth, nil, persistencetest.NewPlainOSFileSystem())
 	if err != nil {
 		t.Fatalf("registerSystem failed: %v", err)
 	}
@@ -479,7 +479,7 @@ func TestRegisterSystem_HealthNil(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	validator := &toolstest.MockCommandValidator{}
 
-	err := registerSystem(reg, sm, validator, nil, nil)
+	err := registerSystem(reg, sm, validator, nil, nil, persistencetest.NewPlainOSFileSystem())
 	if err != nil {
 		t.Fatalf("registerSystem with nil health failed: %v", err)
 	}

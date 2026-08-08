@@ -17,7 +17,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
@@ -502,12 +501,13 @@ func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 	// Custom transformer that blocks mid-execution
 	prepareStarted := make(chan struct{})
 	prepareResume := make(chan struct{})
-	blockingTransformer := &agenttest.MockTransformer{}
-	blockingTransformer.SetTransformFn(func(ctx context.Context, req *ports.ContextRequest) error {
-		close(prepareStarted)
-		<-prepareResume
-		return nil
-	})
+	blockingTransformer := &scriptedTransformer{
+		fn: func(ctx context.Context, req *sessctx.ContextRequest) error {
+			close(prepareStarted)
+			<-prepareResume
+			return nil
+		},
+	}
 
 	cm.Pipeline = sessctx.NewContextPipeline(blockingTransformer)
 
@@ -667,3 +667,20 @@ func TestCountingEventBus(t *testing.T) {
 		t.Errorf("expected count 2, got %d", got)
 	}
 }
+
+// scriptedTransformer is a ContextTransformer test double with a scriptable
+// Transform body. It lives locally because agenttest cannot import
+// session/context without creating a test-import cycle with the context
+// package's own tests.
+type scriptedTransformer struct {
+	fn func(ctx context.Context, req *sessctx.ContextRequest) error
+}
+
+func (t *scriptedTransformer) Transform(ctx context.Context, req *sessctx.ContextRequest) error {
+	if t.fn != nil {
+		return t.fn(ctx, req)
+	}
+	return nil
+}
+
+func (t *scriptedTransformer) Priority() int { return 50 }

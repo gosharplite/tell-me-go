@@ -9,7 +9,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
-// MockPruningPolicy is a test double for ports.PruningPolicy. The
+// MockPruningPolicy is a test double for session/context.PruningPolicy. The
 // default MarkTurns is a no-op and Name returns "MockPolicy"; override
 // the *Fn fields to script behaviour.
 type MockPruningPolicy struct {

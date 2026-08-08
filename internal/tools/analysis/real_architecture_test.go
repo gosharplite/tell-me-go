@@ -9,13 +9,19 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
 var strictArch = flag.Bool("strict-arch", true, "fail test on architecture violations")
+
+// transitiveGateReportOnly is the v1 posture for the ADR-056 transitive
+// closure gate (issue #1300): default true = non-failing, report-only. The
+// issue's implementation detail pins "default non-failing" for gate v1; the
+// ADR's "default-strict" is the post-ratification posture. This flag is
+// DISTINCT from -strict-arch, which governs only TestVerifyRealArchitecture.
+// Flipping to strict post-ratification = -transitive-gate-report-only=false.
+var transitiveGateReportOnly = flag.Bool("transitive-gate-report-only", true, "report-only mode for the transitive closure gate")
 
 func TestVerifyRealArchitecture(t *testing.T) {
 	m := &architectureManager{
@@ -37,26 +43,43 @@ func TestVerifyRealArchitecture(t *testing.T) {
 	}
 }
 
-// findModuleRoot walks up from the current working directory until it finds
-// a go.mod file, returning the absolute path to the module root.
-func findModuleRoot() (string, error) {
-	dir, err := os.Getwd()
+// TestVerifyTransitiveClosureGate is the ADR-056 Decision 2 gate: it
+// measures the module's transitive import closure against the live
+// architect-curated whitelist (docs/architect/TRANSITIVE_IMPORT_WHITELIST.md,
+// anchored via findModuleRoot — the loadNonFixCatalog precedent) and prints
+// the v1 report separating "decision required" rows from "approved constant"
+// rows. Default posture is report-only (non-failing); the test fails only
+// when -transitive-gate-report-only=false and decision-required rows exist.
+func TestVerifyTransitiveClosureGate(t *testing.T) {
+	idx := getRealArchitectureIndexer(t)
+
+	pkgs, err := idx.Packages(context.Background(), nil)
 	if err != nil {
-		return "", err
+		t.Fatalf("failed to load packages for transitive gate: %v", err)
 	}
-	dir, err = filepath.Abs(dir)
+	modulePath := detectModulePath(pkgs)
+	if modulePath == "" {
+		t.Fatal("failed to detect module path for transitive gate")
+	}
+
+	graph := BuildInternalImportGraph(pkgs, modulePath)
+	wl, err := LoadTransitiveWhitelist()
 	if err != nil {
-		return "", err
+		t.Fatalf("failed to load transitive import whitelist: %v", err)
 	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir, nil
+
+	classifications := ClassifyAllConsumers(graph, wl, modulePath)
+	report := FormatTransitiveGateReport(classifications, wl)
+	fmt.Print(report)
+
+	var decisionRequired int
+	for _, c := range classifications {
+		if c.Status == StatusDecisionRequired {
+			decisionRequired++
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("go.mod not found in any parent directory")
-		}
-		dir = parent
+	}
+	if decisionRequired > 0 && !*transitiveGateReportOnly {
+		t.Errorf("Transitive closure gate FAILED: %d decision-required consumers (run with -transitive-gate-report-only=false to enforce)", decisionRequired)
 	}
 }
 

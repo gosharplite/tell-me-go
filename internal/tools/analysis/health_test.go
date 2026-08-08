@@ -602,7 +602,7 @@ func TestCheckComplexity_AllCataloged(t *testing.T) {
 
 	catalog := "### ui/tui/progress/model.go — handleDomainEvent (CC=12)\n\n" +
 		"- **Status**: ACCEPTED (2026-07)\n" +
-		"- **See**: `internal/ui/tui/progress/model.go:250`\n"
+		"- **See**: `internal/ui/tui/progress/model.go:251`\n"
 	path := filepath.Join(t.TempDir(), "INTENTIONAL_NON_FIXES.md")
 	if err := os.WriteFile(path, []byte(catalog), 0644); err != nil {
 		t.Fatalf("write fixture: %v", err)
@@ -612,7 +612,7 @@ func TestCheckComplexity_AllCataloged(t *testing.T) {
 		catalogPath: path,
 		complexity: &stubComplexityAnalyzer{
 			complexities: []funcComplexity{
-				{Name: "(*model).Update", Complexity: 14, FilePath: "internal/ui/tui/progress/model.go", Line: 250},
+				{Name: "(*model).Update", Complexity: 14, FilePath: "internal/ui/tui/progress/model.go", Line: 251},
 			},
 		},
 	}

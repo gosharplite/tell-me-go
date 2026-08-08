@@ -68,7 +68,7 @@ func TestMoveDefinition(t *testing.T) {
 				return "", fmt.Errorf("error")
 			},
 		}
-		mgr := newRefactorManager(sp)
+		mgr := newRefactorManager(defaultFS, sp)
 		args := map[string]interface{}{
 			"symbol":   "MyFunc",
 			"src_file": "src.go",
@@ -168,7 +168,7 @@ func setupMoveWorkspace(t *testing.T, files map[string]string) (*refactorManager
 	}
 
 	sp := &refactorMockSecurityProvider{}
-	return newRefactorManager(sp), tmpDir
+	return newRefactorManager(defaultFS, sp), tmpDir
 }
 
 func verifyFileContent(t *testing.T, path string, expectedContains []string, expectedAbsent []string) {
@@ -307,7 +307,7 @@ func TestMoveDefinition_ErrorPaths(t *testing.T) {
 	t.Run("UnmarshalArgs error", func(t *testing.T) {
 		t.Parallel()
 		sp := &refactorMockSecurityProvider{}
-		mgr := newRefactorManager(sp)
+		mgr := newRefactorManager(defaultFS, sp)
 		_, err := mgr.MoveDefinition(ctx, map[string]interface{}{"symbol": make(chan int)}, nil)
 		require.Error(t, err)
 	})
@@ -324,7 +324,7 @@ func TestMoveDefinition_ErrorPaths(t *testing.T) {
 				return path, nil
 			},
 		}
-		mgr := newRefactorManager(sp)
+		mgr := newRefactorManager(defaultFS, sp)
 		args := map[string]interface{}{
 			"symbol":   "MyFunc",
 			"src_file": "src.go",
@@ -339,7 +339,7 @@ func TestMoveDefinition_ErrorPaths(t *testing.T) {
 	t.Run("src file load error", func(t *testing.T) {
 		t.Parallel()
 		sp := &refactorMockSecurityProvider{}
-		mgr := newRefactorManager(sp)
+		mgr := newRefactorManager(defaultFS, sp)
 		args := map[string]interface{}{
 			"symbol":   "MyFunc",
 			"src_file": "/nonexistent/src.go",
@@ -377,7 +377,7 @@ func TestRenameSymbol_ErrorPaths(t *testing.T) {
 	t.Run("UnmarshalArgs error", func(t *testing.T) {
 		t.Parallel()
 		sp := &refactorMockSecurityProvider{}
-		mgr := newRefactorManager(sp)
+		mgr := newRefactorManager(defaultFS, sp)
 		_, err := mgr.RenameSymbol(ctx, map[string]interface{}{"old_name": make(chan int)}, nil)
 		require.Error(t, err)
 	})
@@ -389,7 +389,7 @@ func TestRenameSymbol_ErrorPaths(t *testing.T) {
 				return "", fmt.Errorf("path not writable")
 			},
 		}
-		mgr := newRefactorManager(sp)
+		mgr := newRefactorManager(defaultFS, sp)
 		args := map[string]interface{}{
 			"old_name": "Foo",
 			"new_name": "Bar",
@@ -406,7 +406,7 @@ func TestRenameSymbol_ErrorPaths(t *testing.T) {
 		t.Parallel()
 		emptyDir := t.TempDir()
 		sp := &refactorMockSecurityProvider{}
-		mgr := newRefactorManager(sp)
+		mgr := newRefactorManager(defaultFS, sp)
 		args := map[string]interface{}{
 			"old_name": "Foo",
 			"new_name": "Bar",
@@ -427,7 +427,7 @@ func TestRenameSymbol_ErrorPaths(t *testing.T) {
 		require.NoError(t, os.WriteFile(brokenPath, []byte("package test\nfunc broken() {"), 0644))
 
 		sp := &refactorMockSecurityProvider{}
-		mgr := newRefactorManager(sp)
+		mgr := newRefactorManager(defaultFS, sp)
 		args := map[string]interface{}{
 			"old_name": "Foo",
 			"new_name": "Bar",
@@ -451,7 +451,7 @@ func TestRenameSymbol_ErrorPaths(t *testing.T) {
 				return dir, nil
 			},
 		}
-		mgr := newRefactorManager(sp)
+		mgr := newRefactorManager(defaultFS, sp)
 		args := map[string]interface{}{
 			"old_name": "Foo",
 			"new_name": "Bar",
@@ -488,10 +488,10 @@ func TestLoadGoFilesForRename_GlobError(t *testing.T) {
 	t.Parallel()
 
 	sp := &refactorMockSecurityProvider{}
-	mgr := newRefactorManager(sp)
+	mgr := newRefactorManager(defaultFS, sp)
 
 	// Use a path with unclosed glob metacharacter to trigger Glob error
-	_, _, err := mgr.loadGoFilesForRename("/tmp/[invalid")
+	_, _, err := mgr.loadGoFilesForRename(context.Background(), "/tmp/[invalid")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "glob")
 }

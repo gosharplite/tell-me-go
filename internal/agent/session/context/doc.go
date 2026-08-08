@@ -5,7 +5,7 @@
 Package context implements the context preparation pipeline for the chat session.
 
 It encapsulates the construction, validation, and pruning of LLM input context
-through a chain of ports.ContextTransformer instances. The package is consumed
+through a chain of ContextTransformer instances. The package is consumed
 by the parent session package and by internal/agent.
 
 Entry points:

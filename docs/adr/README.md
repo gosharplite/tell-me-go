@@ -60,6 +60,8 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-052** | DeepSeek/Kimi Thinking Mode Toggle and user_id Isolation | 2026-07 | Accepted | [2026-07-deepseek-thinking-toggle.md](2026-07-deepseek-thinking-toggle.md) |
 | **ADR-053** | Remove `get_cost_summary` Tool and DailyCost Metric — Deprecate the Global Cost Ledger | 2026-08 | Accepted | [2026-08-remove-get-cost-summary-and-daily-cost-metric.md](2026-08-remove-get-cost-summary-and-daily-cost-metric.md) |
 | **ADR-054** | Catalog Cross-Reference Contract for Coverage & Complexity Reports | 2026-08 | Accepted | [2026-08-catalog-cross-reference-reporting-contract.md](2026-08-catalog-cross-reference-reporting-contract.md) |
+| **ADR-055** | Tools-Layer Filesystem Access via Injected Domain Port (defaultFS Fallback) | 2026-08 | Accepted | [2026-08-tools-filesystem-injection.md](2026-08-tools-filesystem-injection.md) |
+| **ADR-056** | Domain-Home Criterion for Cross-Layer Contracts; Transitive-Closure Gate; Context-Family Extraction | 2026-08 | Accepted | [2026-08-contract-home-and-transitive-closure-gate.md](2026-08-contract-home-and-transitive-closure-gate.md) |
 
 ## How to Create a New ADR
 

@@ -10,7 +10,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -46,7 +45,7 @@ func TestFactory_BuildStandardPipeline_PrunerInclusion(t *testing.T) {
 
 			// Ensure the constructed pipeline is valid and executable
 			ctx := context.Background()
-			req := &ports.ContextRequest{
+			req := &ContextRequest{
 				Turn:    1,
 				History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 			}
@@ -86,7 +85,7 @@ type mockTransformer struct {
 	name string
 }
 
-func (m *mockTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (m *mockTransformer) Transform(ctx context.Context, req *ContextRequest) error {
 	return nil
 }
 

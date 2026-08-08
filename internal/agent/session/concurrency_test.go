@@ -12,7 +12,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +21,7 @@ type blockingTransformer struct {
 	entered  chan struct{}
 }
 
-func (t *blockingTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *blockingTransformer) Transform(ctx context.Context, req *sessctx.ContextRequest) error {
 	// Signal we want history persisted so ExecuteWithPersistence calls persistFn
 	req.PersistHistory = true
 	if t.entered != nil {
@@ -42,7 +41,7 @@ type noopTransformer struct {
 	priority int
 }
 
-func (t *noopTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *noopTransformer) Transform(ctx context.Context, req *sessctx.ContextRequest) error {
 	return nil
 }
 

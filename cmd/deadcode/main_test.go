@@ -21,12 +21,17 @@ import (
 
 // mockDeadCodeAnalyzer is a test double for the deadCodeAnalyzer interface.
 type mockDeadCodeAnalyzer struct {
-	reports []analysis.OrphanReport
-	err     error
+	reports        []analysis.OrphanReport
+	exitCandidates []analysis.ExitCandidate
+	err            error
 }
 
 func (m *mockDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, root string, deep bool, heartbeat chan<- struct{}) ([]analysis.OrphanReport, error) {
 	return m.reports, m.err
+}
+
+func (m *mockDeadCodeAnalyzer) GatherExitCandidates(ctx context.Context, root string, heartbeat chan<- struct{}) ([]analysis.ExitCandidate, error) {
+	return m.exitCandidates, m.err
 }
 
 func TestMain_Execution(t *testing.T) {
@@ -162,5 +167,100 @@ func TestRun_ReportsFound(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "[PRIVATE] internal/privpkg.PrivateType (Type) — no external usages") {
 		t.Errorf("stdout missing PRIVATE report line: %q", stdout)
+	}
+}
+
+func TestRun_ExitCandidatesSection(t *testing.T) {
+	origNewAnalyzer := newAnalyzer
+	t.Cleanup(func() { newAnalyzer = origNewAnalyzer })
+
+	newAnalyzer = func(sp domain_security.PathValidator) deadCodeAnalyzer {
+		return &mockDeadCodeAnalyzer{
+			reports: []analysis.OrphanReport{},
+			exitCandidates: []analysis.ExitCandidate{
+				{
+					Symbol:       "Logger",
+					Pkg:          "internal/domain/ports",
+					Layer:        "application",
+					Consumers:    2,
+					Implementers: 0,
+				},
+				{
+					Symbol:    "Health",
+					Pkg:       "internal/domain/ports",
+					Layer:     "orphan (no non-di consumers or implementers)",
+					Consumers: 0,
+				},
+			},
+		}
+	}
+
+	oldStdout := os.Stdout
+	t.Cleanup(func() { os.Stdout = oldStdout })
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+
+	exitCode := run()
+
+	if err := w.Close(); err != nil {
+		t.Logf("closing stdout pipe writer: %v", err)
+	}
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	if exitCode != 0 {
+		t.Errorf("exit code = %d, want 0 (report-only)", exitCode)
+	}
+	stdout := buf.String()
+
+	// The banner must appear even though there are no orphan reports.
+	if !strings.Contains(stdout, "— EXIT CANDIDATES (ADR-056 Decision 1, report-only) —") {
+		t.Errorf("stdout missing exit-candidates banner: %q", stdout)
+	}
+	// Rows render symbol, layer, and counts.
+	if !strings.Contains(stdout, "| internal/domain/ports.Logger | application | 2 | 0 |") {
+		t.Errorf("stdout missing exit-candidate row: %q", stdout)
+	}
+	if !strings.Contains(stdout, "| internal/domain/ports.Health | orphan (no non-di consumers or implementers) | 0 | 0 |") {
+		t.Errorf("stdout missing orphan exit-candidate row: %q", stdout)
+	}
+}
+
+func TestRun_ExitCandidatesSection_NoCandidates(t *testing.T) {
+	origNewAnalyzer := newAnalyzer
+	t.Cleanup(func() { newAnalyzer = origNewAnalyzer })
+
+	newAnalyzer = func(sp domain_security.PathValidator) deadCodeAnalyzer {
+		return &mockDeadCodeAnalyzer{reports: []analysis.OrphanReport{}}
+	}
+
+	oldStdout := os.Stdout
+	t.Cleanup(func() { os.Stdout = oldStdout })
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+
+	exitCode := run()
+
+	if err := w.Close(); err != nil {
+		t.Logf("closing stdout pipe writer: %v", err)
+	}
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	if exitCode != 0 {
+		t.Errorf("exit code = %d, want 0 (report-only)", exitCode)
+	}
+	stdout := buf.String()
+	if !strings.Contains(stdout, "— EXIT CANDIDATES (ADR-056 Decision 1, report-only) —") {
+		t.Errorf("stdout missing exit-candidates banner: %q", stdout)
+	}
+	if !strings.Contains(stdout, "no exit candidates") {
+		t.Errorf("stdout missing no-candidates note: %q", stdout)
 	}
 }

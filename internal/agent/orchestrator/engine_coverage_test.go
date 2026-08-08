@@ -92,6 +92,83 @@ func TestRunPhaseLoop_EmergencySave(t *testing.T) {
 	assert.True(t, saveCalled, "emergencySave should have triggered PhasePersisting")
 }
 
+// failOnNthAddContent is a local embedded double of MockHistoryManager whose
+// AddContent fails on the failCall-th invocation with a raw filesystem error.
+// The error is intentionally NOT transient (per gateway.go:36, IsTransient
+// matches only ErrTransient/ErrRateLimit) so the turn fails terminally and
+// drives the emergencySave re-run path.
+type failOnNthAddContent struct {
+	*agenttest.MockHistoryManager
+	calls    int
+	failCall int
+}
+
+func (m *failOnNthAddContent) AddContent(ctx context.Context, content *llm.Content) error {
+	m.calls++
+	if m.calls == m.failCall {
+		return errors.New("disk full") // raw fs error — NOT transient, per gateway.go:36
+	}
+	return m.MockHistoryManager.AddContent(ctx, content) // default append semantics
+}
+
+func TestEmergencySave_PartialPersistenceFailure_NoDuplicate(t *testing.T) {
+	// Issue #1302: when PersistenceStep partially succeeds (Response persisted,
+	// ToolResponse append fails), the emergencySave re-run must be idempotent —
+	// no duplicate Response parts, and the failed ToolResponse must be retried.
+
+	gw := &agenttest.MockGateway{}
+	ex := &agenttest.MockAgentExecutor{}
+	reg := &agenttest.MockToolRegistry{}
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+	eventstest.CleanupBus(t, bus)
+	counter := &agenttest.MockTokenCounter{}
+
+	// Seed with a user message so the role-alternation path in cm.AddContent
+	// validates: the first append is "model", the second is "tool".
+	hMock := &failOnNthAddContent{
+		MockHistoryManager: &agenttest.MockHistoryManager{
+			Contents: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial user message"}}}},
+		},
+		failCall: 2, // partial success: first append succeeds, second fails
+	}
+	cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
+
+	engine := NewEngine(gw, ex, cm, reg, bus, counter)
+
+	turn := engine.CreateTurn(0, time.Now(), "")
+	turn.State.Phase = PhasePersisting
+	turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "resp"}}}
+	turn.State.ToolResponse = &llm.Content{Role: "tool", Parts: []*llm.Part{{Text: "tool"}}}
+
+	err := engine.runPhaseLoop(context.Background(), turn)
+
+	assert.Error(t, err, "turn failure semantics must be unchanged")
+
+	// Exactly one Response: the model entry must contain exactly one "resp" part.
+	// Pre-fix the emergencySave re-run hits the AppendParts fast path and
+	// duplicates the part inside the entry (2 "resp" parts in one model entry).
+	var modelEntries, respPartCount, toolEntries int
+	for _, c := range hMock.Contents {
+		switch c.Role {
+		case "model":
+			modelEntries++
+			for _, p := range c.Parts {
+				if p.Text == "resp" {
+					respPartCount++
+				}
+			}
+		case "tool":
+			toolEntries++
+		}
+	}
+	assert.Equal(t, 1, modelEntries, "exactly one model entry must be persisted")
+	assert.Equal(t, 1, respPartCount, "the model entry must contain exactly one 'resp' part (no duplicate append)")
+
+	// ToolResponse retried: post-fix WITHOUT the widened emergencySave guard
+	// this is 0 — the failed tool-results append would never be retried.
+	assert.Equal(t, 1, toolEntries, "the failed tool response must be retried exactly once")
+}
+
 func TestRunPhaseLoop_StopSignal(t *testing.T) {
 	engine := &Engine{
 		processors: map[TurnPhase]TurnProcessor{

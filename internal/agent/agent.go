@@ -141,7 +141,7 @@ func (a *agent) initComponents() error {
 		Summarizer: a.summarizer,
 		Estimator:  strategy,
 		Events:     a.events,
-		Extras:     []ports.ContextTransformer{agentskills.NewSkillInjector(a.skillSelector, a.logger, injectorOpts...)},
+		Extras:     []sessctx.ContextTransformer{agentskills.NewSkillInjector(a.skillSelector, a.logger, injectorOpts...)},
 	}
 
 	a.ctxManager = sessctx.NewManager(strategy, a.hManager, a.events, factory,
@@ -427,7 +427,7 @@ func (a *agent) getLogger() ports.Logger {
 // internal/agent/agentinternal sibling package, which wraps it with
 // typed accessors and clearly-suffixed *ForTest mutators. Production
 // code must not call any "*ForInternalUse" method. Production access
-// to agent internals goes through ports.SessionDependencies or
+// to agent internals goes through ports.ChatterComposer or
 // ports.Chatter. See ADR-022.
 //
 // The interface is satisfied only by the unexported *agent type.

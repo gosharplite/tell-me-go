@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
@@ -91,7 +92,7 @@ func newTestShellTool(sm shellSecurity, validator domain_security.CommandValidat
 		translator = &windowsTranslator{}
 		wrapper = &windowsShellWrapper{validator: validator}
 	}
-	return newshellTool(sm, &events.NoOpEventBus{}, validator, translator, wrapper)
+	return newshellTool(sm, &events.NoOpEventBus{}, validator, translator, wrapper, persistencetest.NewPlainOSFileSystem())
 }
 
 func setupTruncationTest(t *testing.T) (*shellTool, context.Context, map[string]interface{}) {
@@ -771,7 +772,7 @@ func TestShellTool_PrepareCommand_ShellSelection(t *testing.T) {
 	sm.SetBypassActive(true)
 	validator := &toolstest.MockCommandValidator{}
 	wrapper := &windowsShellWrapper{}
-	_ = newshellTool(sm, &events.NoOpEventBus{}, validator, &posixTranslator{}, wrapper)
+	_ = newshellTool(sm, &events.NoOpEventBus{}, validator, &posixTranslator{}, wrapper, persistencetest.NewPlainOSFileSystem())
 
 	t.Run("PowerShell indicators", func(t *testing.T) {
 		tests := []struct {
@@ -1485,7 +1486,7 @@ func TestShellTool_PrepareCommand_SplitError(t *testing.T) {
 			return nil, fmt.Errorf("split: mock failure")
 		},
 	}
-	tool := newshellTool(sm, &events.NoOpEventBus{}, validator, &posixTranslator{}, &posixShellWrapper{})
+	tool := newshellTool(sm, &events.NoOpEventBus{}, validator, &posixTranslator{}, &posixShellWrapper{}, persistencetest.NewPlainOSFileSystem())
 
 	parts, err := tool.prepareCommand("any command")
 
@@ -1516,7 +1517,7 @@ func TestShellTool_PrepareCommand_ValidateStructureError(t *testing.T) {
 			return fmt.Errorf("validate: structure rejected")
 		},
 	}
-	tool := newshellTool(sm, &events.NoOpEventBus{}, validator, &posixTranslator{}, &posixShellWrapper{})
+	tool := newshellTool(sm, &events.NoOpEventBus{}, validator, &posixTranslator{}, &posixShellWrapper{}, persistencetest.NewPlainOSFileSystem())
 
 	parts, err := tool.prepareCommand("echo hello")
 

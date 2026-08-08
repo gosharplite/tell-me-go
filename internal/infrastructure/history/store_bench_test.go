@@ -168,3 +168,42 @@ func BenchmarkJSONLStoreSave(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkJSONLStoreLoadWithPatches measures jsonlStore.Load latency with
+// _patch lines overlaid on a seeded base — the replay cost of accumulated
+// pin/append-parts patches (issue #1298, Finding 9). Sub-benchmarks vary
+// patch counts (0 = raw decode baseline, 50, 200) on a fixed 1000-line base.
+func BenchmarkJSONLStoreLoadWithPatches(b *testing.B) {
+	const baseSize = 1000
+	patchCounts := []int{0, 50, 200}
+	for _, patches := range patchCounts {
+		b.Run(fmt.Sprintf("patches=%d", patches), func(b *testing.B) {
+			ctx := context.Background()
+			tmpDir := b.TempDir()
+			fs := persistencetest.NewPlainOSFileSystem()
+			filePath := filepath.Join(tmpDir, "history.jsonl")
+			archivePath := filepath.Join(tmpDir, "archive.jsonl")
+
+			store := newJSONLStore(fs, filePath, archivePath)
+			seed := generateContents(baseSize)
+			if err := store.Save(ctx, seed); err != nil {
+				b.Fatalf("seed Save failed: %v", err)
+			}
+			// Overlay _patch lines via the real pin write path (UpdateMetadata),
+			// one line per call. Setup runs once, outside the timer.
+			for i := 0; i < patches; i++ {
+				if err := store.UpdateMetadata(ctx, i%baseSize, map[string]interface{}{"pinned": true}); err != nil {
+					b.Fatalf("patch overlay failed: %v", err)
+				}
+			}
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				if _, err := store.Load(ctx); err != nil {
+					b.Fatalf("Load failed: %v", err)
+				}
+			}
+		})
+	}
+}

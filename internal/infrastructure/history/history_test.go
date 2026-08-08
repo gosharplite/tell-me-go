@@ -1033,6 +1033,90 @@ func (m *mockFailingAppendPartsStore) AppendParts(ctx context.Context, index int
 
 func (m *mockFailingAppendPartsStore) Sync(ctx context.Context) error { return nil }
 
+// recordingStore captures the slice passed to Save for inspection.
+type recordingStore struct {
+	mockStore
+	lastSaved []*llm.Content
+}
+
+func (m *recordingStore) Save(ctx context.Context, contents []*llm.Content) error {
+	m.lastSaved = contents
+	return nil
+}
+
+func TestHistoryManager_UpdateTurnContent_DurabilityFirst(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	historyFile := filepath.Join(tmp, "history.jsonl")
+	archiveFile := filepath.Join(tmp, "archive.jsonl")
+
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+
+	if err := m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "old response"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	idx := 1
+
+	expectedErr := errors.New("save failed")
+	m.setStore(&mockFailingStore{err: expectedErr})
+
+	err := m.UpdateTurnContent(ctx, idx, "new response", "")
+	if err == nil || !errors.Is(err, expectedErr) {
+		t.Errorf("expected error %v, got %v", expectedErr, err)
+	}
+
+	// Verify in-memory state was NOT updated (durability-first)
+	if len(m.Contents[idx].Parts) != 1 || m.Contents[idx].Parts[0].Text != "old response" {
+		t.Errorf("expected original parts after failed save, got %+v", m.Contents[idx].Parts)
+	}
+}
+
+func TestHistoryManager_UpdateTurnContent_SaveReceivesEdit(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	historyFile := filepath.Join(tmp, "history.jsonl")
+	archiveFile := filepath.Join(tmp, "archive.jsonl")
+
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+
+	if err := m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "old response"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	idx := 1
+
+	rec := &recordingStore{}
+	m.setStore(rec)
+
+	if err := m.UpdateTurnContent(ctx, idx, "new response", ""); err != nil {
+		t.Fatalf("UpdateTurnContent: %v", err)
+	}
+
+	if rec.lastSaved == nil {
+		t.Fatal("expected Save to be called")
+	}
+	if len(rec.lastSaved) != len(m.Contents) {
+		t.Fatalf("expected %d entries saved, got %d", len(m.Contents), len(rec.lastSaved))
+	}
+
+	// The slice passed to Save must carry the edit at index (not just memory)
+	if len(rec.lastSaved[idx].Parts) != 1 || rec.lastSaved[idx].Parts[0].Text != "new response" {
+		t.Errorf("Save received unedited entry at index %d: %+v", idx, rec.lastSaved[idx].Parts)
+	}
+
+	// The entry handed to Save must be a copy, not the live in-memory entry
+	if rec.lastSaved[idx] == m.Contents[idx] {
+		t.Error("Save received the live in-memory entry; expected a copy")
+	}
+}
+
 // setupLegacyHistoryWithNoIDs creates a Manager backed by a persisted history
 // file containing entries that lack UUIDs. It then loads a fresh Manager which
 // triggers the backfill logic, returning the Manager with backfilled IDs.
@@ -1441,4 +1525,41 @@ func TestGetModelTurn(t *testing.T) {
 			t.Errorf("deep copy failed: expected 2 parts, got %d", len(second.Parts))
 		}
 	})
+}
+
+// captureLogger is a local stub implementing ports.Logger for
+// TestManager_WithLogger. It captures nothing — it exists only to verify
+// that WithLogger stores the injected logger. No new imports needed.
+type captureLogger struct{}
+
+func (l *captureLogger) Error(msg string, args ...any) {}
+func (l *captureLogger) Warn(msg string, args ...any)  {}
+func (l *captureLogger) Info(msg string, args ...any)  {}
+func (l *captureLogger) Debug(msg string, args ...any) {}
+
+func TestManager_WithLogger(t *testing.T) {
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "h.json"), filepath.Join(t.TempDir(), "h.archive.jsonl"))
+
+	// Default logger is a NoOpLogger.
+	if _, ok := m.logger.(*ports.NoOpLogger); !ok {
+		t.Errorf("expected default logger *ports.NoOpLogger, got %T", m.logger)
+	}
+
+	// WithLogger(nil) is a nil-guard no-op and remains chainable.
+	got := m.WithLogger(nil)
+	if got != m {
+		t.Errorf("expected WithLogger(nil) to return the same manager, got %p", got)
+	}
+	if _, ok := m.logger.(*ports.NoOpLogger); !ok {
+		t.Errorf("expected logger to remain *ports.NoOpLogger after WithLogger(nil), got %T", m.logger)
+	}
+
+	// A real logger is stored and the method is chainable.
+	got = m.WithLogger(&captureLogger{})
+	if got != m {
+		t.Errorf("expected WithLogger(&captureLogger{}) to return the same manager, got %p", got)
+	}
+	if _, ok := m.logger.(*captureLogger); !ok {
+		t.Errorf("expected logger to be *captureLogger, got %T", m.logger)
+	}
 }

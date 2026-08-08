@@ -1381,6 +1381,7 @@ func TestBootstrapper_Getters(t *testing.T) {
 	assert.NotNil(t, b.GetHistoryBrowser())
 	assert.NotNil(t, b.GetUIRenderer())
 	assert.NotNil(t, b.GetHistoryRenderer())
+	assert.NotNil(t, b.GetSystemMetricsProvider())
 }
 
 func TestGetUnifiedHistoryProvider_SuccessPath(t *testing.T) {

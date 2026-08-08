@@ -486,7 +486,7 @@ func addTurns(ctx context.Context, h ports.HistoryManager, count int) {
 	}
 }
 
-func verifyPinningResults(t *testing.T, meta *sessctx.Metadata, prepared []*llm.Content) {
+func verifyPinningResults(t *testing.T, meta *sessctx.ContextMetadata, prepared []*llm.Content) {
 	// Look for "u1" (the pinned turn)
 	foundPinned := false
 	for _, c := range prepared {
