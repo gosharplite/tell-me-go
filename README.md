@@ -43,11 +43,12 @@ following files to establish a working understanding of the project:
 |---|---|---|
 | 1 | `README.md` | Project overview, features, configuration, usage |
 | 2 | `Makefile` | Build/test conventions, coverage exclusions, architectural guard checks |
-| 3 | `docs/domain-model/` | Canonical domain model — entities, relationships, invariants, scenarios |
-| 4 | `docs/architect/environments/` | Environment management evolution and tooling (Toby, Dobby, etc.) |
-| 5 | `docs/architect/environments/domain-model/` | Domain model for environment management concepts |
-| 6 | `docs/architect/INTENTIONAL_NON_FIXES.md` | Known code patterns deliberately left as-is, with rationale |
-| 7 | Execute `list_skills` | Discover installed skills available for the session |
+| 3 | `docs/domain-model/tell-me-go.modelith.md` | Canonical domain model — entities, relationships, invariants, scenarios |
+| 4 | `docs/domain-model/quality.modelith.md` | Quality process model — `QualityPipeline` gates, coverage/complexity triage, `NonFixCatalog` curation rules |
+| 5 | `docs/architect/environments/` | Environment management evolution and tooling (Toby, Dobby, etc.) |
+| 6 | `docs/architect/environments/domain-model/environment-management.modelith.md` | Domain model for environment management concepts |
+| 7 | `docs/architect/INTENTIONAL_NON_FIXES.md` | Known code patterns deliberately left as-is, with rationale |
+| 8 | Execute `list_skills` | Discover installed skills available for the session |
 
 ## 📋 Prerequisites
 *   **Go**: 1.26.4 or higher.
