@@ -333,8 +333,19 @@ func TestFormatExitCandidates(t *testing.T) {
 		assert.Contains(t, out, "report-only")
 		assert.Contains(t, out, "internal/infrastructure/di")
 		assert.Contains(t, out, "internal/infrastructure/factory")
-		assert.Contains(t, out, "| "+exitTestModule+"/internal/domain/ports.Logger | application | 2 | 0 |")
-		assert.Contains(t, out, "| "+exitTestModule+"/internal/domain/ports.Config | "+orphanExitLayerLabel+" | 0 | 0 |")
+		assert.Contains(t, out, "| "+exitTestModule+"/internal/domain/ports.Logger | application | 2 | 0 | NEW — adjudicate |")
+		assert.Contains(t, out, "| "+exitTestModule+"/internal/domain/ports.Config | "+orphanExitLayerLabel+" | 0 | 0 | NEW — adjudicate |")
+	})
+
+	t.Run("documented stay annotated", func(t *testing.T) {
+		t.Parallel()
+		candidates := []ExitCandidate{
+			{Symbol: "Capturer", Pkg: exitTestModule + "/internal/domain/ports", Layer: layerApplication, Consumers: 28, Implementers: 416},
+		}
+		out := FormatExitCandidates(candidates)
+
+		assert.Contains(t, out, "1 recorded stay(s) (ADR-056), 0 new candidate(s)")
+		assert.Contains(t, out, "stay: di signature (BootstrapperConfig)")
 	})
 
 	t.Run("no candidates", func(t *testing.T) {

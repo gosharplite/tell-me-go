@@ -220,11 +220,12 @@ func TestRun_ExitCandidatesSection(t *testing.T) {
 	if !strings.Contains(stdout, "— EXIT CANDIDATES (ADR-056 Decision 1, report-only) —") {
 		t.Errorf("stdout missing exit-candidates banner: %q", stdout)
 	}
-	// Rows render symbol, layer, and counts.
-	if !strings.Contains(stdout, "| internal/domain/ports.Logger | application | 2 | 0 |") {
+	// Rows render symbol, layer, counts, and status. Logger and Health are
+	// not documented ADR-056 stays → status is "NEW — adjudicate".
+	if !strings.Contains(stdout, "| internal/domain/ports.Logger | application | 2 | 0 | NEW — adjudicate |") {
 		t.Errorf("stdout missing exit-candidate row: %q", stdout)
 	}
-	if !strings.Contains(stdout, "| internal/domain/ports.Health | orphan (no non-di consumers or implementers) | 0 | 0 |") {
+	if !strings.Contains(stdout, "| internal/domain/ports.Health | orphan (no non-di consumers or implementers) | 0 | 0 | NEW — adjudicate |") {
 		t.Errorf("stdout missing orphan exit-candidate row: %q", stdout)
 	}
 }
