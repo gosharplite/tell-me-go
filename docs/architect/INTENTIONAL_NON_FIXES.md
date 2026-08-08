@@ -575,6 +575,40 @@ catalog a new gap no one reviewed. Policy:
 - **See**: `internal/infrastructure/config/config.go` (`load`, `configureViper`,
   `YAMLConfigLoader`), `internal/infrastructure/config/watcher_test.go`
 
+### Split internal/agent façade (chatService vs lifecycle)
+
+- **Status**: REJECTED by architect (2026-08, issue #1299 architecture grilling)
+- **Rationale**: The "façade mixing four responsibilities" premise is false —
+  `internal/agent/agent.go` is one cohesive runtime owner (25 fields;
+  init/config/Chat/Shutdown/drift form one operational surface on one stateful
+  object), `chatService` is already type-separated with zero references to the
+  `*agent` type, and `agent → session/context` is documented ADR-026 intent, not
+  a bypass — all four candidate implementations of "route through session" fail.
+  A package move to `internal/application/chat` is mechanically coherent but is
+  metric-relabeling (fan-in is 8 production files vs domain/ports at 102),
+  creates an application→agent/subpackage half-state, and double-churns the
+  same consumers if followed by the ports split. Every cited metric was wrong
+  or normal ("14 imports" is agent.go's fan-out and unremarkable vs
+  container.go's 18; max cyclomatic complexity = 8; the test bridge at 11
+  methods is within ADR-037's envelope, trigger ≥13). The one real finding:
+  16 of 25 fields are init-only scaffolding (the `executor` field is
+  write-only) — ADR-007's accepted cost, now quantified; clarity-only, worth a
+  comment fix, not a refactor. The concrete `*sessctx.Manager` type coupling
+  (four holders: agent, orchestrator Engine, orchestrator Turn, and
+  session.InternalTools — note `TurnState.Metadata` at engine_types.go:170 is a
+  Metadata holder, not a Manager holder) is agent-layer and not di-touched:
+  under the di-touch criterion (ADR-055) it belongs at its consumer and, by the
+  clarity-only standard, it is an accepted-cost entry, not a refactor and not a
+  ports task.
+- **See**: `internal/agent/agent.go:39,44,104-149`, `internal/agent/service.go`,
+  `internal/agent/internal_bridge.go`, `internal/agent/session/context/doc.go:9`,
+  `internal/agent/orchestrator/engine.go:16,38,65,169`,
+  `internal/agent/orchestrator/engine_types.go:170`,
+  `internal/agent/session/internal_tools.go:30,37,178`,
+  `internal/infrastructure/factory/chatter_test.go:29,32`,
+  `internal/agent/agentinternal/doc.go`,
+  `docs/adr/2026-04-session-context-subpackage-extraction.md` (ADR-026)
+
 ---
 
 ## Coverage Gaps (ACCEPTED — 2026-07 Batch Triage)
@@ -1140,4 +1174,4 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13))*
+*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13); design rejection: split internal/agent façade — issue #1299)*
