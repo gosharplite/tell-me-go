@@ -33,37 +33,26 @@ func fullMetricsStatus() events.TurnStatus {
 	}
 }
 
-func TestFormatMetricsLine(t *testing.T) {
+// TestFormatMetricsLine_NilMetrics covers the nil-Metrics case: an empty
+// TurnStatus renders to an empty string.
+func TestFormatMetricsLine_NilMetrics(t *testing.T) {
 	t.Run("nil metrics returns empty string", func(t *testing.T) {
 		got := FormatMetricsLine(events.TurnStatus{})
 		if got != "" {
 			t.Errorf("FormatMetricsLine() with nil Metrics = %q; want empty", got)
 		}
 	})
+}
 
+// TestFormatMetricsLine_FullRender covers the exact full line and the
+// provider-identification segment: provider used as-is, provider falls back
+// to model, and the bracket is omitted when both are empty.
+func TestFormatMetricsLine_FullRender(t *testing.T) {
 	t.Run("renders full metrics line", func(t *testing.T) {
 		got := FormatMetricsLine(fullMetricsStatus())
 		want := "[14:30:00] [deepseek-pro] M: 200 H: 800 C: 50 Th: 120 ($0.0012) [7.00s (ΣT: 1.50s)]"
 		if got != want {
 			t.Errorf("FormatMetricsLine() = %q; want %q", got, want)
-		}
-	})
-
-	t.Run("omits thinking tokens when zero", func(t *testing.T) {
-		ts := fullMetricsStatus()
-		ts.Metrics.ThinkingTokens = 0
-		got := FormatMetricsLine(ts)
-		if strings.Contains(got, "Th:") {
-			t.Errorf("FormatMetricsLine() = %q; want no Th: segment", got)
-		}
-	})
-
-	t.Run("omits cost when zero", func(t *testing.T) {
-		ts := fullMetricsStatus()
-		ts.Metrics.Cost = 0
-		got := FormatMetricsLine(ts)
-		if strings.Contains(got, "($") {
-			t.Errorf("FormatMetricsLine() = %q; want no cost segment", got)
 		}
 	})
 
@@ -87,7 +76,36 @@ func TestFormatMetricsLine(t *testing.T) {
 			t.Errorf("FormatMetricsLine() = %q; want %q", got, want)
 		}
 	})
+}
 
+// TestFormatMetricsLine_OptionalSegments covers the zero-valued optional
+// segments: thinking tokens and cost are omitted when they are zero.
+func TestFormatMetricsLine_OptionalSegments(t *testing.T) {
+	t.Run("omits thinking tokens when zero", func(t *testing.T) {
+		ts := fullMetricsStatus()
+		ts.Metrics.ThinkingTokens = 0
+		got := FormatMetricsLine(ts)
+		if strings.Contains(got, "Th:") {
+			t.Errorf("FormatMetricsLine() = %q; want no Th: segment", got)
+		}
+	})
+
+	t.Run("omits cost when zero", func(t *testing.T) {
+		ts := fullMetricsStatus()
+		ts.Metrics.Cost = 0
+		got := FormatMetricsLine(ts)
+		if strings.Contains(got, "($") {
+			t.Errorf("FormatMetricsLine() = %q; want no cost segment", got)
+		}
+	})
+}
+
+// TestFormatMetricsLine_SessionDuration covers the session duration segment:
+// it is omitted when StartTime is zero, appended with a per-turn average for
+// positive turn counts (structural regex, since time.Since is
+// non-deterministic), and appended without the average for non-positive
+// turn counts.
+func TestFormatMetricsLine_SessionDuration(t *testing.T) {
 	t.Run("zero StartTime omits session duration segment", func(t *testing.T) {
 		got := FormatMetricsLine(fullMetricsStatus())
 		if strings.Contains(got, " / ") {
