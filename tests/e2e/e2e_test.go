@@ -39,6 +39,66 @@ func isShortMode() bool {
 	return false
 }
 
+// resolveE2EBinPath determines where the e2e binary lives and whether it is
+// in a temporary directory. It prefers a persistent cache directory under the
+// user cache dir so the binary survives across runs; if os.UserCacheDir()
+// fails it falls back to a fresh temporary directory. On failure it prints to
+// stderr and calls os.Exit(1).
+func resolveE2EBinPath() (binPath string, isTemp bool) {
+	exeSuffix := ""
+	if runtime.GOOS == "windows" {
+		exeSuffix = ".exe"
+	}
+
+	// Prefer a persistent cache directory so the binary survives across runs.
+	cacheDir, cacheErr := os.UserCacheDir()
+	if cacheErr == nil {
+		cacheDir = filepath.Join(cacheDir, "tell-me-go", "e2e-binary")
+		if err := os.MkdirAll(cacheDir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to create cache dir %s: %v\n", cacheDir, err)
+			os.Exit(1)
+		}
+		return filepath.Join(cacheDir, "tell-me-go"+exeSuffix), false
+	}
+
+	// Fallback: create a fresh temp directory (old behavior).
+	tempDir, err := os.MkdirTemp("", "tell-me-go-e2e")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create temp dir: %v\n", err)
+		os.Exit(1)
+	}
+	return filepath.Join(tempDir, "tell-me-go"+exeSuffix), true
+}
+
+// e2eBinaryFresh reports whether the cached binary at binPath is newer than
+// the source at mainPath and therefore does not need to be rebuilt.
+func e2eBinaryFresh(binPath, mainPath string) bool {
+	binInfo, err := os.Stat(binPath)
+	if err != nil {
+		return false
+	}
+	srcInfo, err := os.Stat(mainPath)
+	if err != nil {
+		return false
+	}
+	return binInfo.ModTime().After(srcInfo.ModTime())
+}
+
+// buildE2EBinaryNow runs `go build -o binPath mainPath`. On failure it prints
+// the combined output to stderr, removes the binary's directory when it lives
+// in a temp dir (cache dir should persist), and calls os.Exit(1).
+func buildE2EBinaryNow(binPath, mainPath string) {
+	build := exec.Command("go", "build", "-o", binPath, mainPath)
+	if out, err := build.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to build binary: %v\nOutput: %s\n", err, string(out))
+		// Only clean up if we used a temp dir (cache dir should persist).
+		if isTempBinDir {
+			_ = os.RemoveAll(filepath.Dir(binPath))
+		}
+		os.Exit(1)
+	}
+}
+
 // buildE2EBinary compiles cmd/tell-me-go into a persistent cache directory.
 // The cache lives at <UserCacheDir>/tell-me-go/e2e-binary/ so that rebuilds only
 // happen when cmd/tell-me-go/main.go is newer than the cached binary.
@@ -54,55 +114,15 @@ func buildE2EBinary() {
 	projectRoot = filepath.Dir(filepath.Dir(wd))
 	mainPath := filepath.Join(projectRoot, "cmd", "tell-me-go", "main.go")
 
-	exeSuffix := ""
-	if runtime.GOOS == "windows" {
-		exeSuffix = ".exe"
-	}
+	binPath, isTempBinDir = resolveE2EBinPath()
 
-	// Prefer a persistent cache directory so the binary survives across runs.
-	cacheDir, cacheErr := os.UserCacheDir()
-	if cacheErr == nil {
-		cacheDir = filepath.Join(cacheDir, "tell-me-go", "e2e-binary")
-		if err := os.MkdirAll(cacheDir, 0755); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to create cache dir %s: %v\n", cacheDir, err)
-			os.Exit(1)
-		}
-		binPath = filepath.Join(cacheDir, "tell-me-go"+exeSuffix)
-		isTempBinDir = false
-	} else {
-		// Fallback: create a fresh temp directory (old behavior).
-		tempDir, err := os.MkdirTemp("", "tell-me-go-e2e")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to create temp dir: %v\n", err)
-			os.Exit(1)
-		}
-		binPath = filepath.Join(tempDir, "tell-me-go"+exeSuffix)
-		isTempBinDir = true
-	}
-
-	needsBuild := true
-	if binInfo, err := os.Stat(binPath); err == nil {
-		if srcInfo, err := os.Stat(mainPath); err == nil {
-			if binInfo.ModTime().After(srcInfo.ModTime()) {
-				needsBuild = false
-			}
-		}
-	}
-
-	if needsBuild {
-		fmt.Printf("Building binary: %s from %s\n", binPath, mainPath)
-		build := exec.Command("go", "build", "-o", binPath, mainPath)
-		if out, err := build.CombinedOutput(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to build binary: %v\nOutput: %s\n", err, string(out))
-			// Only clean up if we used a temp dir (cache dir should persist).
-			if isTempBinDir {
-				_ = os.RemoveAll(filepath.Dir(binPath))
-			}
-			os.Exit(1)
-		}
-	} else {
+	if e2eBinaryFresh(binPath, mainPath) {
 		fmt.Printf("Using cached binary: %s\n", binPath)
+		return
 	}
+
+	fmt.Printf("Building binary: %s from %s\n", binPath, mainPath)
+	buildE2EBinaryNow(binPath, mainPath)
 }
 
 func TestMain(m *testing.M) {

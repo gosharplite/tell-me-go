@@ -18,8 +18,9 @@ import (
 // catalog: it recomputes the real complexity alerts against the LIVE repo and
 // cross-references them against the live docs/architect/INTENTIONAL_NON_FIXES.md
 // catalog (uncapped, mirroring bucketComplexityAlerts internals). Every
-// over-threshold function must be pinned by an ACCEPTED catalog entry — the
-// only allowed alert is the known genuine gap (buildE2EBinary, CC=12).
+// over-threshold function must be pinned by an ACCEPTED catalog entry. The
+// former known genuine gap (buildE2EBinary, CC=12) was refactored below
+// threshold in 2026-09 (fix/e2e-build-complexity), so zero alerts remain.
 //
 // The go test binary runs with its working directory set to the package
 // source directory, so the walk root and the catalog path are anchored to
@@ -90,5 +91,5 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 	}
 
 	require.Equal(t, expectedCataloged, cataloged)
-	require.Equal(t, []string{"buildE2EBinary"}, alerts)
+	require.Empty(t, alerts)
 }
