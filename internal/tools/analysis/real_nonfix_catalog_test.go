@@ -7,10 +7,14 @@ package analysis
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -129,4 +133,53 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 			require.NotEmpty(t, title, "range %s:%d-%d must be matched by an ACCEPTED catalog entry", tt.file, tt.start, tt.end)
 		})
 	}
+}
+
+// TestDetailedCoverageReport_CatalogedGapsNotActionable is the end-to-end
+// regression for the FULL detailed-coverage report path: real `go test
+// -coverprofile` subprocess → profile parse → applyCatalogTitles against the
+// LIVE catalog → report format. It pins the REPORT OUTPUT, not just the
+// matcher: the formerly-HIGH config.go:249-251 gap must appear under
+// [CATALOGED GAPS (ACCEPTED)] and never under [HIGH PRIORITY GAPS]. This test
+// is RED on the pre-fix parser (the `:249-251` continuation ref is dropped,
+// so config.go:249-251 surfaces as HIGH) and GREEN on the fixed code — it is
+// the self-verification that future agents' get_detailed_coverage output
+// agrees with the catalog.
+func TestDetailedCoverageReport_CatalogedGapsNotActionable(t *testing.T) {
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	// The report path shells out to the real `go` binary; run it from the
+	// module root so the coverage profile records repo-relative paths (catalog
+	// refs are repo-relative). The test binary's working directory is the
+	// package source dir, so chdir here and restore on cleanup. All arch-tagged
+	// tests are sequential, so the chdir cannot race a parallel test.
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoRoot))
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	// Mirror production wiring (manager.go newAnalysisManager): the real `go`
+	// executor feeds both the runner and Exec; the catalog is the default live
+	// catalog; SP is the test mock (unused on this path).
+	executor := &exec.RealExecutor{}
+	m := &healthManager{
+		SP:          &mockSecurityProvider{},
+		Exec:        executor,
+		Runner:      toolchain.NewGoRunner(executor),
+		clk:         clock.RealClock{},
+		catalogPath: defaultNonFixCatalogPath,
+	}
+
+	report, err := m.getDetailedCoverageReport(context.Background(), "./internal/domain/config", nil, nil)
+	require.NoError(t, err)
+
+	// The cataloged gap must never rank as actionable: with the fix, config's
+	// only uncovered block (config.go:249-251) is ACCEPTED, so the report
+	// emits no HIGH PRIORITY GAPS section at all.
+	require.NotContains(t, report, "[HIGH PRIORITY GAPS]")
+	// ... and the formerly-HIGH block is reported as an ACCEPTED cataloged gap.
+	require.Contains(t, report, "[CATALOGED GAPS (ACCEPTED)]")
+	require.Contains(t, report, "config.go (Lines 249-251)")
+	require.Contains(t, report, "validateProviderUniqueness")
 }
