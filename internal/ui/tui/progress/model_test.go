@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -406,7 +407,7 @@ func TestModel_View(t *testing.T) {
 			},
 			StartTime: time.Date(2026, 1, 15, 14, 28, 0, 0, time.UTC),
 		}
-		m.postCallMetricsLine = FormatMetricsLine(*m.postCallStatus)
+		m.postCallMetricsLine = ports.FormatMetricsLine(*m.postCallStatus)
 
 		out := m.View()
 		assert.Contains(t, out, "M: 200 H: 800 C: 50")

@@ -42,6 +42,13 @@ var backtickRef = regexp.MustCompile("`([^`]+)`")
 type pendingEntry struct {
 	entry  nonFixEntry
 	status string
+	// lastSeeFile is the file component of the most recent file-bearing
+	// reference in this entry's See block. It lets a bare `:line` reference
+	// (empty file component) inherit the file of the preceding reference —
+	// e.g. "`config.go:224-229` (definition), `:249-251` (call-site error
+	// branch)". It is scoped to the entry's See block because parseSeeRefs
+	// only mutates it for See bullets and their indented continuations.
+	lastSeeFile string
 }
 
 // loadNonFixCatalog reads and parses the Intentional Non-Fixes catalog at
@@ -135,10 +142,18 @@ func filterAcceptedEntries(pending []pendingEntry) []nonFixEntry {
 
 // parseSeeRefs extracts every backticked reference from a See bullet line (or
 // an indented continuation) and appends the valid fileRange values to the
-// pending entry.
+// pending entry. The most recent file-bearing reference in the entry's See
+// block is remembered on cur.lastSeeFile so a bare `:line` continuation ref
+// inherits its file. Refs that resolve to no range (commit hashes, prose,
+// file-only refs, malformed locations) do not update the inherited file.
 func parseSeeRefs(line string, cur *pendingEntry) {
 	for _, m := range backtickRef.FindAllStringSubmatch(line, -1) {
-		cur.entry.Refs = append(cur.entry.Refs, parseCatalogRef(m[1])...)
+		ranges := parseCatalogRefInherited(m[1], cur.lastSeeFile)
+		if len(ranges) == 0 {
+			continue
+		}
+		cur.lastSeeFile = ranges[0].File
+		cur.entry.Refs = append(cur.entry.Refs, ranges...)
 	}
 }
 
@@ -146,16 +161,35 @@ func parseSeeRefs(line string, cur *pendingEntry) {
 // reference into one or more fileRange values. A comma-separated location
 // list (`file.go:162,431,558` or `file.go:142-144,237-240`) expands into
 // multiple ranges. Refs that are not `<path>:<line>` shaped (commit hashes,
-// plain paths, prose) are ignored.
+// plain paths, prose) are ignored. A ref with an empty file component
+// (`:249-251`) is dropped — it only resolves when an inherited file is
+// supplied via parseCatalogRefInherited.
 func parseCatalogRef(ref string) []fileRange {
+	return parseCatalogRefInherited(ref, "")
+}
+
+// parseCatalogRefInherited parses one backticked reference with an inherited
+// default file. A ref shaped `:249-251` (empty file component, non-empty
+// location) resolves against inheritedFile, producing
+// {File: inheritedFile, Start: 249, End: 251}; with no inherited file the
+// ref is dropped. All other behavior matches parseCatalogRef: comma lists
+// expand, commit hashes and prose are ignored, and plain file refs with no
+// line spec are dropped.
+func parseCatalogRefInherited(ref, inheritedFile string) []fileRange {
 	colonIdx := strings.LastIndex(ref, ":")
 	if colonIdx == -1 {
 		return nil
 	}
 	file := strings.TrimSpace(ref[:colonIdx])
 	locSpec := strings.TrimSpace(ref[colonIdx+1:])
-	if file == "" || locSpec == "" {
+	if locSpec == "" {
 		return nil
+	}
+	if file == "" {
+		if inheritedFile == "" {
+			return nil
+		}
+		file = inheritedFile
 	}
 
 	var ranges []fileRange

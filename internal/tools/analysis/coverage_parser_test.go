@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -1233,6 +1234,8 @@ func TestGetDetailedCoverageJSON_PriorityFiltering(t *testing.T) {
 			return []byte("ok"), nil
 		},
 	}
+	// catalogPath is the zero value → behaves like a missing catalog, so the
+	// block is NOT tagged ACCEPTED and stays actionable.
 	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
 
 	// Block is in temp dir → classified as OTHER/Low priority
@@ -1257,6 +1260,66 @@ func TestGetDetailedCoverageJSON_PriorityFiltering(t *testing.T) {
 	}
 	if !strings.Contains(jsonStr, "test_file.go") {
 		t.Errorf("expected JSON data with file name for Low filter, got: %q", jsonStr)
+	}
+}
+
+func TestGetDetailedCoverageJSON_PriorityFiltering_ExcludesCataloged(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, goFile := setupMockGoFile(t, "package analysis\nfunc F() { if true {} }\n")
+
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-coverprofile=") {
+					path := strings.TrimPrefix(arg, "-coverprofile=")
+					coverageContent := fmt.Sprintf("mode: set\n%s:1.0,2.0 1 0\n", goFile)
+					if err := os.WriteFile(path, []byte(coverageContent), 0644); err != nil {
+						t.Errorf("failed to write mock coverage file: %v", err)
+					}
+				}
+			}
+			return []byte("ok"), nil
+		},
+	}
+
+	// A catalog entry pinning the block's bare basename (`test_file.go:1-2`)
+	// marks the gap ACCEPTED, so it must be excluded from the priority-filtered
+	// JSON output even under the "Low" filter.
+	catalogPath := filepath.Join(t.TempDir(), "INTENTIONAL_NON_FIXES.md")
+	catalogMD := "# Intentional Non-Fixes\n\n### test_file.go — accepted gap\n\n- **Status**: ACCEPTED (2026-07)\n- **See**: `test_file.go:1-2`\n"
+	if err := os.WriteFile(catalogPath, []byte(catalogMD), 0644); err != nil {
+		t.Fatalf("failed to write catalog fixture: %v", err)
+	}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock), catalogPath: catalogPath}
+
+	jsonStr, err := hea.getDetailedCoverageJSON(ctx, ".", "Low", nil)
+	if err != nil {
+		t.Fatalf("getDetailedCoverageJSON with Low filter and catalog failed: %v", err)
+	}
+	if strings.Contains(jsonStr, "test_file.go") {
+		t.Errorf("expected cataloged block excluded from JSON output, got: %q", jsonStr)
+	}
+}
+
+func TestFormatDetailedCoverageJSON_ExcludesCataloged(t *testing.T) {
+	t.Parallel()
+	blocks := []uncoveredBlock{
+		{File: "file1.go", Start: 1, End: 2, Category: "BUSINESS_LOGIC", Priority: "High", Code: "code1"},
+		{File: "file2.go", Start: 1, End: 2, Category: "ERROR_HANDLING", Priority: "High", Code: "code2", CatalogTitle: "accepted entry"},
+	}
+	jsonStr, err := formatDetailedCoverageJSON(blocks, "Low")
+	if err != nil {
+		t.Fatalf("formatDetailedCoverageJSON failed: %v", err)
+	}
+	if !strings.Contains(jsonStr, "file1.go") {
+		t.Error("expected uncataloged block in JSON output")
+	}
+	if strings.Contains(jsonStr, "file2.go") {
+		t.Error("expected cataloged block excluded from JSON output")
 	}
 }
 

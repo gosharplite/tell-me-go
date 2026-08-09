@@ -604,8 +604,8 @@ func (m *healthManager) getDetailedCoverageJSON(ctx context.Context, packagePath
 		return "", err
 	}
 
-	// Tag ACCEPTED catalog gaps (additive). The catalog_title field is exposed
-	// to JSON callers; no filtering change here — callers may filter. A load
+	// Tag ACCEPTED catalog gaps, then exclude them from the priority-filtered
+	// JSON output (mirroring the report path's aggregateCoverageStats). A load
 	// failure degrades gracefully: all gaps stay actionable.
 	entries := m.loadNonFixEntries()
 	applyCatalogTitles(blocks, entries)
@@ -622,6 +622,12 @@ func (m *healthManager) getDetailedCoverageJSON(ctx context.Context, packagePath
 	return jsonStr, nil
 }
 
+// formatDetailedCoverageJSON renders the uncovered blocks as indented JSON,
+// filtered by minPriority. Blocks covered by an ACCEPTED catalog entry are
+// excluded from the filtered output — they are accepted gaps, not actionable
+// ones, and remain visible via the catalog itself. This mirrors the report
+// path (aggregateCoverageStats), which also excludes CatalogTitle != "" from
+// the High/Medium buckets.
 func formatDetailedCoverageJSON(blocks []uncoveredBlock, minPriority string) (string, error) {
 	priorityMap := map[string]int{
 		"High":   3,
@@ -632,6 +638,11 @@ func formatDetailedCoverageJSON(blocks []uncoveredBlock, minPriority string) (st
 	minP := priorityMap[minPriority]
 	var filtered []uncoveredBlock
 	for _, b := range blocks {
+		// Cataloged (ACCEPTED) gaps are already-accepted: they must never rank
+		// as actionable. They remain visible via the catalog itself.
+		if b.CatalogTitle != "" {
+			continue
+		}
 		if priorityMap[b.Priority] >= minP {
 			filtered = append(filtered, b)
 		}
