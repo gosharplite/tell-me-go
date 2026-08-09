@@ -294,6 +294,185 @@ func TestParseCatalogRef(t *testing.T) {
 	}
 }
 
+// continuationCatalog exercises the See-block file-inheritance rules: a bare
+// `:line` continuation ref inherits the file of the most recent file-bearing
+// ref in the same See block (within one bullet and across indented
+// continuation lines); a bare `:line` ref with no preceding file-bearing ref
+// is dropped; file-only refs are dropped and do not feed inheritance.
+const continuationCatalog = `# Intentional Non-Fixes
+
+## Coverage Gaps (ACCEPTED)
+
+### domain/config/config.go — validateProviderUniqueness
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Structural invariant.
+- **See**: ` + "`internal/domain/config/config.go:224-229`" + ` (definition), ` + "`:249-251`" + ` (call-site error branch, covered by this entry)
+
+### domain/services/task_service.go — AppendTask delegation wrapper
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Delegation wrapper.
+- **See**: ` + "`internal/domain/services/task_service.go:95-97`" + ` (old anchor),
+  ` + "`:101-103`" + ` (drifted body)
+
+### agent/session/context/manager.go — bare ref with no inherited file
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: No file-bearing ref precedes the bare ref.
+- **See**: ` + "`:574-576`" + `
+
+### tools/workspace/shell.go — comma list after inherited file
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Comma lists keep expanding under inheritance.
+- **See**: ` + "`internal/tools/workspace/shell.go:162`" + `,
+  ` + "`:431,558`" + ` (inherits the file)
+
+### ui/tui/progress/model.go — file-only ref does not feed inheritance
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: File-only refs are dropped and do not become inherited files.
+- **See**: ` + "`internal/ui/tui/progress/model.go`" + `
+  (file only), ` + "`:338`" + ` (must still be dropped)
+
+---
+
+*Last Updated: 2026-08 (catalog hygiene)*
+`
+
+func TestParseNonFixCatalog_ColonContinuationRefs(t *testing.T) {
+	t.Parallel()
+	entries := parseNonFixCatalog(continuationCatalog)
+
+	if len(entries) != 5 {
+		t.Fatalf("parseNonFixCatalog() = %d entries, want 5", len(entries))
+	}
+
+	tests := []struct {
+		name  string
+		entry int
+		want  []fileRange
+	}{
+		{
+			name:  "bare range inherits file within one See bullet",
+			entry: 0,
+			want: []fileRange{
+				{File: "internal/domain/config/config.go", Start: 224, End: 229},
+				{File: "internal/domain/config/config.go", Start: 249, End: 251},
+			},
+		},
+		{
+			name:  "bare range inherits file across indented continuation lines",
+			entry: 1,
+			want: []fileRange{
+				{File: "internal/domain/services/task_service.go", Start: 95, End: 97},
+				{File: "internal/domain/services/task_service.go", Start: 101, End: 103},
+			},
+		},
+		{
+			name:  "bare ref with no preceding file-bearing ref is dropped",
+			entry: 2,
+			want:  nil,
+		},
+		{
+			name:  "comma list continues to expand under inherited file",
+			entry: 3,
+			want: []fileRange{
+				{File: "internal/tools/workspace/shell.go", Start: 162, End: 162},
+				{File: "internal/tools/workspace/shell.go", Start: 431, End: 431},
+				{File: "internal/tools/workspace/shell.go", Start: 558, End: 558},
+			},
+		},
+		{
+			name:  "file-only ref does not feed inheritance",
+			entry: 4,
+			want:  nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := entries[tt.entry].Refs
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("entries[%d].Refs = %+v, want %+v", tt.entry, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseCatalogRefInherited(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name          string
+		ref           string
+		inheritedFile string
+		want          []fileRange
+	}{
+		{
+			name:          "bare range inherits file",
+			ref:           ":249-251",
+			inheritedFile: "internal/domain/config/config.go",
+			want:          []fileRange{{File: "internal/domain/config/config.go", Start: 249, End: 251}},
+		},
+		{
+			name:          "bare single line inherits file",
+			ref:           ":431",
+			inheritedFile: "internal/tools/workspace/shell.go",
+			want:          []fileRange{{File: "internal/tools/workspace/shell.go", Start: 431, End: 431}},
+		},
+		{
+			name:          "bare comma list inherits file",
+			ref:           ":431,558",
+			inheritedFile: "internal/tools/workspace/shell.go",
+			want: []fileRange{
+				{File: "internal/tools/workspace/shell.go", Start: 431, End: 431},
+				{File: "internal/tools/workspace/shell.go", Start: 558, End: 558},
+			},
+		},
+		{
+			name:          "bare ref with no inherited file dropped",
+			ref:           ":249-251",
+			inheritedFile: "",
+			want:          nil,
+		},
+		{
+			name:          "full ref ignores inherited file",
+			ref:           "internal/other.go:10-12",
+			inheritedFile: "internal/domain/config/config.go",
+			want:          []fileRange{{File: "internal/other.go", Start: 10, End: 12}},
+		},
+		{
+			name:          "file-only ref still dropped with inherited file",
+			ref:           "internal/ui/tui/progress/model.go",
+			inheritedFile: "internal/domain/config/config.go",
+			want:          nil,
+		},
+		{
+			name:          "commit hash still ignored with inherited file",
+			ref:           "0f882423",
+			inheritedFile: "internal/domain/config/config.go",
+			want:          nil,
+		},
+		{
+			name:          "empty location still ignored",
+			ref:           "file.go:",
+			inheritedFile: "internal/domain/config/config.go",
+			want:          nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := parseCatalogRefInherited(tt.ref, tt.inheritedFile)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("parseCatalogRefInherited(%q, %q) = %+v, want %+v", tt.ref, tt.inheritedFile, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadNonFixCatalog_MissingFile(t *testing.T) {
 	t.Parallel()
 	entries, err := loadNonFixCatalog(filepath.Join(t.TempDir(), "does-not-exist.md"))

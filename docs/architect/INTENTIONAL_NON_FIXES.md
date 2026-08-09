@@ -232,7 +232,7 @@ catalog a new gap no one reviewed. Policy:
   slice between validation and this call site. Structurally unreachable — same
   acceptance class as `json.Marshal` on all-string structs in
   `global_prompt_tracker.go`.
-- **See**: `internal/agent/session/context/manager.go`
+- **See**: `internal/agent/session/context/manager.go:574-576`
   (architect-acceptance comment at the `groupTurns` call site in `capBestBlock`)
 
 ### context/manager.go — capBestBlock error propagation in checkWindowSize
@@ -243,20 +243,21 @@ catalog a new gap no one reviewed. Policy:
   already-validated sub-slice is structurally unreachable (see previous entry),
   this error-handling branch is equally unreachable. Both gaps share the same root
   cause and acceptance rationale.
-- **See**: `internal/agent/session/context/manager.go`
+- **See**: `internal/agent/session/context/manager.go:619-621`
   (architect-acceptance comment at the `capBestBlock` call site in `checkWindowSize`)
 
 ### agent/session/context/manager.go — capBestBlock non-capped return
 
 - **Status**: ACCEPTED (2026-07)
-- **Rationale**: The final return in `capBestBlock` (`manager.go:582`) is reached
+- **Rationale**: The final return in `capBestBlock` (`manager.go:590`) is reached
   when `best.count >= minViable` but `groupTurns` returns ≤1 turn for the
   sub-slice. With the default `contiguousUnpinnedSelector` (MinViableBlock=2),
   `best.count >= 2` and the sub-slice spans ≥2 turns, so `groupTurns` always
   returns ≥2 turns. This return is a defensive fallthrough for degenerate
   message sequences. Same acceptance class as defensive nil/empty guards on
-  internal pipeline state (2026-07 Batch Triage).
-- **See**: `internal/agent/session/context/manager.go:582`
+  internal pipeline state (2026-07 Batch Triage). Re-anchored 2026-09: the
+  return drifted from line 582 to 590 as the acceptance comment block grew.
+- **See**: `internal/agent/session/context/manager.go:590`
 
 ### agent/session/session_manager.go — tuiCleanup and setupUIRendering TUI branches
 
@@ -655,7 +656,7 @@ catalog a new gap no one reviewed. Policy:
   `store.Append`). Testing a pass-through method provides no value — same
   acceptance class as `domainFS.Chmod`, `mockFileSystem.Chmod`,
   `plainOSFS.Chmod`, and `OSFileSystem.Chmod`.
-- **See**: `internal/domain/services/task_service.go:95-97`
+- **See**: `internal/domain/services/task_service.go:101-103`
 
 ### agent/service.go — EditLastTurn delegation wrapper
 

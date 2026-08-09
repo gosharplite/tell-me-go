@@ -7,10 +7,14 @@ package analysis
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -92,4 +96,140 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 
 	require.Equal(t, expectedCataloged, cataloged)
 	require.Empty(t, alerts)
+}
+
+// TestVerifyCoveragePinsMatchLiveCatalog is the coverage-pin regression gate
+// for the catalog matcher: it asserts the four formerly-HIGH coverage gaps
+// (config.go:249-251, task_service.go:101-103, manager.go:574-576,
+// manager.go:619-621) are matched by the LIVE catalog after the continuation
+// ref parser fix and the 2026-09 re-anchors. A cataloged gap surfacing as
+// actionable in the detailed coverage report is the exact regression this
+// test prevents. Coverage pins have no name axis to verify against (ADR-054),
+// so interval-overlap matching against the live catalog is the enforcement
+// boundary.
+func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	entries, err := loadNonFixCatalog(filepath.Join(repoRoot, defaultNonFixCatalogPath))
+	require.NoError(t, err)
+	require.NotEmpty(t, entries, "live catalog must contain ACCEPTED entries")
+
+	tests := []struct {
+		name  string
+		file  string
+		start int
+		end   int
+	}{
+		{"config.go call-site error branch", "internal/domain/config/config.go", 249, 251},
+		{"task_service.go AppendTask body", "internal/domain/services/task_service.go", 101, 103},
+		{"manager.go groupTurns error branch", "internal/agent/session/context/manager.go", 574, 576},
+		{"manager.go capBestBlock error branch", "internal/agent/session/context/manager.go", 619, 621},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			title := catalogTitleForRange(entries, tt.file, tt.start, tt.end)
+			require.NotEmpty(t, title, "range %s:%d-%d must be matched by an ACCEPTED catalog entry", tt.file, tt.start, tt.end)
+		})
+	}
+
+	// The capBestBlock non-capped return pin (re-anchored 2026-09 from 582 to
+	// 590 as the acceptance comment block grew) must resolve to its catalog
+	// entry — previously it surfaced as an uncataloged MEDIUM gap.
+	t.Run("manager.go_capBestBlock_non_capped_return", func(t *testing.T) {
+		title := catalogTitleForRange(entries, "internal/agent/session/context/manager.go", 590, 590)
+		require.NotEmpty(t, title, "range manager.go:590 must be matched by an ACCEPTED catalog entry")
+		require.Contains(t, title, "capBestBlock non-capped return")
+	})
+}
+
+// TestDetailedCoverageReport_CatalogedGapsNotActionable is the end-to-end
+// regression for the FULL detailed-coverage report path: real `go test
+// -coverprofile` subprocess → profile parse → applyCatalogTitles against the
+// LIVE catalog → report format. It pins the REPORT OUTPUT, not just the
+// matcher: the formerly-HIGH config.go:249-251 gap must appear under
+// [CATALOGED GAPS (ACCEPTED)] and never under [HIGH PRIORITY GAPS]. This test
+// is RED on the pre-fix parser (the `:249-251` continuation ref is dropped,
+// so config.go:249-251 surfaces as HIGH) and GREEN on the fixed code — it is
+// the self-verification that future agents' get_detailed_coverage output
+// agrees with the catalog.
+func TestDetailedCoverageReport_CatalogedGapsNotActionable(t *testing.T) {
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	// The report path shells out to the real `go` binary; run it from the
+	// module root so the coverage profile records repo-relative paths (catalog
+	// refs are repo-relative). The test binary's working directory is the
+	// package source dir, so chdir here and restore on cleanup. All arch-tagged
+	// tests are sequential, so the chdir cannot race a parallel test.
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoRoot))
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	// Mirror production wiring (manager.go newAnalysisManager): the real `go`
+	// executor feeds both the runner and Exec; the catalog is the default live
+	// catalog; SP is the test mock (unused on this path).
+	executor := &exec.RealExecutor{}
+	m := &healthManager{
+		SP:          &mockSecurityProvider{},
+		Exec:        executor,
+		Runner:      toolchain.NewGoRunner(executor),
+		clk:         clock.RealClock{},
+		catalogPath: defaultNonFixCatalogPath,
+	}
+
+	report, err := m.getDetailedCoverageReport(context.Background(), "./internal/domain/config", nil, nil)
+	require.NoError(t, err)
+
+	// The cataloged gap must never rank as actionable: with the fix, config's
+	// only uncovered block (config.go:249-251) is ACCEPTED, so the report
+	// emits no HIGH PRIORITY GAPS section at all.
+	require.NotContains(t, report, "[HIGH PRIORITY GAPS]")
+	// ... and the formerly-HIGH block is reported as an ACCEPTED cataloged gap.
+	require.Contains(t, report, "[CATALOGED GAPS (ACCEPTED)]")
+	require.Contains(t, report, "config.go (Lines 249-251)")
+	require.Contains(t, report, "validateProviderUniqueness")
+}
+
+// TestDetailedCoverageReport_ContextPackageCataloged is the end-to-end
+// behavioral check for the re-anchored capBestBlock non-capped return pin:
+// the formerly-MEDIUM manager.go:590 gap must appear under
+// [CATALOGED GAPS (ACCEPTED)] with its ACCEPTED title, and must not surface
+// as actionable in the High or Medium buckets. Same full report path as
+// TestDetailedCoverageReport_CatalogedGapsNotActionable, scoped to the
+// context package (~0.5s subprocess).
+func TestDetailedCoverageReport_ContextPackageCataloged(t *testing.T) {
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	// Run from the module root so the coverage profile records repo-relative
+	// paths; restore on cleanup (all arch-tagged tests are sequential).
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoRoot))
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	// Mirror production wiring (manager.go newAnalysisManager).
+	executor := &exec.RealExecutor{}
+	m := &healthManager{
+		SP:          &mockSecurityProvider{},
+		Exec:        executor,
+		Runner:      toolchain.NewGoRunner(executor),
+		clk:         clock.RealClock{},
+		catalogPath: defaultNonFixCatalogPath,
+	}
+
+	report, err := m.getDetailedCoverageReport(context.Background(), "./internal/agent/session/context", nil, nil)
+	require.NoError(t, err)
+
+	// The re-anchored 590 gap must be cataloged, not actionable: it is listed
+	// under [CATALOGED GAPS (ACCEPTED)] with the capBestBlock title ...
+	require.Contains(t, report, "[CATALOGED GAPS (ACCEPTED)]")
+	require.Contains(t, report, "manager.go (Lines 590-590)")
+	require.Contains(t, report, "capBestBlock non-capped return")
+	// ... and the High/Medium buckets are empty.
+	require.Contains(t, report, "- High Priority (Architectural): 0")
+	require.Contains(t, report, "- Medium Priority (Technical Debt): 0")
 }
