@@ -249,14 +249,15 @@ catalog a new gap no one reviewed. Policy:
 ### agent/session/context/manager.go — capBestBlock non-capped return
 
 - **Status**: ACCEPTED (2026-07)
-- **Rationale**: The final return in `capBestBlock` (`manager.go:582`) is reached
+- **Rationale**: The final return in `capBestBlock` (`manager.go:590`) is reached
   when `best.count >= minViable` but `groupTurns` returns ≤1 turn for the
   sub-slice. With the default `contiguousUnpinnedSelector` (MinViableBlock=2),
   `best.count >= 2` and the sub-slice spans ≥2 turns, so `groupTurns` always
   returns ≥2 turns. This return is a defensive fallthrough for degenerate
   message sequences. Same acceptance class as defensive nil/empty guards on
-  internal pipeline state (2026-07 Batch Triage).
-- **See**: `internal/agent/session/context/manager.go:582`
+  internal pipeline state (2026-07 Batch Triage). Re-anchored 2026-09: the
+  return drifted from line 582 to 590 as the acceptance comment block grew.
+- **See**: `internal/agent/session/context/manager.go:590`
 
 ### agent/session/session_manager.go — tuiCleanup and setupUIRendering TUI branches
 

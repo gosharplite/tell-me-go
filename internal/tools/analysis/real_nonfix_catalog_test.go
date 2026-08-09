@@ -133,6 +133,15 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 			require.NotEmpty(t, title, "range %s:%d-%d must be matched by an ACCEPTED catalog entry", tt.file, tt.start, tt.end)
 		})
 	}
+
+	// The capBestBlock non-capped return pin (re-anchored 2026-09 from 582 to
+	// 590 as the acceptance comment block grew) must resolve to its catalog
+	// entry — previously it surfaced as an uncataloged MEDIUM gap.
+	t.Run("manager.go_capBestBlock_non_capped_return", func(t *testing.T) {
+		title := catalogTitleForRange(entries, "internal/agent/session/context/manager.go", 590, 590)
+		require.NotEmpty(t, title, "range manager.go:590 must be matched by an ACCEPTED catalog entry")
+		require.Contains(t, title, "capBestBlock non-capped return")
+	})
 }
 
 // TestDetailedCoverageReport_CatalogedGapsNotActionable is the end-to-end
@@ -182,4 +191,45 @@ func TestDetailedCoverageReport_CatalogedGapsNotActionable(t *testing.T) {
 	require.Contains(t, report, "[CATALOGED GAPS (ACCEPTED)]")
 	require.Contains(t, report, "config.go (Lines 249-251)")
 	require.Contains(t, report, "validateProviderUniqueness")
+}
+
+// TestDetailedCoverageReport_ContextPackageCataloged is the end-to-end
+// behavioral check for the re-anchored capBestBlock non-capped return pin:
+// the formerly-MEDIUM manager.go:590 gap must appear under
+// [CATALOGED GAPS (ACCEPTED)] with its ACCEPTED title, and must not surface
+// as actionable in the High or Medium buckets. Same full report path as
+// TestDetailedCoverageReport_CatalogedGapsNotActionable, scoped to the
+// context package (~0.5s subprocess).
+func TestDetailedCoverageReport_ContextPackageCataloged(t *testing.T) {
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	// Run from the module root so the coverage profile records repo-relative
+	// paths; restore on cleanup (all arch-tagged tests are sequential).
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoRoot))
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	// Mirror production wiring (manager.go newAnalysisManager).
+	executor := &exec.RealExecutor{}
+	m := &healthManager{
+		SP:          &mockSecurityProvider{},
+		Exec:        executor,
+		Runner:      toolchain.NewGoRunner(executor),
+		clk:         clock.RealClock{},
+		catalogPath: defaultNonFixCatalogPath,
+	}
+
+	report, err := m.getDetailedCoverageReport(context.Background(), "./internal/agent/session/context", nil, nil)
+	require.NoError(t, err)
+
+	// The re-anchored 590 gap must be cataloged, not actionable: it is listed
+	// under [CATALOGED GAPS (ACCEPTED)] with the capBestBlock title ...
+	require.Contains(t, report, "[CATALOGED GAPS (ACCEPTED)]")
+	require.Contains(t, report, "manager.go (Lines 590-590)")
+	require.Contains(t, report, "capBestBlock non-capped return")
+	// ... and the High/Medium buckets are empty.
+	require.Contains(t, report, "- High Priority (Architectural): 0")
+	require.Contains(t, report, "- Medium Priority (Technical Debt): 0")
 }
