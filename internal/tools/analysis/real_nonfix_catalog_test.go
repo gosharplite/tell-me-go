@@ -93,3 +93,40 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 	require.Equal(t, expectedCataloged, cataloged)
 	require.Empty(t, alerts)
 }
+
+// TestVerifyCoveragePinsMatchLiveCatalog is the coverage-pin regression gate
+// for the catalog matcher: it asserts the four formerly-HIGH coverage gaps
+// (config.go:249-251, task_service.go:101-103, manager.go:574-576,
+// manager.go:619-621) are matched by the LIVE catalog after the continuation
+// ref parser fix and the 2026-09 re-anchors. A cataloged gap surfacing as
+// actionable in the detailed coverage report is the exact regression this
+// test prevents. Coverage pins have no name axis to verify against (ADR-054),
+// so interval-overlap matching against the live catalog is the enforcement
+// boundary.
+func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	entries, err := loadNonFixCatalog(filepath.Join(repoRoot, defaultNonFixCatalogPath))
+	require.NoError(t, err)
+	require.NotEmpty(t, entries, "live catalog must contain ACCEPTED entries")
+
+	tests := []struct {
+		name  string
+		file  string
+		start int
+		end   int
+	}{
+		{"config.go call-site error branch", "internal/domain/config/config.go", 249, 251},
+		{"task_service.go AppendTask body", "internal/domain/services/task_service.go", 101, 103},
+		{"manager.go groupTurns error branch", "internal/agent/session/context/manager.go", 574, 576},
+		{"manager.go capBestBlock error branch", "internal/agent/session/context/manager.go", 619, 621},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			title := catalogTitleForRange(entries, tt.file, tt.start, tt.end)
+			require.NotEmpty(t, title, "range %s:%d-%d must be matched by an ACCEPTED catalog entry", tt.file, tt.start, tt.end)
+		})
+	}
+}
