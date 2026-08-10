@@ -14,6 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -606,4 +607,66 @@ func TestRecoveryStep_EmptyResponse_RetriesUpToLimit(t *testing.T) {
 			t.Errorf("unexpected error: %v", err)
 		}
 	})
+
+	t.Run("policy declines -> falls back to 2s default delay", func(t *testing.T) {
+		clk := &recordingClock{Clock: &agenttest.MockClock{}, calledCh: make(chan struct{})}
+		step := &RecoveryStep{Policy: decliningPolicy{}}
+		turn := &Turn{
+			Events: &eventstest.TestEventBus{},
+			Clock:  clk,
+			State: &TurnState{
+				Phase:     PhaseRecovering,
+				LastError: lastErr,
+			},
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		type procResult struct {
+			res ProcessResult
+			err error
+		}
+		resultCh := make(chan procResult, 1)
+		go func() {
+			res, err := step.Process(ctx, turn)
+			resultCh <- procResult{res: res, err: err}
+		}()
+
+		// Block until attemptRetry has entered the select (After() called),
+		// then assert the fallback delay and cancel to unblock deterministically.
+		<-clk.calledCh
+		if clk.delay != 2*time.Second {
+			t.Errorf("expected fallback delay 2s, got %v", clk.delay)
+		}
+		cancel()
+		r := <-resultCh
+
+		assert.Equal(t, ProcessResult{}, r.res)
+		assert.ErrorIs(t, r.err, context.Canceled)
+		assert.Equal(t, 1, turn.State.RetryCount)
+	})
+}
+
+// decliningPolicy returns ok=false from ShouldRetry, forcing RecoveryStep
+// to use its 2s fallback delay on the empty-response retry path.
+type decliningPolicy struct{}
+
+func (decliningPolicy) ShouldRetry(c clock.Clock, err error, attempt int, seenRateLimit bool) (time.Duration, bool) {
+	return 0, false
+}
+
+// recordingClock records the delay passed to After() so tests can assert
+// the exact backoff duration; the returned channel never fires, so a
+// test must cancel the context to unblock the select.
+type recordingClock struct {
+	clock.Clock
+	delay    time.Duration
+	calledCh chan struct{}
+}
+
+func (c *recordingClock) After(d time.Duration) <-chan time.Time {
+	c.delay = d
+	close(c.calledCh)
+	return make(chan time.Time) // never fires
 }
