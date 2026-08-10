@@ -81,9 +81,11 @@ The last is required because the bench die-list lives in the orchestrator packag
 **Benchmark evidence** — harness pins: go version, OS/arch, CPU model, both commit SHAs (before/after), `-benchmem`, `-benchtime=5s`, `-count=5`; median reported.
 
 ```bash
-go test -bench='BenchmarkFullTurnCycle' -benchmem -count=5 ./internal/agent/orchestrator/
-go test -bench='BenchmarkContextRefiner' -benchmem -count=5 ./internal/agent/session/context/
+go test -bench='BenchmarkFullTurnCycle' -benchmem -benchtime=5s -count=5 ./internal/agent/orchestrator/
+go test -bench='BenchmarkContextRefiner' -benchmem -benchtime=5s -count=5 ./internal/agent/orchestrator/
 ```
+
+Note: both benchmarks live in the orchestrator package (`engine_phases_bench_test.go`); `make bench`'s `BENCH_PKGS` omits it, which is why direct `go test` invocation is required.
 
 | Comparison | Before | After | Interpretation |
 |---|---|---|---|
