@@ -83,7 +83,7 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"(*model).handleDomainEvent":                      {Line: 338, Complexity: 12, FilePath: "internal/ui/tui/progress/model.go"},
 		"TestDeadCodeAnalyzer_Precision":                  {Line: 177, Complexity: 12, FilePath: "internal/tools/analysis/precision_test.go"},
 		"TestHistoryManager_SetPinned_ViaModelID":         {Line: 493, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
-		"TestRecoveryStep_EmptyResponse_RetriesUpToLimit": {Line: 531, Complexity: 12, FilePath: "internal/agent/orchestrator/engine_phases_test.go"},
+		"TestRecoveryStep_EmptyResponse_RetriesUpToLimit": {Line: 532, Complexity: 13, FilePath: "internal/agent/orchestrator/engine_phases_test.go"},
 		"TestUpdateTurnContent_AddTextWhenNone":           {Line: 1361, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestUpdateTurnContent_ClearText":                 {Line: 1274, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestVision_KimiImagePayload":                     {Line: 128, Complexity: 12, FilePath: "internal/infrastructure/llm/openai/client_vision_test.go"},

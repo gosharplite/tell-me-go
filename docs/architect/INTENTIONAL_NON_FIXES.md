@@ -778,7 +778,7 @@ catalog a new gap no one reviewed. Policy:
   assertion boilerplate across a coverage matrix.
 - **See**: `internal/infrastructure/llm/factory_test.go:211`
 
-### internal/agent/orchestrator/engine_phases_test.go — TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12)
+### internal/agent/orchestrator/engine_phases_test.go — TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=13)
 
 - **Status**: ACCEPTED (2026-08)
 - **Rationale**: Sequential test driving the empty-response retry branch to
@@ -786,8 +786,10 @@ catalog a new gap no one reviewed. Policy:
   assertion boilerplate, not branching business logic. Same acceptance
   class as its production counterpart `(*RecoveryStep).Process` (CC=12,
   already ACCEPTED) — sequential state-mutation test where splitting would
-  duplicate setup.
-- **See**: `internal/agent/orchestrator/engine_phases_test.go:531`
+  duplicate setup. CC increased from 12→13 (re-verified 2026-08) after a
+  coverage subtest was added to exercise the RecoveryStep 2s fallback delay —
+  still the same acceptance class (test-complexity, assertion boilerplate).
+- **See**: `internal/agent/orchestrator/engine_phases_test.go:532`
 
 ### tests/e2e/history_flags_test.go — TestHistoryNavigation_CompleteWorkflow (complexity 15)
 
