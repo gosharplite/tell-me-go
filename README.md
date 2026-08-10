@@ -465,6 +465,7 @@ the 3-pass build order, and design rationale.
 Significant architectural decisions are documented in our [Architecture Decision Records (ADRs)](docs/adr/README.md).
 
 *   **[ADR-053](docs/adr/2026-08-remove-get-cost-summary-and-daily-cost-metric.md)** — removal of the `get_cost_summary` tool, the `DailyCost` status-line metric, and the global cost ledger.
+*   **[ADR-057](docs/adr/2026-08-remove-context-window-cache.md)** — removal of the context window cache from the session context manager (`internal/agent/session/context`).
 
 For the evolution of the shell-based environment management tooling — from simple bash aliases through Toby, Dobby, Porter, Sprawl, Winky, Flopsy, and Niffler — see [Evolution of Environment Management](docs/architect/environments/environment-management-evolution.md).
 
