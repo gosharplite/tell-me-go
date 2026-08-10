@@ -163,12 +163,13 @@ func (m *Manager) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.C
 	}
 
 	window := m.Contents[startIdx:endIdx]
-	cloned := make([]*llm.Content, len(window))
-	for i, c := range window {
-		cloned[i] = llm.CloneContent(c)
-	}
-
-	return cloned, nil
+	// Arena path: fresh per-call arena sized to the window, laying out the
+	// cloned Content/Part structs contiguously (~4 allocations per window
+	// instead of ~3 per entry). Semantics are identical to CloneContent —
+	// fully-owned deep copies, no structural sharing. See
+	// docs/architect/1321-f1-baseline.md §5.
+	arena := llm.NewCloneArena(len(window))
+	return arena.CloneContentSlice(window), nil
 }
 
 // SetContents replaces the entire history and persists it to disk.
