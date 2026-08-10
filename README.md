@@ -465,6 +465,9 @@ the 3-pass build order, and design rationale.
 Significant architectural decisions are documented in our [Architecture Decision Records (ADRs)](docs/adr/README.md).
 
 *   **[ADR-053](docs/adr/2026-08-remove-get-cost-summary-and-daily-cost-metric.md)** — removal of the `get_cost_summary` tool, the `DailyCost` status-line metric, and the global cost ledger.
+*   **[ADR-057](docs/adr/2026-08-remove-context-window-cache.md)** — removal of the context window cache from the session context manager (`internal/agent/session/context`).
+*   **[ADR-058](docs/adr/2026-08-getwindow-clone-evaluation.md)** — acceptance of the per-round `GetWindow` deep clone as the sole remaining O(window) cost; F2 evaluation closes at candidate 3 (accept-with-data) for both the cheaper-clone and prune-then-clone candidates, continuing the ADR-057 removal lineage (issue #1321).
+*   **[ADR-059](docs/adr/2026-08-overflow-signal-into-prepare.md)** — overflow signal into `Prepare` (effective-budget reduction on recovery): the gatekeeper learns when `Prepare` is a recovery from a provider context overflow and responds with forced recovery summarization plus a reduced hard limit, so the last-chance recovery `Prepare` shrinks the window even when pass 1 already summarised (issue #1320).
 
 For the evolution of the shell-based environment management tooling — from simple bash aliases through Toby, Dobby, Porter, Sprawl, Winky, Flopsy, and Niffler — see [Evolution of Environment Management](docs/architect/environments/environment-management-evolution.md).
 

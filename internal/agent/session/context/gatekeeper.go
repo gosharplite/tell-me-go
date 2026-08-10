@@ -93,18 +93,28 @@ func NewTokenGatekeeper(estimator TokenEstimator, summarizer ports.Summarizer, o
 	return newTokenGatekeeper(estimator, summarizer, opts...)
 }
 
+// recoveryBufferMultiplier doubles the system-buffer reservation on a
+// recovery Prepare (ADR-059): "the recovery margin reserves the system
+// buffer a second time — an honest demand for a strictly smaller window
+// when the estimator has demonstrably under-counted".
+const recoveryBufferMultiplier = 2
+
 // hardLimitPolicy encapsulates the context-window buffer reservation
 // logic, keeping it separate from event publishing and error signaling.
 // It is a pure value type with no dependencies beyond config constants.
 type hardLimitPolicy struct {
 	MaxTokens           int
 	SystemContextBuffer int
+	// Recovery marks a recovery from provider context overflow — the
+	// reservation is doubled (ADR-059).
+	Recovery bool
 }
 
 // effectiveLimit returns the usable token budget after reserving system
 // buffer space. The reservation is capped at min(10% of MaxTokens,
-// SystemContextBuffer). Returns 0 when MaxTokens ≤ 0, which
-// signals that no hard-limit enforcement should be performed.
+// SystemContextBuffer), then doubled when Recovery is set. Returns 0
+// when MaxTokens ≤ 0, which signals that no hard-limit enforcement
+// should be performed.
 func (p hardLimitPolicy) effectiveLimit() int {
 	if p.MaxTokens <= 0 {
 		return 0
@@ -113,6 +123,9 @@ func (p hardLimitPolicy) effectiveLimit() int {
 	maxReserved := int(float64(p.MaxTokens) * 0.1)
 	if reserved > maxReserved {
 		reserved = maxReserved
+	}
+	if p.Recovery {
+		reserved *= recoveryBufferMultiplier
 	}
 	return p.MaxTokens - reserved
 }
@@ -142,8 +155,14 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 }
 
 func (t *TokenGatekeeper) handleSafetyPressure(ctx context.Context, req *ContextRequest, tokens int) (int, error) {
-	if t.MaxTokens > 0 && tokens > int(float64(t.MaxTokens)*0.9) {
-		return t.triggerSummarization(ctx, req, tokens, t.MaxTokens, "safety limit pressure (> 90%)")
+	overThreshold := t.MaxTokens > 0 && tokens > int(float64(t.MaxTokens)*0.9)
+	recovering := req.RecoveryFromOverflow
+	if overThreshold || recovering {
+		reason := "safety limit pressure (> 90%)"
+		if recovering {
+			reason = "recovery from provider context overflow: forcing summarization to shrink the window"
+		}
+		return t.triggerSummarization(ctx, req, tokens, t.MaxTokens, reason)
 	}
 	return tokens, nil
 }
@@ -200,9 +219,11 @@ func (t *TokenGatekeeper) publishHardLimitEvents(ctx context.Context, tokens, ef
 }
 
 func (t *TokenGatekeeper) validateHardLimits(ctx context.Context, req *ContextRequest, tokens int) error {
+	recovering := req != nil && req.RecoveryFromOverflow
 	effectiveLimit := hardLimitPolicy{
 		MaxTokens:           t.MaxTokens,
 		SystemContextBuffer: config.SystemContextBuffer,
+		Recovery:            recovering,
 	}.effectiveLimit()
 	if effectiveLimit <= 0 {
 		return nil

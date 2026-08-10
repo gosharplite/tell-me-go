@@ -496,7 +496,11 @@ func (m *countingHistoryManager) GetWindowCalls() int {
 	return m.getWindowCalls
 }
 
-func TestManager_Prepare_CacheHit(t *testing.T) {
+// TestManager_Prepare_RebuildsOnEveryCall is the nil-pipeline mirror of the
+// deleted cache-hit test: with the context window cache removed (ADR-057),
+// every Prepare must load fresh history — there is no cache short-circuit
+// that could suppress a rebuild on a same-turn re-Prepare.
+func TestManager_Prepare_RebuildsOnEveryCall(t *testing.T) {
 	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
 	baseHistory := &agenttest.MockHistoryManager{}
 	baseHistory.SetInternalContents([]*llm.Content{
@@ -504,44 +508,75 @@ func TestManager_Prepare_CacheHit(t *testing.T) {
 	})
 	countingHM := &countingHistoryManager{MockHistoryManager: baseHistory}
 
+	// nil factory → nil pipeline: Prepare is loadHistory + runPipeline(nil).
 	cm := sessctx.NewManager(strategy, countingHM, nil, nil)
 
 	ctx := context.Background()
-
-	// First call — cache miss, loads history and populates cache.
-	h1, m1, err := cm.Prepare(ctx, 1)
-	require.NoError(t, err)
-	require.Len(t, h1, 1)
-	require.Equal(t, "hello", h1[0].Parts[0].Text)
-	require.Equal(t, 1, countingHM.GetWindowCalls())
-
-	// Second call — cache hit, should NOT call GetWindow again.
-	h2, m2, err := cm.Prepare(ctx, 1)
-	require.NoError(t, err)
-	require.Len(t, h2, 1)
-	require.Equal(t, "hello", h2[0].Parts[0].Text)
-	// GetWindow should still be 1 — no additional call for cache hit.
-	require.Equal(t, 1, countingHM.GetWindowCalls())
-
-	// Verify metadata is present (even if empty) on both calls.
-	require.NotNil(t, m1)
-	require.NotNil(t, m2)
-}
-
-// versionBumpingTransformer is a transient pipeline transformer that bumps the
-// Manager's internal version counter between loadHistory and commitToCache,
-// causing commitToCache to detect a version mismatch and return ErrTransient.
-type versionBumpingTransformer struct {
-	cm *sessctx.Manager
-}
-
-func (t *versionBumpingTransformer) Priority() int { return 200 } // transient: runs after persistFn
-
-func (t *versionBumpingTransformer) Transform(ctx context.Context, req *sessctx.ContextRequest) error {
-	if err := t.cm.Reconfigure(events.Limits{}); err != nil {
-		return err
+	for i := 0; i < 2; i++ {
+		h, m, err := cm.Prepare(ctx, 1)
+		require.NoError(t, err)
+		require.Len(t, h, 1)
+		require.Equal(t, "hello", h[0].Parts[0].Text)
+		require.NotNil(t, m)
+		require.False(t, m.SummarizationAttempted, "nil pipeline must not summarise")
 	}
-	return nil
+
+	// Every Prepare rebuilds — no cache short-circuit skips GetWindow.
+	require.Equal(t, 2, countingHM.GetWindowCalls())
+}
+
+// TestManager_Prepare_ReSummarizesOnSecondPrepare verifies the ADR-057
+// regression fix at Manager level: with the cache gone, a second Prepare on
+// the same turn re-runs the gatekeeper against freshly loaded history. The
+// fixed token counter re-reports 18500 tokens (> 90% of MaxHistoryTokens),
+// so the gatekeeper summarises again — exactly twice, with no cache to
+// suppress the second summarisation.
+func TestManager_Prepare_ReSummarizesOnSecondPrepare(t *testing.T) {
+	tc := &agenttest.MockTokenCounter{Tokens: 18500}
+	strategy := sessctx.NewStrategy(tc)
+
+	mockSum := &agenttest.MockSummarizer{}
+	var summarizeCalls int
+	mockSum.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		summarizeCalls++
+		return "summary", nil, nil
+	})
+
+	// WIRING ORDER IS LOAD-BEARING: both must happen BEFORE NewManager.
+	// SetLimits(20000, 100, 200) — MaxHistoryTokens=20000, MaxToolTurns=100,
+	// MaxHistoryTurns=200 (pruner active but non-trimming: 12 turns ≪ 200).
+	// NewManager builds the pipeline from GetLimits() and wires cm.Summarizer
+	// from the factory — a nil factory summarizer would make the gatekeeper
+	// return a blocking ErrTerminal and the test would fail for the wrong reason.
+	strategy.SetLimits(20000, 100, 200)
+	factory := &sessctx.Factory{Estimator: strategy, Summarizer: mockSum}
+
+	// Derived inequality (numbers from the gatekeeper's SystemContextBuffer=1000
+	// in internal/domain/config/config.go — a buffer edit forces re-derivation):
+	//   0.9×20000 = 18000 < 18500 ≤ 20000 − min(0.1×20000, 1000) = 19000
+	// 18500 exceeds the 90% safety-pressure threshold (18000) → summarise;
+	// 18500 stays under the hard-limit effective budget (19000) → no error.
+
+	// 12 unpinned turns (24 messages): ≥10 messages so the summarizer
+	// maintenance gate isn't triggered; ≥2 candidate turns so a viable
+	// block exists.
+	history := &agenttest.MockHistoryManager{}
+	history.SetInternalContents(makePinnableTurnsExt(12))
+
+	cm := sessctx.NewManager(strategy, history, nil, factory)
+
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		_, m, err := cm.Prepare(ctx, 1)
+		require.NoError(t, err)
+		require.NotNil(t, m)
+		require.True(t, m.SummarizationAttempted, "gatekeeper must summarise on every Prepare")
+	}
+
+	// Each Prepare loads fresh history; the fixed counter re-reports
+	// 18500 > 18000, so the gatekeeper summarises on every Prepare —
+	// exactly twice, no cache to suppress the second.
+	require.Equal(t, 2, summarizeCalls)
 }
 
 // canonicalVersionBumper bumps the Manager's version during the canonical phase
@@ -585,27 +620,6 @@ func (t *failingTransientTransformer) Transform(ctx context.Context, req *sessct
 	return errTransientFail
 }
 
-func TestManager_Prepare_CommitToCacheError(t *testing.T) {
-	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
-	history := &agenttest.MockHistoryManager{}
-	history.SetInternalContents([]*llm.Content{
-		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
-	})
-
-	cm := sessctx.NewManager(strategy, history, nil, nil)
-
-	// Install a pipeline whose transient transformer bumps the version after
-	// loadHistory snapshots it but before commitToCache checks it.
-	bumper := &versionBumpingTransformer{cm: cm}
-	cm.Pipeline = sessctx.NewContextPipeline(bumper)
-
-	ctx := context.Background()
-	_, _, err := cm.Prepare(ctx, 1)
-	require.Error(t, err)
-	require.ErrorIs(t, err, llm.ErrTransient)
-	require.Contains(t, err.Error(), "concurrent history modification detected")
-}
-
 func TestManager_Prepare_ExecutePipeline_VersionMismatch(t *testing.T) {
 	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
 	history := &agenttest.MockHistoryManager{}
@@ -615,7 +629,7 @@ func TestManager_Prepare_ExecutePipeline_VersionMismatch(t *testing.T) {
 
 	cm := sessctx.NewManager(strategy, history, nil, nil)
 
-	// Create a versionBumpingTransformer at canonical tier (Priority < 100)
+	// Create a canonicalVersionBumper at canonical tier (Priority < 100)
 	// so it executes BEFORE persistFn, triggering the version guard
 	// inside executePipeline's closure (manager.go:236-237).
 	bumper := &canonicalVersionBumper{cm: cm}
@@ -786,7 +800,7 @@ func TestManager_Prepare_ExecutePipeline_Coverage(t *testing.T) {
 		verifyPersist  bool // if true, assert SetContents was called before the error
 	}{
 		{
-			name: "happy path: version matches, SetContents succeeds, commitToCache succeeds",
+			name: "happy path: version matches, SetContents succeeds",
 			pipeline: []sessctx.ContextTransformer{
 				&forcePersistTransformer{},
 			},

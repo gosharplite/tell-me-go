@@ -137,10 +137,25 @@ func newBenchTurnWithRealBus() *Turn {
 // MockHistoryManager.Contents with 80 entries alternating between
 // user and model roles, uses benchClock and passThroughEventBus
 // for zero-allocation measurement, and wires AddContentFunc to
-// suppress unbounded growth.
+// suppress unbounded growth. The token counter is the fixed-value
+// agenttest.MockTokenCounter (80 entries x 100 tokens) — the
+// parameterized core is newBenchTurnLargeWithCounter, which keeps
+// every other construction detail identical across counter types.
 func newBenchTurnLarge() *Turn {
+	return newBenchTurnLargeWithCounter(
+		&agenttest.MockTokenCounter{Tokens: len(makeLargeHistory()) * 100},
+	)
+}
+
+// newBenchTurnLargeWithCounter is the counter-parameterized core of
+// newBenchTurnLarge. It builds the identical 40-turn/80-entry fixture,
+// limits (MaxHistoryTurns: 200, MaxHistoryTokens: 500000), benchClock,
+// passThroughEventBus, and AddContent suppression for any
+// llm.TokenCounter, so that benchmark numbers remain comparable
+// between the mock counter and the production HeuristicTokenCounter
+// (candidate (i) measurement substrate for #1321).
+func newBenchTurnLargeWithCounter(counter llm.TokenCounter) *Turn {
 	entries := makeLargeHistory()
-	counter := &agenttest.MockTokenCounter{Tokens: len(entries) * 100}
 	hMock := &agenttest.MockHistoryManager{
 		Contents: entries,
 	}
@@ -207,15 +222,6 @@ func makeLargeHistory() []*llm.Content {
 	return contents
 }
 
-// prewarmCache calls cm.Prepare once to populate the Manager's
-// internal cache so that subsequent Prepare calls hit the cache.
-func prewarmCache(tb testing.TB, cm *sessctx.Manager, turnIndex int) {
-	tb.Helper()
-	if _, _, err := cm.Prepare(context.Background(), turnIndex); err != nil {
-		tb.Fatalf("prewarmCache: Prepare failed: %v", err)
-	}
-}
-
 // BenchmarkScaffoldingSanity validates that the scaffolding compiles
 // and runs correctly.
 func BenchmarkScaffoldingSanity(b *testing.B) {
@@ -271,25 +277,8 @@ func BenchmarkGuardStep(b *testing.B) {
 }
 
 // BenchmarkContextRefiner measures the overhead of the context refinement
-// phase including cache-hit and context-cancelled paths.
+// phase including the context-cancelled path.
 func BenchmarkContextRefiner(b *testing.B) {
-	b.Run("cache_hit", func(b *testing.B) {
-		step := &ContextRefiner{}
-		turn := newBenchTurn()
-		prewarmCache(b, turn.CtxManager, turn.Index)
-		b.ReportAllocs()
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _ = step.Process(context.Background(), turn)
-		}
-		if turn.State.PreparedHistory == nil {
-			b.Error("PreparedHistory is nil")
-		}
-		if turn.State.Metadata == nil {
-			b.Error("Metadata is nil")
-		}
-	})
-
 	b.Run("context_cancelled", func(b *testing.B) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
@@ -304,6 +293,25 @@ func BenchmarkContextRefiner(b *testing.B) {
 	b.Run("large", func(b *testing.B) {
 		step := &ContextRefiner{}
 		turn := newBenchTurnLarge()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = step.Process(context.Background(), turn)
+		}
+	})
+
+	// large_real_counter measures the context refinement phase with the
+	// PRODUCTION HeuristicTokenCounter (nil registry — valid;
+	// countToolDeclarationOverhead returns 0) instead of the fixed-value
+	// agenttest.MockTokenCounter. This is the measurement substrate for
+	// candidate (i) of #1321: with the real counter, each Prepare pays
+	// two O(text) token walks per round (gatekeeper gatekeeper.go:126
+	// and finalContextValidator transformers.go:60), which the mock
+	// counter hides. B/op is recorded for completeness but is NOT the
+	// acceptance currency — the mock-counter large is.
+	b.Run("large_real_counter", func(b *testing.B) {
+		step := &ContextRefiner{}
+		turn := newBenchTurnLargeWithCounter(sessctx.NewHeuristicTokenCounter(nil))
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -423,7 +431,6 @@ func BenchmarkFullTurnCycle(b *testing.B) {
 		refiner := &ContextRefiner{}
 		persist := &PersistenceStep{}
 		turn := newBenchTurn()
-		prewarmCache(b, turn.CtxManager, turn.Index)
 		// Suppress unbounded history growth from AddContent
 		turn.CtxManager.History.(*agenttest.MockHistoryManager).AddContentFunc =
 			func(ctx context.Context, content *llm.Content) error { return nil }
@@ -445,7 +452,6 @@ func BenchmarkFullTurnCycle(b *testing.B) {
 		persist := &PersistenceStep{}
 		recovery := &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 3, Backoff: 1 * time.Millisecond}}
 		turn := newBenchTurnWithClock(benchClock{})
-		prewarmCache(b, turn.CtxManager, turn.Index)
 		// Suppress unbounded history growth from AddContent
 		turn.CtxManager.History.(*agenttest.MockHistoryManager).AddContentFunc =
 			func(ctx context.Context, content *llm.Content) error { return nil }

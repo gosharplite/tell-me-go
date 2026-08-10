@@ -79,11 +79,11 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"TestHydrateMediaAssets":                          {Line: 243, Complexity: 13, FilePath: "internal/infrastructure/llm/openai/client_vision_test.go"},
 		"TestResolveCapabilities":                         {Line: 10, Complexity: 13, FilePath: "internal/domain/llm/capabilities_test.go"},
 		"assertMissingKeysResult":                         {Line: 211, Complexity: 13, FilePath: "internal/infrastructure/llm/factory_test.go"},
-		"(*RecoveryStep).Process":                         {Line: 124, Complexity: 12, FilePath: "internal/agent/orchestrator/engine_phases.go"},
+		"(*RecoveryStep).Process":                         {Line: 129, Complexity: 12, FilePath: "internal/agent/orchestrator/engine_phases.go"},
 		"(*model).handleDomainEvent":                      {Line: 338, Complexity: 12, FilePath: "internal/ui/tui/progress/model.go"},
 		"TestDeadCodeAnalyzer_Precision":                  {Line: 177, Complexity: 12, FilePath: "internal/tools/analysis/precision_test.go"},
 		"TestHistoryManager_SetPinned_ViaModelID":         {Line: 493, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
-		"TestRecoveryStep_EmptyResponse_RetriesUpToLimit": {Line: 531, Complexity: 12, FilePath: "internal/agent/orchestrator/engine_phases_test.go"},
+		"TestRecoveryStep_EmptyResponse_RetriesUpToLimit": {Line: 532, Complexity: 13, FilePath: "internal/agent/orchestrator/engine_phases_test.go"},
 		"TestUpdateTurnContent_AddTextWhenNone":           {Line: 1361, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestUpdateTurnContent_ClearText":                 {Line: 1274, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestVision_KimiImagePayload":                     {Line: 128, Complexity: 12, FilePath: "internal/infrastructure/llm/openai/client_vision_test.go"},
@@ -123,8 +123,8 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 	}{
 		{"config.go call-site error branch", "internal/domain/config/config.go", 249, 251},
 		{"task_service.go AppendTask body", "internal/domain/services/task_service.go", 101, 103},
-		{"manager.go groupTurns error branch", "internal/agent/session/context/manager.go", 574, 576},
-		{"manager.go capBestBlock error branch", "internal/agent/session/context/manager.go", 619, 621},
+		{"manager.go groupTurns error branch", "internal/agent/session/context/manager.go", 526, 528},
+		{"manager.go capBestBlock error branch", "internal/agent/session/context/manager.go", 571, 573},
 	}
 
 	for _, tt := range tests {
@@ -135,11 +135,12 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 	}
 
 	// The capBestBlock non-capped return pin (re-anchored 2026-09 from 582 to
-	// 590 as the acceptance comment block grew) must resolve to its catalog
-	// entry — previously it surfaced as an uncataloged MEDIUM gap.
+	// 590 as the acceptance comment block grew; re-anchored 2026-08 (#1320)
+	// from 590 to 542) must resolve to its catalog entry — previously it
+	// surfaced as an uncataloged MEDIUM gap.
 	t.Run("manager.go_capBestBlock_non_capped_return", func(t *testing.T) {
-		title := catalogTitleForRange(entries, "internal/agent/session/context/manager.go", 590, 590)
-		require.NotEmpty(t, title, "range manager.go:590 must be matched by an ACCEPTED catalog entry")
+		title := catalogTitleForRange(entries, "internal/agent/session/context/manager.go", 542, 542)
+		require.NotEmpty(t, title, "range manager.go:542 must be matched by an ACCEPTED catalog entry")
 		require.Contains(t, title, "capBestBlock non-capped return")
 	})
 }
@@ -195,7 +196,7 @@ func TestDetailedCoverageReport_CatalogedGapsNotActionable(t *testing.T) {
 
 // TestDetailedCoverageReport_ContextPackageCataloged is the end-to-end
 // behavioral check for the re-anchored capBestBlock non-capped return pin:
-// the formerly-MEDIUM manager.go:590 gap must appear under
+// the formerly-MEDIUM manager.go:542 gap must appear under
 // [CATALOGED GAPS (ACCEPTED)] with its ACCEPTED title, and must not surface
 // as actionable in the High or Medium buckets. Same full report path as
 // TestDetailedCoverageReport_CatalogedGapsNotActionable, scoped to the
@@ -224,10 +225,10 @@ func TestDetailedCoverageReport_ContextPackageCataloged(t *testing.T) {
 	report, err := m.getDetailedCoverageReport(context.Background(), "./internal/agent/session/context", nil, nil)
 	require.NoError(t, err)
 
-	// The re-anchored 590 gap must be cataloged, not actionable: it is listed
+	// The re-anchored 542 gap must be cataloged, not actionable: it is listed
 	// under [CATALOGED GAPS (ACCEPTED)] with the capBestBlock title ...
 	require.Contains(t, report, "[CATALOGED GAPS (ACCEPTED)]")
-	require.Contains(t, report, "manager.go (Lines 590-590)")
+	require.Contains(t, report, "manager.go (Lines 542-542)")
 	require.Contains(t, report, "capBestBlock non-capped return")
 	// ... and the High/Medium buckets are empty.
 	require.Contains(t, report, "- High Priority (Architectural): 0")

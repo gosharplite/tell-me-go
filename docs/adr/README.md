@@ -62,6 +62,9 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-054** | Catalog Cross-Reference Contract for Coverage & Complexity Reports | 2026-08 | Accepted | [2026-08-catalog-cross-reference-reporting-contract.md](2026-08-catalog-cross-reference-reporting-contract.md) |
 | **ADR-055** | Tools-Layer Filesystem Access via Injected Domain Port (defaultFS Fallback) | 2026-08 | Accepted | [2026-08-tools-filesystem-injection.md](2026-08-tools-filesystem-injection.md) |
 | **ADR-056** | Domain-Home Criterion for Cross-Layer Contracts; Transitive-Closure Gate; Context-Family Extraction | 2026-08 | Accepted | [2026-08-contract-home-and-transitive-closure-gate.md](2026-08-contract-home-and-transitive-closure-gate.md) |
+| **ADR-057** | Remove the Context Window Cache | 2026-08 | Accepted | [2026-08-remove-context-window-cache.md](2026-08-remove-context-window-cache.md) |
+| **ADR-058** | Accept the Per-Round GetWindow Deep Clone (F2 Evaluation — Candidate 3) | 2026-08 | Accepted | [2026-08-getwindow-clone-evaluation.md](2026-08-getwindow-clone-evaluation.md) |
+| **ADR-059** | Overflow Signal into Prepare (Effective-Budget Reduction on Recovery) | 2026-08 | Accepted | [2026-08-overflow-signal-into-prepare.md](2026-08-overflow-signal-into-prepare.md) |
 
 ## How to Create a New ADR
 

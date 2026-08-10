@@ -57,8 +57,13 @@ type ContextRequest struct {
 	// transformer chain. Transformers should update relevant fields.
 	Metadata ContextMetadata
 	// PersistHistory indicates whether the final History should be
-	// persisted after the pipeline completes. Set by the orchestrator.
+	// written to the store after the pipeline completes. Set by the orchestrator.
 	PersistHistory bool
+	// RecoveryFromOverflow marks this Prepare as a recovery from a
+	// provider context overflow (ADR-059). Request-scope only — never
+	// stored, never Manager state. The gatekeeper applies forced
+	// summarization and a reduced hard limit for this request.
+	RecoveryFromOverflow bool
 }
 
 // PruningPolicy defines how to mark turns for pruning.
@@ -86,26 +91,4 @@ type ContextTransformer interface {
 	// Priority returns the execution order of this transformer.
 	// Lower values execute first. Values need not be contiguous.
 	Priority() int
-}
-
-// clone creates a deep copy of the ContextMetadata.
-func (m *ContextMetadata) clone() *ContextMetadata {
-	cloned := *m
-	if m.Warnings != nil {
-		cloned.Warnings = make([]string, len(m.Warnings))
-		copy(cloned.Warnings, m.Warnings)
-	}
-	if m.KeptByPolicy != nil {
-		cloned.KeptByPolicy = make(map[string]int)
-		for k, v := range m.KeptByPolicy {
-			cloned.KeptByPolicy[k] = v
-		}
-	}
-	if m.History != nil {
-		cloned.History = make([]*llm.Content, len(m.History))
-		for i, c := range m.History {
-			cloned.History[i] = llm.CloneContent(c)
-		}
-	}
-	return &cloned
 }

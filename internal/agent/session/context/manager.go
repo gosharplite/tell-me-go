@@ -21,10 +21,6 @@ type Manager struct {
 	mu      sync.RWMutex
 	version int
 
-	cachedVersion  int
-	cachedWindow   []*llm.Content
-	cachedMetadata *ContextMetadata
-
 	Strategy        *Strategy
 	History         ports.HistoryManager
 	Events          events.EventBus
@@ -113,48 +109,22 @@ func (cm *Manager) Reconfigure(limits events.Limits) error {
 	return nil
 }
 
-// cloneContentSlice creates a deep clone of a slice of Content.
-func cloneContentSlice(contents []*llm.Content) []*llm.Content {
-	if contents == nil {
-		return nil
-	}
-	cloned := make([]*llm.Content, len(contents))
-	for i, c := range contents {
-		cloned[i] = llm.CloneContent(c)
-	}
-	return cloned
-}
+// PrepareOption is a functional option configuring a single Prepare
+// request (ADR-059). Options apply to the request only — they never
+// mutate Manager state and are never stored.
+type PrepareOption func(*ContextRequest)
 
-// getCachedView checks if the current version matches the cached version. Must be called with lock held.
-func (cm *Manager) getCachedView(snapshotVersion int) ([]*llm.Content, *ContextMetadata, bool) {
-	if cm.cachedWindow != nil && cm.cachedVersion == snapshotVersion {
-		cachedHistory := cloneContentSlice(cm.cachedWindow)
-		clonedMeta := cm.cachedMetadata.clone()
-		return cachedHistory, clonedMeta, true
+// WithOverflowRecovery marks this Prepare as a recovery from a provider
+// context overflow; the gatekeeper applies forced summarization and a
+// reduced hard limit for this request only (ADR-059).
+func WithOverflowRecovery() PrepareOption {
+	return func(req *ContextRequest) {
+		req.RecoveryFromOverflow = true
 	}
-	return nil, nil, false
-}
-
-// updateCache stores the processed context window back into the cache.
-func (cm *Manager) updateCache(snapshotVersion int, req *ContextRequest) error {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	if cm.version != snapshotVersion {
-		return fmt.Errorf("%w: concurrent history modification detected (expected %d, got %d)", llm.ErrTransient, snapshotVersion, cm.version)
-	}
-
-	cm.cachedWindow = cloneContentSlice(req.History)
-	cm.cachedMetadata = req.Metadata.clone()
-	cm.cachedVersion = cm.version
-	return nil
 }
 
 // Prepare prepares the history for the given turn, applying pruning and summarization.
-func (cm *Manager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *ContextMetadata, error) {
-	if history, meta, ok := cm.tryCache(); ok {
-		return history, meta, nil
-	}
-
+func (cm *Manager) Prepare(ctx context.Context, turn int, opts ...PrepareOption) ([]*llm.Content, *ContextMetadata, error) {
 	snapshotVersion, history, pipeline, err := cm.loadHistory(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -165,23 +135,15 @@ func (cm *Manager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *Cont
 		History: history,
 	}
 
-	persisted, err := cm.runPipeline(ctx, pipeline, req, snapshotVersion)
-	if err != nil {
-		return nil, nil, err
+	for _, opt := range opts {
+		opt(req)
 	}
 
-	// Coverage: defensive guard — version mismatch requires a concurrent Reconfigure() between loadHistory and commitToCache; intentionally untested to avoid flaky race tests.
-	if err := cm.commitToCache(snapshotVersion, persisted, req); err != nil {
+	if err := cm.runPipeline(ctx, pipeline, req, snapshotVersion); err != nil {
 		return nil, nil, err
 	}
 
 	return req.History, &req.Metadata, nil
-}
-
-func (cm *Manager) tryCache() ([]*llm.Content, *ContextMetadata, bool) {
-	cm.mu.RLock()
-	defer cm.mu.RUnlock()
-	return cm.getCachedView(cm.version)
 }
 
 func (cm *Manager) loadHistory(ctx context.Context) (int, []*llm.Content, *contextPipeline, error) {
@@ -205,19 +167,11 @@ func (cm *Manager) loadHistory(ctx context.Context) (int, []*llm.Content, *conte
 	return snapshotVersion, history, cm.Pipeline, nil
 }
 
-func (cm *Manager) runPipeline(ctx context.Context, pipeline *contextPipeline, req *ContextRequest, snapshotVersion int) (bool, error) {
+func (cm *Manager) runPipeline(ctx context.Context, pipeline *contextPipeline, req *ContextRequest, snapshotVersion int) error {
 	if pipeline == nil {
-		return false, nil
+		return nil
 	}
 	return cm.executePipeline(ctx, pipeline, req, snapshotVersion)
-}
-
-func (cm *Manager) commitToCache(snapshotVersion int, persisted bool, req *ContextRequest) error {
-	expectedVersion := snapshotVersion
-	if persisted {
-		expectedVersion++
-	}
-	return cm.updateCache(expectedVersion, req)
 }
 
 func validateHistoryBoundaries(history []*llm.Content) error {
@@ -232,11 +186,10 @@ func validateHistoryBoundaries(history []*llm.Content) error {
 	return nil
 }
 
-func (cm *Manager) executePipeline(ctx context.Context, pipeline *contextPipeline, req *ContextRequest, snapshotVersion int) (bool, error) {
+func (cm *Manager) executePipeline(ctx context.Context, pipeline *contextPipeline, req *ContextRequest, snapshotVersion int) error {
 	// We execute the pipeline to prepare the Read-Model (context window).
 	// We DO NOT persist the pruned/transformed history back to the store,
 	// preserving the user's full Event Sourced history safely on disk.
-	var persisted bool
 	err := pipeline.executeWithPersistence(ctx, req, func(ctx context.Context, h []*llm.Content) error {
 		cm.mu.Lock()
 		defer cm.mu.Unlock()
@@ -248,10 +201,9 @@ func (cm *Manager) executePipeline(ctx context.Context, pipeline *contextPipelin
 		}
 
 		cm.version++
-		persisted = true
 		return cm.History.SetContents(ctx, h)
 	})
-	return persisted, err
+	return err
 }
 
 // AddContent appends content to the history in a thread-safe manner, validating role alternation.

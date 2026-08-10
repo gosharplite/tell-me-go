@@ -32,7 +32,7 @@ ifeq ($(OS),Windows_NT)
     endif
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-no-test-sleep verify-architecture verify-exit-query verify-transitive-gate verify-nonfix-catalog verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-no-test-sleep verify-architecture verify-exit-query verify-transitive-gate verify-nonfix-catalog verify-adr-index verify-no-context-window-cache lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -45,6 +45,7 @@ help:
 	@echo "  make verify-nonfix-catalog - Verify the complexity-pin catalog partition (issue #1297)"
 	@echo "  make verify-no-test-sleep - Verify no time.Sleep for synchronization in tests"
 	@echo "  make verify-tools-adapter-import - Verify tools adapter imports are confined to default_fs.go (ADR-055)"
+	@echo "  make verify-no-context-window-cache - Verify no context window cache references (ADR-057; part of make check/check-full)"
 	@echo "  make test-coverage - Run tests with coverage (excludes mocks/generated)"
 	@echo "  make tidy       - Tidy and vendor dependencies"
 	@echo "  make fmt        - Format code"
@@ -689,6 +690,8 @@ check: fmt tidy build
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="
 	@$(MAKE) verify-adr-index
+	@echo "=== verify-no-context-window-cache ==="
+	@$(MAKE) verify-no-context-window-cache
 	@echo "=== modelith-check ==="
 	@$(MAKE) modelith-check
 	@echo "=== fuzz-smoke ==="
@@ -727,6 +730,8 @@ check-full: fmt tidy build
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="
 	@$(MAKE) verify-adr-index
+	@echo "=== verify-no-context-window-cache ==="
+	@$(MAKE) verify-no-context-window-cache
 	@echo "=== modelith-check ==="
 	@$(MAKE) modelith-check
 	@echo "=== fuzz-smoke ==="
@@ -806,5 +811,110 @@ else
 			exit 1 \
 		}; \
 		Write-Host 'ADR index is consistent.' \
+	"
+endif
+
+# Verify ADR-057: no context window cache references remain.
+# The context window cache was removed in #1319
+# (see docs/adr/2026-08-remove-context-window-cache.md). Six checks, each
+# exit-1-on-match; cloneContentSlice survives only as a test helper.
+.PHONY: verify-no-context-window-cache
+verify-no-context-window-cache:
+ifeq ($(IS_POSIX),true)
+	@echo "Checking for context window cache references (ADR-057)..."
+	@# Tier 1: die tokens repo-wide in .go files (ADR-057; .go-scoped per Flag-1 ruling)
+	@VIOLATIONS="$$( grep -rnE 'cachedVersion|cachedWindow|cachedMetadata|tryCache|getCachedView|commitToCache|prewarmCache|versionBumpingTransformer' --include='*.go' --exclude-dir=.git . )"; \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ ADR-057 violation: context window cache die tokens found in .go files."; \
+		echo "   See: docs/adr/2026-08-remove-context-window-cache.md"; \
+		echo ""; \
+		echo "$$VIOLATIONS"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@# Tier 2: updateCache in session context
+	@VIOLATIONS="$$( grep -rnE '\bupdateCache\b' internal/agent/session/context/ )"; \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ ADR-057 violation: updateCache references found."; \
+		echo "   See: docs/adr/2026-08-remove-context-window-cache.md"; \
+		echo ""; \
+		echo "$$VIOLATIONS"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@# Tier 2: ContextMetadata.clone in session context
+	@VIOLATIONS="$$( grep -rn 'func (m *ContextMetadata) clone' internal/agent/session/context/ )"; \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ ADR-057 violation: ContextMetadata.clone references found."; \
+		echo "   See: docs/adr/2026-08-remove-context-window-cache.md"; \
+		echo ""; \
+		echo "$$VIOLATIONS"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@# Tier 2: cache_hit in orchestrator
+	@VIOLATIONS="$$( grep -rnE '\bcache_hit\b' internal/agent/orchestrator/ )"; \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ ADR-057 violation: cache_hit references found in orchestrator."; \
+		echo "   See: docs/adr/2026-08-remove-context-window-cache.md"; \
+		echo ""; \
+		echo "$$VIOLATIONS"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@# Tier 2: 'persisted' in session context
+	@VIOLATIONS="$$( grep -rnw 'persisted' internal/agent/session/context/ )"; \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ ADR-057 violation: 'persisted' references found in session context."; \
+		echo "   See: docs/adr/2026-08-remove-context-window-cache.md"; \
+		echo ""; \
+		echo "$$VIOLATIONS"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@# Survival: cloneContentSlice must not appear in production code
+	@VIOLATIONS="$$( grep -rn 'cloneContentSlice' internal/agent/session/context/ --include='*.go' | grep -v '_test\.go' )"; \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ ADR-057 violation: cloneContentSlice in production code."; \
+		echo "   See: docs/adr/2026-08-remove-context-window-cache.md"; \
+		echo ""; \
+		echo "$$VIOLATIONS"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@echo "  ✓ No context window cache references."
+else
+	@echo "Checking for context window cache references (ADR-057)..."
+	@powershell -Command " \
+		$$ErrorActionPreference = 'Stop'; \
+		$$violations = @(); \
+		$$t1 = Get-ChildItem -Path . -Recurse -Filter '*.go' | Where-Object { ($$_.FullName.Replace('\', '/')) -notmatch '\.git/' } | Select-String -Pattern 'cachedVersion|cachedWindow|cachedMetadata|tryCache|getCachedView|commitToCache|prewarmCache|versionBumpingTransformer'; \
+		if ($$t1) { $$violations += ('Tier-1 die tokens in .go files:', ($$t1 | Out-String).Trim()) }; \
+		$$t2 = Select-String -Path 'internal/agent/session/context/*.go' -Pattern '\bupdateCache\b'; \
+		if ($$t2) { $$violations += ('updateCache in session context:', ($$t2 | Out-String).Trim()) }; \
+		$$t3 = Select-String -Path 'internal/agent/session/context/*.go' -Pattern 'func \(m \*ContextMetadata\) clone'; \
+		if ($$t3) { $$violations += ('ContextMetadata.clone in session context:', ($$t3 | Out-String).Trim()) }; \
+		$$t4 = Select-String -Path 'internal/agent/orchestrator/*.go' -Pattern '\bcache_hit\b'; \
+		if ($$t4) { $$violations += ('cache_hit in orchestrator:', ($$t4 | Out-String).Trim()) }; \
+		$$t5 = Select-String -Path 'internal/agent/session/context/*.go' -Pattern '\bpersisted\b'; \
+		if ($$t5) { $$violations += ('persisted in session context:', ($$t5 | Out-String).Trim()) }; \
+		$$t6 = Get-ChildItem -Path 'internal/agent/session/context' -Filter '*.go' | Where-Object { $$_.Name -notlike '*_test.go' } | Select-String -Pattern 'cloneContentSlice'; \
+		if ($$t6) { $$violations += ('cloneContentSlice in production code:', ($$t6 | Out-String).Trim()) }; \
+		if ($$violations.Count -gt 0) { \
+			Write-Host ''; \
+			Write-Host '❌ ADR-057 violation: context window cache references found.'; \
+			Write-Host '   See: docs/adr/2026-08-remove-context-window-cache.md'; \
+			Write-Host ''; \
+			$$violations | ForEach-Object { Write-Host $$_ }; \
+			Write-Host ''; \
+			exit 1 \
+		}; \
+		Write-Host '  ✓ No context window cache references.' \
 	"
 endif
