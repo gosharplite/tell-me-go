@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
@@ -55,7 +56,11 @@ func (p *GuardStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, err
 type ContextRefiner struct{}
 
 func (p *ContextRefiner) Process(ctx context.Context, Turn *Turn) (ProcessResult, error) {
-	history, metadata, err := Turn.CtxManager.Prepare(ctx, Turn.Index)
+	var opts []sessctx.PrepareOption
+	if Turn.State.RecoveryFromOverflow {
+		opts = append(opts, sessctx.WithOverflowRecovery())
+	}
+	history, metadata, err := Turn.CtxManager.Prepare(ctx, Turn.Index, opts...)
 	if err != nil {
 		category := llm.ErrTerminal
 		if IsTransient(err) {
@@ -163,6 +168,7 @@ func (p *RecoveryStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, 
 			"turn", Turn.Index)
 		if Turn.State.RetryCount == 0 {
 			Turn.State.RetryCount++
+			Turn.State.RecoveryFromOverflow = true
 			return ProcessResult{NextPhase: PhaseRefining}, nil
 		}
 		// Subsequent context overflows fall through to retry/failure
