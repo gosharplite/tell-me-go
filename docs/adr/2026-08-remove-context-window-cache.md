@@ -89,9 +89,11 @@ Note: both benchmarks live in the orchestrator package (`engine_phases_bench_tes
 
 | Comparison | Before | After | Interpretation |
 |---|---|---|---|
-| `FullTurnCycle/happy_path` | prewarmed — *captured at merge time — final task fills these in* | de-prewarmed — *captured at merge time — final task fills these in* | accepted regression |
-| `FullTurnCycle/with_recovery` | prewarmed — *captured at merge time — final task fills these in* | de-prewarmed — *captured at merge time — final task fills these in* | accepted regression |
-| `ContextRefiner/large` | *captured at merge time — final task fills these in* | *captured at merge time — final task fills these in* | isolation of the write-clone removal; B/op decisive |
+| `FullTurnCycle/happy_path` | prewarmed — 1930 ns/op · 1456 B/op · 24 allocs/op | de-prewarmed — 1571 ns/op · 1136 B/op · 19 allocs/op | no regression — faster after (1930→1571 ns/op, −22% B/op); the cache-hit read-clone (`getCachedView`'s `cloneContentSlice` + `ContextMetadata.clone()`) exceeded the rebuild cost for the 1-message window |
+| `FullTurnCycle/with_recovery` | prewarmed — 4544 ns/op · 2392 B/op · 43 allocs/op | de-prewarmed — 4084 ns/op · 2072 B/op · 38 allocs/op | no regression — faster after (4544→4084 ns/op, −13% B/op); same read-clone overhead removed |
+| `ContextRefiner/large` | 13246 ns/op · 16816 B/op · 242 allocs/op | 13355 ns/op · 16864 B/op · 242 allocs/op | neutral within noise (ns/op +0.8%, B/op +48 B, allocs identical at 242); the bench self-prewarms (iteration-1 miss populates the cache, steady state hits), so before-large measured the cache-hit read-clone, not the write-clone — both states pay one O(window) clone per iteration; the write-clone removal is not isolated by this harness |
+
+**VINTAGE:** clone implementation identity — `current CloneContent` for both before and after (no cheaper-clone optimization landed in this PR); token counter — `agenttest.MockTokenCounter` (fixed-value mock); scenario identity — the three named comparisons; before — `d44fc338` (2026-08-10, code identical to `b0f1aeac`); after — `c887cd0f` (2026-08-10).
 
 ## Consequences
 
