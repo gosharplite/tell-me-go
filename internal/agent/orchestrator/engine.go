@@ -257,6 +257,7 @@ func (e *Engine) prepareNextTurn(Turn *Turn) {
 	Turn.State.CurrentTurns = Turn.Index
 	Turn.State.Phase = PhaseGuard
 	Turn.State.RetryCount = 0
+	Turn.State.RecoveryFromOverflow = false
 	Turn.State.Response = nil
 	Turn.State.ToolResponse = nil
 	Turn.State.HasToolCalls = false

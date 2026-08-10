@@ -59,6 +59,11 @@ type ContextRequest struct {
 	// PersistHistory indicates whether the final History should be
 	// written to the store after the pipeline completes. Set by the orchestrator.
 	PersistHistory bool
+	// RecoveryFromOverflow marks this Prepare as a recovery from a
+	// provider context overflow (ADR-059). Request-scope only — never
+	// stored, never Manager state. The gatekeeper applies forced
+	// summarization and a reduced hard limit for this request.
+	RecoveryFromOverflow bool
 }
 
 // PruningPolicy defines how to mark turns for pruning.

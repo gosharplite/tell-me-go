@@ -109,8 +109,22 @@ func (cm *Manager) Reconfigure(limits events.Limits) error {
 	return nil
 }
 
+// PrepareOption is a functional option configuring a single Prepare
+// request (ADR-059). Options apply to the request only — they never
+// mutate Manager state and are never stored.
+type PrepareOption func(*ContextRequest)
+
+// WithOverflowRecovery marks this Prepare as a recovery from a provider
+// context overflow; the gatekeeper applies forced summarization and a
+// reduced hard limit for this request only (ADR-059).
+func WithOverflowRecovery() PrepareOption {
+	return func(req *ContextRequest) {
+		req.RecoveryFromOverflow = true
+	}
+}
+
 // Prepare prepares the history for the given turn, applying pruning and summarization.
-func (cm *Manager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *ContextMetadata, error) {
+func (cm *Manager) Prepare(ctx context.Context, turn int, opts ...PrepareOption) ([]*llm.Content, *ContextMetadata, error) {
 	snapshotVersion, history, pipeline, err := cm.loadHistory(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -119,6 +133,10 @@ func (cm *Manager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *Cont
 	req := &ContextRequest{
 		Turn:    turn,
 		History: history,
+	}
+
+	for _, opt := range opts {
+		opt(req)
 	}
 
 	if err := cm.runPipeline(ctx, pipeline, req, snapshotVersion); err != nil {
