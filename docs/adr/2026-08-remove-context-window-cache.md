@@ -37,7 +37,7 @@ Delete the context window cache (Option A). `Prepare` always rebuilds: `loadHist
 **Tier 1 — repo-wide die greps (expect 0 matches):**
 
 ```bash
-grep -rnE 'cachedVersion|cachedWindow|cachedMetadata|tryCache|getCachedView|commitToCache|prewarmCache|versionBumpingTransformer' --exclude-dir=.git .
+grep -rnE 'cachedVersion|cachedWindow|cachedMetadata|tryCache|getCachedView|commitToCache|prewarmCache|versionBumpingTransformer' --include='*.go' --exclude-dir=.git .
 ```
 
 **Tier 2 — component-scoped die greps (expect 0 matches each):**
