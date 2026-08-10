@@ -42,8 +42,8 @@ Three config regimes determine whether PTC could save anything. The pipeline con
 
 ### R-bench — the calibrated instruments
 
-- **Pipeline construction:** `newBenchTurnLarge` (`internal/agent/orchestrator/engine_phases_bench_test.go:143-165`) reconfigures the context manager with `MaxHistoryTurns: 200` (`engine_phases_bench_test.go:151`). Its history fixture `makeLargeHistory` (`engine_phases_bench_test.go:217-241`) builds **80 entries = 40 user/model turns** (`for i := 0; i < 40; i++`, `engine_phases_bench_test.go:224`). The bench's own `newBenchTurn` variant uses `MaxHistoryTurns: 100` with a single turn (`engine_phases_bench_test.go:74-76,107-109`).
-- **Consequence:** `40 < 200` — session turns never exceed the sliding window, so `SlidingWindowPolicy` keeps everything (`startWindow = 40 - 200 < 0 → 0`, `pruner.go:170-172`), and no pruner-drops occur. This is the **benchmark's own 40<200 zero-discard observation**: the harness facts are primary-sourced at `engine_phases_bench_test.go:151` + `:217-241`; ADR-057 records the resulting measurements for this harness (see §3.4) and explicitly defers the perf-track follow-up to #1321 (`docs/adr/2026-08-remove-context-window-cache.md:98`).
+- **Pipeline construction:** `newBenchTurnLarge` (`internal/agent/orchestrator/engine_phases_bench_test.go:144-184` — wrapper `:144-146` + counter-parameterized core `:148-184`) reconfigures the context manager with `MaxHistoryTurns: 200` (`engine_phases_bench_test.go:166`). Its history fixture `makeLargeHistory` (`engine_phases_bench_test.go:186-220`) builds **80 entries = 40 user/model turns** (`for i := 0; i < 40; i++`, `engine_phases_bench_test.go:212`). The bench's own `newBenchTurn` variant uses `MaxHistoryTurns: 100` with a single turn (`engine_phases_bench_test.go:72,89` and `:109,119`).
+- **Consequence:** `40 < 200` — session turns never exceed the sliding window, so `SlidingWindowPolicy` keeps everything (`startWindow = 40 - 200 < 0 → 0`, `pruner.go:170-172`), and no pruner-drops occur. This is the **benchmark's own 40<200 zero-discard observation**: the harness facts are primary-sourced at `engine_phases_bench_test.go:166` + `:186-220`; ADR-057 records the resulting measurements for this harness (see §3.4) and explicitly defers the perf-track follow-up to #1321 (`docs/adr/2026-08-remove-context-window-cache.md:98`).
 
 ---
 
@@ -55,7 +55,7 @@ Three config regimes determine whether PTC could save anything. The pipeline con
 |---|---|
 | R-default | **0** — `HistoryPruner` not constructed (`pipeline_factory.go:61`). Structural zero. |
 | R-configured | **0 until session turns exceed the sliding window.** Below the window, `SlidingWindowPolicy` keeps every turn (`pruner.go:163-187`) and no turn is dropped. Above the window, drops are bounded by the pinning/importance retention of out-of-window turns (`pruner.go:140-153`). |
-| R-bench | **0** — 40 turns < window 200 (`engine_phases_bench_test.go:151,224`); zero-discard regime. |
+| R-bench | **0** — 40 turns < window 200 (`engine_phases_bench_test.go:166,212`); zero-discard regime. |
 
 **Session-length bound.** In R-configured, how far can a session grow before something else intervenes? The `tokenGatekeeper` is always present (`pipeline_factory.go:77-81`, `withMaxTokens(limits.MaxHistoryTokens)`), and it triggers auto-summarization when estimated tokens exceed **90% of `MaxTokens`** (`internal/agent/session/context/gatekeeper.go:145-146`: `tokens > int(float64(t.MaxTokens)*0.9)`). With the default budget `DefaultMaxHistoryTokens = 120000` (`config.go:20`), a session is summarization-capped at ≈108000 estimated tokens. Summarization resets/shrinks history, which resets the turn count — so even in R-configured, pruner-drops are bounded per window and the window cannot grow without bound. (Summarization drops themselves are **excluded** from PTC v1 per the contract; they only serve here as the session-length bound.)
 
@@ -70,7 +70,7 @@ The four cleaning transformers in the standard pipeline drop **only empty/malfor
 | `emptyMessagePruner` | messages with 0 parts | `transformers.go:412-439` |
 | `emptyTurnFilter` | turns where user+model messages are all-empty (`isTurnEmpty`), preserving a trailing single message | `transformers.go:20-51` |
 
-All four fire only on empty/malformed content — in **well-formed sessions ≈ 0**. The bench's 40-turn scenario has zero cleaner-drops: `makeLargeHistory` builds every entry as a `user`/`model` text part with a non-empty string and no function calls (`engine_phases_bench_test.go:217-241`), so no empty part, no empty ID, no 0-part message, no all-empty turn exists for any of the four to drop.
+All four fire only on empty/malformed content — in **well-formed sessions ≈ 0**. The bench's 40-turn scenario has zero cleaner-drops: `makeLargeHistory` builds every entry as a `user`/`model` text part with a non-empty string and no function calls (`engine_phases_bench_test.go:186-220`), so no empty part, no empty ID, no 0-part message, no all-empty turn exists for any of the four to drop.
 
 ---
 
