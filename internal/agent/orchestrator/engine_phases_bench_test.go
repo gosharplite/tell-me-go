@@ -137,10 +137,25 @@ func newBenchTurnWithRealBus() *Turn {
 // MockHistoryManager.Contents with 80 entries alternating between
 // user and model roles, uses benchClock and passThroughEventBus
 // for zero-allocation measurement, and wires AddContentFunc to
-// suppress unbounded growth.
+// suppress unbounded growth. The token counter is the fixed-value
+// agenttest.MockTokenCounter (80 entries x 100 tokens) — the
+// parameterized core is newBenchTurnLargeWithCounter, which keeps
+// every other construction detail identical across counter types.
 func newBenchTurnLarge() *Turn {
+	return newBenchTurnLargeWithCounter(
+		&agenttest.MockTokenCounter{Tokens: len(makeLargeHistory()) * 100},
+	)
+}
+
+// newBenchTurnLargeWithCounter is the counter-parameterized core of
+// newBenchTurnLarge. It builds the identical 40-turn/80-entry fixture,
+// limits (MaxHistoryTurns: 200, MaxHistoryTokens: 500000), benchClock,
+// passThroughEventBus, and AddContent suppression for any
+// llm.TokenCounter, so that benchmark numbers remain comparable
+// between the mock counter and the production HeuristicTokenCounter
+// (candidate (i) measurement substrate for #1321).
+func newBenchTurnLargeWithCounter(counter llm.TokenCounter) *Turn {
 	entries := makeLargeHistory()
-	counter := &agenttest.MockTokenCounter{Tokens: len(entries) * 100}
 	hMock := &agenttest.MockHistoryManager{
 		Contents: entries,
 	}
@@ -278,6 +293,25 @@ func BenchmarkContextRefiner(b *testing.B) {
 	b.Run("large", func(b *testing.B) {
 		step := &ContextRefiner{}
 		turn := newBenchTurnLarge()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = step.Process(context.Background(), turn)
+		}
+	})
+
+	// large_real_counter measures the context refinement phase with the
+	// PRODUCTION HeuristicTokenCounter (nil registry — valid;
+	// countToolDeclarationOverhead returns 0) instead of the fixed-value
+	// agenttest.MockTokenCounter. This is the measurement substrate for
+	// candidate (i) of #1321: with the real counter, each Prepare pays
+	// two O(text) token walks per round (gatekeeper gatekeeper.go:126
+	// and finalContextValidator transformers.go:60), which the mock
+	// counter hides. B/op is recorded for completeness but is NOT the
+	// acceptance currency — the mock-counter large is.
+	b.Run("large_real_counter", func(b *testing.B) {
+		step := &ContextRefiner{}
+		turn := newBenchTurnLargeWithCounter(sessctx.NewHeuristicTokenCounter(nil))
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
