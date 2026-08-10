@@ -496,6 +496,89 @@ func (m *countingHistoryManager) GetWindowCalls() int {
 	return m.getWindowCalls
 }
 
+// TestManager_Prepare_RebuildsOnEveryCall is the nil-pipeline mirror of the
+// deleted cache-hit test: with the context window cache removed (ADR-057),
+// every Prepare must load fresh history — there is no cache short-circuit
+// that could suppress a rebuild on a same-turn re-Prepare.
+func TestManager_Prepare_RebuildsOnEveryCall(t *testing.T) {
+	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
+	baseHistory := &agenttest.MockHistoryManager{}
+	baseHistory.SetInternalContents([]*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+	})
+	countingHM := &countingHistoryManager{MockHistoryManager: baseHistory}
+
+	// nil factory → nil pipeline: Prepare is loadHistory + runPipeline(nil).
+	cm := sessctx.NewManager(strategy, countingHM, nil, nil)
+
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		h, m, err := cm.Prepare(ctx, 1)
+		require.NoError(t, err)
+		require.Len(t, h, 1)
+		require.Equal(t, "hello", h[0].Parts[0].Text)
+		require.NotNil(t, m)
+		require.False(t, m.SummarizationAttempted, "nil pipeline must not summarise")
+	}
+
+	// Every Prepare rebuilds — no cache short-circuit skips GetWindow.
+	require.Equal(t, 2, countingHM.GetWindowCalls())
+}
+
+// TestManager_Prepare_ReSummarizesOnSecondPrepare verifies the ADR-057
+// regression fix at Manager level: with the cache gone, a second Prepare on
+// the same turn re-runs the gatekeeper against freshly loaded history. The
+// fixed token counter re-reports 18500 tokens (> 90% of MaxHistoryTokens),
+// so the gatekeeper summarises again — exactly twice, with no cache to
+// suppress the second summarisation.
+func TestManager_Prepare_ReSummarizesOnSecondPrepare(t *testing.T) {
+	tc := &agenttest.MockTokenCounter{Tokens: 18500}
+	strategy := sessctx.NewStrategy(tc)
+
+	mockSum := &agenttest.MockSummarizer{}
+	var summarizeCalls int
+	mockSum.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		summarizeCalls++
+		return "summary", nil, nil
+	})
+
+	// WIRING ORDER IS LOAD-BEARING: both must happen BEFORE NewManager.
+	// SetLimits(20000, 100, 200) — MaxHistoryTokens=20000, MaxToolTurns=100,
+	// MaxHistoryTurns=200 (pruner active but non-trimming: 12 turns ≪ 200).
+	// NewManager builds the pipeline from GetLimits() and wires cm.Summarizer
+	// from the factory — a nil factory summarizer would make the gatekeeper
+	// return a blocking ErrTerminal and the test would fail for the wrong reason.
+	strategy.SetLimits(20000, 100, 200)
+	factory := &sessctx.Factory{Estimator: strategy, Summarizer: mockSum}
+
+	// Derived inequality (numbers from the gatekeeper's SystemContextBuffer=1000
+	// in internal/domain/config/config.go — a buffer edit forces re-derivation):
+	//   0.9×20000 = 18000 < 18500 ≤ 20000 − min(0.1×20000, 1000) = 19000
+	// 18500 exceeds the 90% safety-pressure threshold (18000) → summarise;
+	// 18500 stays under the hard-limit effective budget (19000) → no error.
+
+	// 12 unpinned turns (24 messages): ≥10 messages so the summarizer
+	// maintenance gate isn't triggered; ≥2 candidate turns so a viable
+	// block exists.
+	history := &agenttest.MockHistoryManager{}
+	history.SetInternalContents(makePinnableTurnsExt(12))
+
+	cm := sessctx.NewManager(strategy, history, nil, factory)
+
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		_, m, err := cm.Prepare(ctx, 1)
+		require.NoError(t, err)
+		require.NotNil(t, m)
+		require.True(t, m.SummarizationAttempted, "gatekeeper must summarise on every Prepare")
+	}
+
+	// Each Prepare loads fresh history; the fixed counter re-reports
+	// 18500 > 18000, so the gatekeeper summarises on every Prepare —
+	// exactly twice, no cache to suppress the second.
+	require.Equal(t, 2, summarizeCalls)
+}
+
 // canonicalVersionBumper bumps the Manager's version during the canonical phase
 // (Priority < 100), triggering the concurrent modification guard inside
 // executePipeline's persistFn closure.
