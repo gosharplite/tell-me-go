@@ -496,54 +496,6 @@ func (m *countingHistoryManager) GetWindowCalls() int {
 	return m.getWindowCalls
 }
 
-func TestManager_Prepare_CacheHit(t *testing.T) {
-	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
-	baseHistory := &agenttest.MockHistoryManager{}
-	baseHistory.SetInternalContents([]*llm.Content{
-		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
-	})
-	countingHM := &countingHistoryManager{MockHistoryManager: baseHistory}
-
-	cm := sessctx.NewManager(strategy, countingHM, nil, nil)
-
-	ctx := context.Background()
-
-	// First call — cache miss, loads history and populates cache.
-	h1, m1, err := cm.Prepare(ctx, 1)
-	require.NoError(t, err)
-	require.Len(t, h1, 1)
-	require.Equal(t, "hello", h1[0].Parts[0].Text)
-	require.Equal(t, 1, countingHM.GetWindowCalls())
-
-	// Second call — cache hit, should NOT call GetWindow again.
-	h2, m2, err := cm.Prepare(ctx, 1)
-	require.NoError(t, err)
-	require.Len(t, h2, 1)
-	require.Equal(t, "hello", h2[0].Parts[0].Text)
-	// GetWindow should still be 1 — no additional call for cache hit.
-	require.Equal(t, 1, countingHM.GetWindowCalls())
-
-	// Verify metadata is present (even if empty) on both calls.
-	require.NotNil(t, m1)
-	require.NotNil(t, m2)
-}
-
-// versionBumpingTransformer is a transient pipeline transformer that bumps the
-// Manager's internal version counter between loadHistory and commitToCache,
-// causing commitToCache to detect a version mismatch and return ErrTransient.
-type versionBumpingTransformer struct {
-	cm *sessctx.Manager
-}
-
-func (t *versionBumpingTransformer) Priority() int { return 200 } // transient: runs after persistFn
-
-func (t *versionBumpingTransformer) Transform(ctx context.Context, req *sessctx.ContextRequest) error {
-	if err := t.cm.Reconfigure(events.Limits{}); err != nil {
-		return err
-	}
-	return nil
-}
-
 // canonicalVersionBumper bumps the Manager's version during the canonical phase
 // (Priority < 100), triggering the concurrent modification guard inside
 // executePipeline's persistFn closure.
@@ -585,27 +537,6 @@ func (t *failingTransientTransformer) Transform(ctx context.Context, req *sessct
 	return errTransientFail
 }
 
-func TestManager_Prepare_CommitToCacheError(t *testing.T) {
-	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
-	history := &agenttest.MockHistoryManager{}
-	history.SetInternalContents([]*llm.Content{
-		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
-	})
-
-	cm := sessctx.NewManager(strategy, history, nil, nil)
-
-	// Install a pipeline whose transient transformer bumps the version after
-	// loadHistory snapshots it but before commitToCache checks it.
-	bumper := &versionBumpingTransformer{cm: cm}
-	cm.Pipeline = sessctx.NewContextPipeline(bumper)
-
-	ctx := context.Background()
-	_, _, err := cm.Prepare(ctx, 1)
-	require.Error(t, err)
-	require.ErrorIs(t, err, llm.ErrTransient)
-	require.Contains(t, err.Error(), "concurrent history modification detected")
-}
-
 func TestManager_Prepare_ExecutePipeline_VersionMismatch(t *testing.T) {
 	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
 	history := &agenttest.MockHistoryManager{}
@@ -615,7 +546,7 @@ func TestManager_Prepare_ExecutePipeline_VersionMismatch(t *testing.T) {
 
 	cm := sessctx.NewManager(strategy, history, nil, nil)
 
-	// Create a versionBumpingTransformer at canonical tier (Priority < 100)
+	// Create a canonicalVersionBumper at canonical tier (Priority < 100)
 	// so it executes BEFORE persistFn, triggering the version guard
 	// inside executePipeline's closure (manager.go:236-237).
 	bumper := &canonicalVersionBumper{cm: cm}
@@ -786,7 +717,7 @@ func TestManager_Prepare_ExecutePipeline_Coverage(t *testing.T) {
 		verifyPersist  bool // if true, assert SetContents was called before the error
 	}{
 		{
-			name: "happy path: version matches, SetContents succeeds, commitToCache succeeds",
+			name: "happy path: version matches, SetContents succeeds",
 			pipeline: []sessctx.ContextTransformer{
 				&forcePersistTransformer{},
 			},
