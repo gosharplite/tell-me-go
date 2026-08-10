@@ -232,7 +232,7 @@ catalog a new gap no one reviewed. Policy:
   slice between validation and this call site. Structurally unreachable — same
   acceptance class as `json.Marshal` on all-string structs in
   `global_prompt_tracker.go`.
-- **See**: `internal/agent/session/context/manager.go:574-576`
+- **See**: `internal/agent/session/context/manager.go:526-528`
   (architect-acceptance comment at the `groupTurns` call site in `capBestBlock`)
 
 ### context/manager.go — capBestBlock error propagation in checkWindowSize
@@ -243,13 +243,13 @@ catalog a new gap no one reviewed. Policy:
   already-validated sub-slice is structurally unreachable (see previous entry),
   this error-handling branch is equally unreachable. Both gaps share the same root
   cause and acceptance rationale.
-- **See**: `internal/agent/session/context/manager.go:619-621`
+- **See**: `internal/agent/session/context/manager.go:571-573`
   (architect-acceptance comment at the `capBestBlock` call site in `checkWindowSize`)
 
 ### agent/session/context/manager.go — capBestBlock non-capped return
 
 - **Status**: ACCEPTED (2026-07)
-- **Rationale**: The final return in `capBestBlock` (`manager.go:590`) is reached
+- **Rationale**: The final return in `capBestBlock` (`manager.go:542`) is reached
   when `best.count >= minViable` but `groupTurns` returns ≤1 turn for the
   sub-slice. With the default `contiguousUnpinnedSelector` (MinViableBlock=2),
   `best.count >= 2` and the sub-slice spans ≥2 turns, so `groupTurns` always
@@ -257,7 +257,10 @@ catalog a new gap no one reviewed. Policy:
   message sequences. Same acceptance class as defensive nil/empty guards on
   internal pipeline state (2026-07 Batch Triage). Re-anchored 2026-09: the
   return drifted from line 582 to 590 as the acceptance comment block grew.
-- **See**: `internal/agent/session/context/manager.go:590`
+  Re-anchored 2026-08 (#1320): the return drifted from line 590 to 542 as the
+  ADR-057 cache-removal deletions and the #1320 additions shifted the file;
+  re-verified against the live source.
+- **See**: `internal/agent/session/context/manager.go:542`
 
 ### agent/session/session_manager.go — tuiCleanup and setupUIRendering TUI branches
 
@@ -336,7 +339,7 @@ catalog a new gap no one reviewed. Policy:
   in `RecoveryStep.Process` covers all five explicitly. The `default:` case is
   a defensive guard that is structurally unreachable. Same acceptance class as
   `json.Marshal` on all-string structs in `global_prompt_tracker.go`.
-- **See**: `internal/agent/orchestrator/engine_phases.go:129`
+- **See**: `internal/agent/orchestrator/engine_phases.go:177`
 
 ### agent/orchestrator/middleware.go — return nil in injectSyntheticLoopFeedback
 
@@ -1071,7 +1074,7 @@ to reason about.
   is a single-line delegation or return. Same acceptance class as
   `handleDomainEvent` (CC=12) and `(*model).Update` (CC=14) — structural
   dispatch where CC is switch/branch count, not branching business logic.
-- **See**: `internal/agent/orchestrator/engine_phases.go:124`
+- **See**: `internal/agent/orchestrator/engine_phases.go:129`
 
 ---
 
@@ -1195,7 +1198,7 @@ to reason about.
   deferred `Sync` fails) is accepted as out-of-scope for #1302; the durable fix
   belongs in the history store package (fault-injection-required class — fsync
   failure requires real I/O faults).
-- **See**: `internal/agent/orchestrator/engine_phases.go:79-92` (architect-acceptance comment + `IsTransient` classification)
+- **See**: `internal/agent/orchestrator/engine_phases.go:84-97` (architect-acceptance comment + `IsTransient` classification)
 
 ---
 
