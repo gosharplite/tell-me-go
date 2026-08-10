@@ -50,23 +50,28 @@ Because the single-refinement policy means the recovery `Prepare` is the **last 
 - `docs/architect/INTENTIONAL_NON_FIXES.md` explicitly NOT a candidate (the issue's Reachability section).
 - The config workaround (`MAX_HISTORY_TOKENS`/`ContextWindow`) remains the operator lever, which is why no new config keys are added.
 
-### D5 — Acceptance checklist (enforced in later tasks)
+### D5 — Acceptance checklist (as implemented; enforced by grep + tests)
 
-Presence greps for:
+Presence greps (implemented reality — 6 production files, 8 code matches for the signal):
 
-- `RecoveryFromOverflow` (`engine_types.go`, `engine_phases.go` ×2, `engine.go` reset)
-- `WithOverflowRecovery`
-- `PrepareOption`
-- `ContextRequest.RecoveryFromOverflow`
-- `recoveryBufferMultiplier`
+- `RecoveryFromOverflow` — `engine_types.go` (field), `engine_phases.go` ×2 (`RecoveryStep` set + `ContextRefiner` read), `engine.go` (`prepareNextTurn` reset), `contracts.go` (`ContextRequest` field), `manager.go` (`WithOverflowRecovery` setter), `gatekeeper.go` ×2 (Lever 1 + Lever 2 reads).
+- `WithOverflowRecovery` — `manager.go` (definition) + `engine_phases.go` (call site).
+- `PrepareOption` — `manager.go` (type + variadic param) + `engine_phases.go` (`[]sessctx.PrepareOption` — the pinned `ContextRefiner` snippet).
+- `ContextRequest.RecoveryFromOverflow` — `contracts.go`.
+- `recoveryBufferMultiplier` — `gatekeeper.go` (const + use).
+
+Implementation notes:
+
+- Lever 2 reads the signal nil-safely as `req != nil && req.RecoveryFromOverflow` — required because the pre-existing `TestTokenGatekeeper_ValidateHardLimits` invokes `validateHardLimits` with a nil request (nil → `Recovery == false` → byte-identical normal-path behavior).
+- Doc comments in `internal/agent/session/context/` must not contain the word "persisted" (ADR-057 Tier-2 die-grep in `make verify-no-context-window-cache`); use "stored".
 
 Absence of new cache tokens (existing `make verify-no-context-window-cache` covers).
 
-Test expectations:
+Test expectations (landed in Task 3):
 
-- new gatekeeper test (recovery with under-threshold estimate summarises; too-short history degrades gracefully);
-- new Manager-level test built on the Q4-c shape (`TestManager_Prepare_ReSummarizesOnSecondPrepare`, `internal/agent/session/context/context_manager_test.go:534` — fixed `MockTokenCounter` under the 90% threshold on the first `Prepare`, forced summarization on the second with `WithOverflowRecovery()`);
-- orchestrator test (`RecoveryStep` sets the flag; `prepareNextTurn` resets it).
+- `internal/agent/session/context/gatekeeper_recovery_test.go` — `TestTokenGatekeeper_RecoveryFromOverflow_ForcesSummarization` (recovery with under-threshold estimate summarises; normal path unaffected), `TestTokenGatekeeper_RecoveryFromOverflow_TooShortHistoryDegradesGracefully` (too-short history degrades to "tokens unchanged"), `TestTokenGatekeeper_RecoveryFromOverflow_ReducedHardLimitFailsFast` (recovery fails fast at the reduced ceiling; exactly one summarizer call).
+- `internal/agent/session/context/context_manager_recovery_test.go` — `TestManager_Prepare_RecoveryFromOverflow_ForcesSummarization` (Manager-level, Q4-c shape: fixed `MockTokenCounter` under the 90% threshold on the first `Prepare`, forced summarization on the second with `WithOverflowRecovery()`).
+- `internal/agent/orchestrator/recovery_signal_test.go` — `TestRecoveryStep_ContextOverflow_SetsRecoveryFromOverflow`, `TestPrepareNextTurn_ResetsRecoveryFromOverflow`, `TestContextRefiner_PassesRecoverySignalToPrepare` (orchestrator wiring end-to-end).
 
 ## Consequences
 
