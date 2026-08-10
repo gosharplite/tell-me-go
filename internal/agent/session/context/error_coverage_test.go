@@ -255,20 +255,6 @@ func TestContextManager_AddContent_ContextCancelled(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
-func TestContextManager_UpdateCache_VersionMismatch(t *testing.T) {
-	cm := NewManager(nil, nil, nil, nil)
-	cm.version = 2
-
-	req := &ContextRequest{
-		History:  []*llm.Content{},
-		Metadata: ContextMetadata{},
-	}
-
-	err := cm.updateCache(1, req)
-	require.Error(t, err)
-	require.ErrorIs(t, err, llm.ErrTransient)
-}
-
 func TestContextManager_Prepare_PipelineExecutionError(t *testing.T) {
 	hm := &agenttest.MockHistoryManager{
 		Contents: []*llm.Content{

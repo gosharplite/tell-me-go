@@ -207,15 +207,6 @@ func makeLargeHistory() []*llm.Content {
 	return contents
 }
 
-// prewarmCache calls cm.Prepare once to populate the Manager's
-// internal cache so that subsequent Prepare calls hit the cache.
-func prewarmCache(tb testing.TB, cm *sessctx.Manager, turnIndex int) {
-	tb.Helper()
-	if _, _, err := cm.Prepare(context.Background(), turnIndex); err != nil {
-		tb.Fatalf("prewarmCache: Prepare failed: %v", err)
-	}
-}
-
 // BenchmarkScaffoldingSanity validates that the scaffolding compiles
 // and runs correctly.
 func BenchmarkScaffoldingSanity(b *testing.B) {
@@ -271,25 +262,8 @@ func BenchmarkGuardStep(b *testing.B) {
 }
 
 // BenchmarkContextRefiner measures the overhead of the context refinement
-// phase including cache-hit and context-cancelled paths.
+// phase including the context-cancelled path.
 func BenchmarkContextRefiner(b *testing.B) {
-	b.Run("cache_hit", func(b *testing.B) {
-		step := &ContextRefiner{}
-		turn := newBenchTurn()
-		prewarmCache(b, turn.CtxManager, turn.Index)
-		b.ReportAllocs()
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _ = step.Process(context.Background(), turn)
-		}
-		if turn.State.PreparedHistory == nil {
-			b.Error("PreparedHistory is nil")
-		}
-		if turn.State.Metadata == nil {
-			b.Error("Metadata is nil")
-		}
-	})
-
 	b.Run("context_cancelled", func(b *testing.B) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
@@ -423,7 +397,6 @@ func BenchmarkFullTurnCycle(b *testing.B) {
 		refiner := &ContextRefiner{}
 		persist := &PersistenceStep{}
 		turn := newBenchTurn()
-		prewarmCache(b, turn.CtxManager, turn.Index)
 		// Suppress unbounded history growth from AddContent
 		turn.CtxManager.History.(*agenttest.MockHistoryManager).AddContentFunc =
 			func(ctx context.Context, content *llm.Content) error { return nil }
@@ -445,7 +418,6 @@ func BenchmarkFullTurnCycle(b *testing.B) {
 		persist := &PersistenceStep{}
 		recovery := &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 3, Backoff: 1 * time.Millisecond}}
 		turn := newBenchTurnWithClock(benchClock{})
-		prewarmCache(b, turn.CtxManager, turn.Index)
 		// Suppress unbounded history growth from AddContent
 		turn.CtxManager.History.(*agenttest.MockHistoryManager).AddContentFunc =
 			func(ctx context.Context, content *llm.Content) error { return nil }

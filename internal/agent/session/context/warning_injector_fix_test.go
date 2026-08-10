@@ -94,7 +94,7 @@ func TestWarningInjector_Idempotency(t *testing.T) {
 	}
 
 	// Case 2: Second turn, same state. Should NOT inject duplicate warning.
-	// We'll simulate that the first turn was persisted.
+	// We'll simulate that the first turn was already saved.
 	historyWithWarning := []*llm.Content{
 		{
 			Role: "user",

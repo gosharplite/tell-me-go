@@ -14,6 +14,21 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
+// cloneContentSlice creates a deep clone of a slice of Content.
+// Kept as a test-only helper after the context window cache removal
+// (ADR-057): it exercises deep-clone semantics in the finalizeSummarization
+// and transformers tests.
+func cloneContentSlice(contents []*llm.Content) []*llm.Content {
+	if contents == nil {
+		return nil
+	}
+	cloned := make([]*llm.Content, len(contents))
+	for i, c := range contents {
+		cloned[i] = llm.CloneContent(c)
+	}
+	return cloned
+}
+
 type errorMockHistoryManager struct {
 	agenttest.MockHistoryManager
 	archiveErr        error
