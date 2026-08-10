@@ -65,11 +65,11 @@ func (m *MockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int
 	}
 
 	window := m.Contents[startIdx:endIdx]
-	// Same arena path as the production history.Manager.GetWindow: the bench
-	// measures the mock, so the mock must implement the real algorithm
-	// (non-lazy-mock mandate). Fresh per-call arena, identical semantics.
-	arena := llm.NewCloneArena(len(window))
-	return arena.CloneContentSlice(window), nil
+	cloned := make([]*llm.Content, len(window))
+	for i, c := range window {
+		cloned[i] = llm.CloneContent(c)
+	}
+	return cloned, nil
 }
 
 func (m *MockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {
