@@ -498,11 +498,15 @@ func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
 	cm := sessctx.NewManager(strategy, hManager, bus, nil)
 
-	// Custom transformer that blocks mid-execution
+	// Custom transformer that blocks mid-execution. ADR-057: the version
+	// guard lives in the persist path (persistFn in manager.go), which
+	// runs only when req.PersistHistory is true — set it so the conflict
+	// detection below actually executes.
 	prepareStarted := make(chan struct{})
 	prepareResume := make(chan struct{})
 	blockingTransformer := &scriptedTransformer{
 		fn: func(ctx context.Context, req *sessctx.ContextRequest) error {
+			req.PersistHistory = true
 			close(prepareStarted)
 			<-prepareResume
 			return nil

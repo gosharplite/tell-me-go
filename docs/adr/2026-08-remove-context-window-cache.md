@@ -120,6 +120,8 @@ Live-tracker status (resolves to live trackers):
 | #1321 | open | F2 — perf-only follow-up, sequenced after this issue; provenance closed #1318 |
 | #1320 | open | Overflow residual — this PR resolves only the harmful overflow sub-case; the pure estimate/provider-divergence sub-case remains |
 
+**Test hygiene (2026-08):** the integration test `TestContextManager_Prepare_ConflictDetection` (`tests/integration/agent/session/context_manager_robustness_test.go`) encoded the pre-removal semantics — it expected every `Prepare` to detect concurrent modification. With the cache gone, the version guard lives only in the persist closure, which runs only when `req.PersistHistory` is set by a canonical transformer; the ADR-057 commit updated the unit tests to that contract but missed this integration test, which failed deterministically. The test now sets `req.PersistHistory = true` in its blocking transformer so it exercises the persist-gated conflict-detection contract.
+
 Re-introducing a cache is NOT planned. Any revisit must (a) be evaluated against the post-F2 cost model — the eager load-boundary clone changes the calculus, and it is not the pre-deletion per-round model — and (b) require production hit-rate data; the only realistic hit path was same-turn re-`Prepare`, which is precisely the path this ADR removes.
 
 ## Alternatives considered
