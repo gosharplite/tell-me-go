@@ -811,6 +811,8 @@ check-full: fmt tidy build
 	@$(MAKE) test
 	@echo "=== dead-code ==="
 	@$(MAKE) dead-code
+	@echo "=== test-coverage ==="
+	@$(MAKE) test-coverage
 	@echo "=== test-race ==="
 	@$(MAKE) test-race
 	@echo ""
