@@ -6,6 +6,7 @@ package toolstest
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -431,6 +432,40 @@ func TestFakeToolchainRunner_CallOrder(t *testing.T) {
 	for i, c := range f.Calls {
 		if c != want[i] {
 			t.Errorf("Calls[%d] = %q; want %q", i, c, want[i])
+		}
+	}
+}
+
+func TestFakeToolchainRunner_ConcurrentAppends(t *testing.T) {
+	f := &FakeToolchainRunner{}
+	const goroutines = 16
+	const callsPerGoroutine = 50
+	var wg sync.WaitGroup
+	ctx := context.Background()
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func(seed int) {
+			defer wg.Done()
+			for i := 0; i < callsPerGoroutine; i++ {
+				switch (seed + i) % 3 {
+				case 0:
+					_, _, _ = f.RunLinter(ctx)
+				case 1:
+					_, _ = f.RunTests(ctx, "./...")
+				case 2:
+					_, _ = f.BuildCode(ctx, "/tmp/out", "./cmd/tell-me-go")
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+	// All goroutines joined: reading Calls is now safe.
+	if len(f.Calls) != goroutines*callsPerGoroutine {
+		t.Errorf("Calls length = %d; want %d", len(f.Calls), goroutines*callsPerGoroutine)
+	}
+	for _, method := range []string{"RunLinter", "RunTests", "BuildCode"} {
+		if !f.Called(method) {
+			t.Errorf("Called(%q) = false; want true after concurrent appends", method)
 		}
 	}
 }

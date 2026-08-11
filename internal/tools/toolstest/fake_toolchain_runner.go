@@ -5,6 +5,7 @@ package toolstest
 
 import (
 	"context"
+	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -29,12 +30,17 @@ type FakeToolchainRunner struct {
 	RunTestsFunc             func(ctx context.Context, path string) ([]byte, error)
 	BuildCodeFunc            func(ctx context.Context, outputBinary, path string) ([]byte, error)
 
-	// Calls records every invocation as the method name, in call order.
+	// mu guards Calls for concurrent access: the release pipeline
+	// (verify_release_readiness) invokes runner methods concurrently, so
+	// the call log must be race-safe (issue #1325).
+	mu    sync.Mutex
 	Calls []string
 }
 
 // Called reports whether the named method was invoked at least once.
 func (f *FakeToolchainRunner) Called(method string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	for _, c := range f.Calls {
 		if c == method {
 			return true
@@ -44,7 +50,9 @@ func (f *FakeToolchainRunner) Called(method string) bool {
 }
 
 func (f *FakeToolchainRunner) GetPackageList(ctx context.Context, path string) ([]byte, error) {
+	f.mu.Lock()
 	f.Calls = append(f.Calls, "GetPackageList")
+	f.mu.Unlock()
 	if f.GetPackageListFunc != nil {
 		return f.GetPackageListFunc(ctx, path)
 	}
@@ -52,7 +60,9 @@ func (f *FakeToolchainRunner) GetPackageList(ctx context.Context, path string) (
 }
 
 func (f *FakeToolchainRunner) GetGoDoc(ctx context.Context, symbol string) ([]byte, error) {
+	f.mu.Lock()
 	f.Calls = append(f.Calls, "GetGoDoc")
+	f.mu.Unlock()
 	if f.GetGoDocFunc != nil {
 		return f.GetGoDocFunc(ctx, symbol)
 	}
@@ -60,7 +70,9 @@ func (f *FakeToolchainRunner) GetGoDoc(ctx context.Context, symbol string) ([]by
 }
 
 func (f *FakeToolchainRunner) GetModulePath(ctx context.Context) (string, error) {
+	f.mu.Lock()
 	f.Calls = append(f.Calls, "GetModulePath")
+	f.mu.Unlock()
 	if f.GetModulePathFunc != nil {
 		return f.GetModulePathFunc(ctx)
 	}
@@ -68,7 +80,9 @@ func (f *FakeToolchainRunner) GetModulePath(ctx context.Context) (string, error)
 }
 
 func (f *FakeToolchainRunner) GetModuleDir(ctx context.Context) (string, error) {
+	f.mu.Lock()
 	f.Calls = append(f.Calls, "GetModuleDir")
+	f.mu.Unlock()
 	if f.GetModuleDirFunc != nil {
 		return f.GetModuleDirFunc(ctx)
 	}
@@ -76,7 +90,9 @@ func (f *FakeToolchainRunner) GetModuleDir(ctx context.Context) (string, error) 
 }
 
 func (f *FakeToolchainRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error) {
+	f.mu.Lock()
 	f.Calls = append(f.Calls, "RunTestsWithCoverage")
+	f.mu.Unlock()
 	if f.RunTestsWithCoverageFunc != nil {
 		return f.RunTestsWithCoverageFunc(ctx, path, short, profilePath)
 	}
@@ -84,7 +100,9 @@ func (f *FakeToolchainRunner) RunTestsWithCoverage(ctx context.Context, path str
 }
 
 func (f *FakeToolchainRunner) RunLinter(ctx context.Context) (string, string, error) {
+	f.mu.Lock()
 	f.Calls = append(f.Calls, "RunLinter")
+	f.mu.Unlock()
 	if f.RunLinterFunc != nil {
 		return f.RunLinterFunc(ctx)
 	}
@@ -92,7 +110,9 @@ func (f *FakeToolchainRunner) RunLinter(ctx context.Context) (string, string, er
 }
 
 func (f *FakeToolchainRunner) RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error) {
+	f.mu.Lock()
 	f.Calls = append(f.Calls, "RunBenchmarks")
+	f.mu.Unlock()
 	if f.RunBenchmarksFunc != nil {
 		return f.RunBenchmarksFunc(ctx, path, benchRegex)
 	}
@@ -100,7 +120,9 @@ func (f *FakeToolchainRunner) RunBenchmarks(ctx context.Context, path string, be
 }
 
 func (f *FakeToolchainRunner) CheckGovulncheck(ctx context.Context) error {
+	f.mu.Lock()
 	f.Calls = append(f.Calls, "CheckGovulncheck")
+	f.mu.Unlock()
 	if f.CheckGovulncheckFunc != nil {
 		return f.CheckGovulncheckFunc(ctx)
 	}
@@ -108,7 +130,9 @@ func (f *FakeToolchainRunner) CheckGovulncheck(ctx context.Context) error {
 }
 
 func (f *FakeToolchainRunner) RunModTidy(ctx context.Context) ([]byte, error) {
+	f.mu.Lock()
 	f.Calls = append(f.Calls, "RunModTidy")
+	f.mu.Unlock()
 	if f.RunModTidyFunc != nil {
 		return f.RunModTidyFunc(ctx)
 	}
@@ -116,7 +140,9 @@ func (f *FakeToolchainRunner) RunModTidy(ctx context.Context) ([]byte, error) {
 }
 
 func (f *FakeToolchainRunner) FormatCode(ctx context.Context, path string) ([]byte, error) {
+	f.mu.Lock()
 	f.Calls = append(f.Calls, "FormatCode")
+	f.mu.Unlock()
 	if f.FormatCodeFunc != nil {
 		return f.FormatCodeFunc(ctx, path)
 	}
@@ -124,7 +150,9 @@ func (f *FakeToolchainRunner) FormatCode(ctx context.Context, path string) ([]by
 }
 
 func (f *FakeToolchainRunner) RunTests(ctx context.Context, path string) ([]byte, error) {
+	f.mu.Lock()
 	f.Calls = append(f.Calls, "RunTests")
+	f.mu.Unlock()
 	if f.RunTestsFunc != nil {
 		return f.RunTestsFunc(ctx, path)
 	}
@@ -132,7 +160,9 @@ func (f *FakeToolchainRunner) RunTests(ctx context.Context, path string) ([]byte
 }
 
 func (f *FakeToolchainRunner) BuildCode(ctx context.Context, outputBinary, path string) ([]byte, error) {
+	f.mu.Lock()
 	f.Calls = append(f.Calls, "BuildCode")
+	f.mu.Unlock()
 	if f.BuildCodeFunc != nil {
 		return f.BuildCodeFunc(ctx, outputBinary, path)
 	}
