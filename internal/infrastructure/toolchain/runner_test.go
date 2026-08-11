@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 type mockExecutor struct {
@@ -341,7 +343,7 @@ func TestGoRunner_RunLinter(t *testing.T) {
 					return "", errors.New("not found")
 				}
 			},
-			wantErr: ErrNoSupportedLinter,
+			wantErr: tools.ErrNoSupportedLinter,
 		},
 	}
 

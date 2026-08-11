@@ -17,7 +17,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"golang.org/x/sync/errgroup"
 )
@@ -234,7 +233,7 @@ func (m *healthManager) runLint(ctx context.Context) (string, string) {
 	outStr, tool, err := m.Runner.RunLinter(ctx)
 	var exitErr *exec.ExitError
 	if err != nil && !errors.As(err, &exitErr) {
-		if errors.Is(err, toolchain.ErrNoSupportedLinter) {
+		if errors.Is(err, tools.ErrNoSupportedLinter) {
 			return "SKIP", "No linter found"
 		}
 		return "ERROR", err.Error()

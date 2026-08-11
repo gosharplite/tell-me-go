@@ -11,7 +11,6 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
@@ -77,8 +76,7 @@ type analysisManager struct {
 	arch   *architectureManager
 }
 
-func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Manager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem, wp services.WorkspacePolicy, dc deadCodeAnalyzer) *analysisManager {
-	runner := toolchain.NewGoRunner(executor)
+func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Manager, bus events.EventBus, executor tools.CommandExecutor, runner tools.ToolchainRunner, fs persistence.FileSystem, wp services.WorkspacePolicy, dc deadCodeAnalyzer) *analysisManager {
 	m := &analysisManager{
 		complexity: newComplexityAnalyzer(cache, sp, fs),
 		dependency: newDependencyAnalyzer(runner, sp, bus, wp, fs),

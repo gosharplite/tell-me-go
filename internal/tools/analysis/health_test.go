@@ -149,7 +149,7 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 	mockExec := &mockHealthExecutor{}
 	mockRunner := &mockGoRunner{}
 	mockDead := &mockDeadCodeAnalyzer{}
-	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, persistencetest.NewPlainOSFileSystem(), infra_persistence.NewWorkspacePolicy(), mockDead)
+	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, &toolstest.FakeToolchainRunner{}, persistencetest.NewPlainOSFileSystem(), infra_persistence.NewWorkspacePolicy(), mockDead)
 	hea := &healthManager{SP: sm, complexity: ana.complexity, deadCode: mockDead, Exec: mockExec, Runner: mockRunner}
 
 	ctx := context.Background()
@@ -182,7 +182,7 @@ func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
 	cache := newASTCache(".")
 	mockExec := &mockHealthExecutor{}
 	mockRunner := &mockGoRunner{}
-	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, persistencetest.NewPlainOSFileSystem(), infra_persistence.NewWorkspacePolicy(), &mockDeadCodeAnalyzer{})
+	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, &toolstest.FakeToolchainRunner{}, persistencetest.NewPlainOSFileSystem(), infra_persistence.NewWorkspacePolicy(), &mockDeadCodeAnalyzer{})
 	hea := &healthManager{SP: sm, complexity: ana.complexity, deadCode: &mockDeadCodeAnalyzer{}, Exec: mockExec, Runner: mockRunner}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -913,7 +913,7 @@ func TestRunLint_ErrorPaths(t *testing.T) {
 		{
 			name: "no linter found",
 			runLinterFn: func(ctx context.Context) (string, string, error) {
-				return "", "", toolchain.ErrNoSupportedLinter
+				return "", "", tools.ErrNoSupportedLinter
 			},
 			wantStatus:   "SKIP",
 			wantContains: "No linter found",

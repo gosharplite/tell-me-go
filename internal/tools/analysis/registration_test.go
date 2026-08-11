@@ -14,6 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -134,7 +135,7 @@ func TestRegister_ErrorWrapping(t *testing.T) {
 		fs := &stubFileSystem{}
 		wp := &stubWorkspacePolicy{}
 
-		_, err := Register(r, sp, bus, exec, fs, wp)
+		_, err := Register(r, sp, bus, exec, &toolstest.FakeToolchainRunner{}, fs, wp)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "register tool")
 		// First tool with opts is "verify_architecture"
@@ -154,7 +155,7 @@ func TestRegister_ErrorWrapping(t *testing.T) {
 		fs := &stubFileSystem{}
 		wp := &stubWorkspacePolicy{}
 
-		_, err := Register(r, sp, bus, exec, fs, wp)
+		_, err := Register(r, sp, bus, exec, &toolstest.FakeToolchainRunner{}, fs, wp)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "register tool")
 		// First tool without opts is "list_symbols"
@@ -173,7 +174,7 @@ func TestRegister_Success(t *testing.T) {
 	fs := &stubFileSystem{}
 	wp := &stubWorkspacePolicy{}
 
-	result, err := Register(r, sp, bus, exec, fs, wp)
+	result, err := Register(r, sp, bus, exec, &toolstest.FakeToolchainRunner{}, fs, wp)
 	require.NoError(t, err)
 	require.NotNil(t, result, "expected a non-nil handler (VerifyArchitecture) on success")
 }

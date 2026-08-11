@@ -86,7 +86,7 @@ func RegisterAll(params ToolRegistrationParams) error {
 			return fmt.Errorf("workspace.RegisterPersistence: %w", err)
 		}
 	}
-	archVerify, err := analysis.Register(params.Registry, params.SecurityManager, params.EventBus, params.CommandExecutor, params.FileSystem, params.WorkspacePolicy)
+	archVerify, err := analysis.Register(params.Registry, params.SecurityManager, params.EventBus, params.CommandExecutor, params.ToolchainRunner, params.FileSystem, params.WorkspacePolicy)
 	if err != nil {
 		return fmt.Errorf("analysis.Register: %w", err)
 	}

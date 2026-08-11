@@ -2,7 +2,6 @@ package toolchain
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -11,9 +10,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
-
-// ErrNoSupportedLinter is returned when neither golangci-lint nor staticcheck is found.
-var ErrNoSupportedLinter = errors.New("no supported linter found (golangci-lint or staticcheck)")
 
 // CoverageReport is the infrastructure-internal parse container for coverage runs; the boundary type is tools.CoverageSummary (see ADR-060).
 type CoverageReport struct {
@@ -198,7 +194,7 @@ func (r *goRunner) RunLinter(ctx context.Context) (output string, toolUsed strin
 		out, err := r.combinedOutput(ctx, "staticcheck", "./...")
 		return string(out), "staticcheck", err
 	}
-	return "", "", ErrNoSupportedLinter
+	return "", "", tools.ErrNoSupportedLinter
 }
 
 // RunTests runs project tests using the standard Go test tool.
