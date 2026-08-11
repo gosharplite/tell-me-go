@@ -171,6 +171,35 @@ func responseHash(t *testing.T, content *llm.Content) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// countLoopWarningsInContent returns 1 when a single history content
+// carries the loop-break warning and 0 otherwise, scanning the user-role
+// text form (text-only loops) and the tool-role FunctionResponse form
+// (tool-call loops). Counting is per content, not per part: a tool-call
+// loop injects ONE "tool"-role message whose synthetic FunctionResponse
+// parts all carry the warning, and the fresh-Turn tests assert exactly one
+// injection. (Roles are mutually exclusive, so the early returns only
+// skip branches that cannot match the observed role.)
+func countLoopWarningsInContent(c *llm.Content) int {
+	if c.Role == "user" {
+		for _, part := range c.Parts {
+			if part.Text == LoopWarning {
+				return 1
+			}
+		}
+		return 0
+	}
+	if c.Role == "tool" {
+		for _, part := range c.Parts {
+			if part.FunctionResponse != nil {
+				if errStr, ok := part.FunctionResponse.Response["error"].(string); ok && errStr == LoopWarning {
+					return 1
+				}
+			}
+		}
+	}
+	return 0
+}
+
 // countLoopWarningsInHistory returns the number of history contents carrying
 // the loop-break warning, scanning user-role text messages (text-only loops)
 // and tool-role FunctionResponse entries (tool-call loops) — the same dual
@@ -181,26 +210,7 @@ func countLoopWarningsInHistory(t *testing.T, contents []*llm.Content) int {
 
 	count := 0
 	for _, msg := range contents {
-		found := false
-		if msg.Role == "user" {
-			for _, part := range msg.Parts {
-				if part.Text == LoopWarning {
-					found = true
-				}
-			}
-		}
-		if msg.Role == "tool" {
-			for _, part := range msg.Parts {
-				if part.FunctionResponse != nil {
-					if errStr, ok := part.FunctionResponse.Response["error"].(string); ok && errStr == LoopWarning {
-						found = true
-					}
-				}
-			}
-		}
-		if found {
-			count++
-		}
+		count += countLoopWarningsInContent(msg)
 	}
 	return count
 }
