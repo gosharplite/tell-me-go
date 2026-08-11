@@ -131,8 +131,29 @@ func (e *Engine) withMetrics() turnMiddleware {
 	}
 }
 
+// loopDetector owns the Run-scoped accumulators for hallucination-loop
+// detection: the tool-call repetition counter and the sliding window of
+// recent response hashes. Constructed once per Engine, reset once per Run.
+// Single-Run-at-a-time contract (one agent Chat at a time); intentionally
+// lock-free, matching the pre-T6 TurnState design.
+type loopDetector struct {
+	toolCallCount        map[string]int
+	recentResponseHashes []string
+}
+
+func newLoopDetector() *loopDetector {
+	return &loopDetector{toolCallCount: make(map[string]int)}
+}
+
+// reset clears all accumulators for a fresh Run. MUST re-allocate the map —
+// map writes on a nil map panic (append on a nil slice is fine).
+func (d *loopDetector) reset() {
+	d.toolCallCount = make(map[string]int)
+	d.recentResponseHashes = nil
+}
+
 // withLoopDetector returns a middleware that detects and breaks infinite tool loops.
-func withLoopDetector() turnMiddleware {
+func (e *Engine) withLoopDetector() turnMiddleware {
 	return func(next TurnProcessor) TurnProcessor {
 		return TurnProcessorFunc(func(ctx context.Context, Turn *Turn) (ProcessResult, error) {
 			res, err := next.Process(ctx, Turn)
@@ -140,7 +161,7 @@ func withLoopDetector() turnMiddleware {
 				return res, err
 			}
 
-			if detectLoop(Turn.State) {
+			if e.loopDetector != nil && e.loopDetector.detectLoop(Turn.State) {
 				return handleLoopBreak(ctx, Turn)
 			}
 
@@ -149,7 +170,7 @@ func withLoopDetector() turnMiddleware {
 	}
 }
 
-func detectLoop(state *TurnState) bool {
+func (d *loopDetector) detectLoop(state *TurnState) bool {
 	// 1. Multi-step loop detection (Text & Tool Calls)
 	// Exclude mutable fields (ID) from the hash to ensure consistent
 	// comparison across turns. AddContent mutates content.ID in-place,
@@ -167,14 +188,14 @@ func detectLoop(state *TurnState) bool {
 	h := sha256.Sum256(rawJSON)
 	currentHash := hex.EncodeToString(h[:])
 
-	if isDuplicateResponse(currentHash, state.RecentResponseHashes) {
+	if d.isDuplicateResponse(currentHash) {
 		return true
 	}
 
 	// Keep last N hashes (using the same repetition limit)
-	state.RecentResponseHashes = append(state.RecentResponseHashes, currentHash)
-	if len(state.RecentResponseHashes) > domain_config.DefaultMaxLoopRepetitions {
-		state.RecentResponseHashes = state.RecentResponseHashes[1:]
+	d.recentResponseHashes = append(d.recentResponseHashes, currentHash)
+	if len(d.recentResponseHashes) > domain_config.DefaultMaxLoopRepetitions {
+		d.recentResponseHashes = d.recentResponseHashes[1:]
 	}
 
 	// 2. Tool call loop detection (Immediate threshold)
@@ -182,8 +203,8 @@ func detectLoop(state *TurnState) bool {
 		if p.FunctionCall != nil {
 			args, _ := json.Marshal(p.FunctionCall.Args)
 			key := p.FunctionCall.Name + ":" + string(args)
-			state.ToolCallCount[key]++
-			if state.ToolCallCount[key] > domain_config.DefaultMaxLoopRepetitions {
+			d.toolCallCount[key]++
+			if d.toolCallCount[key] > domain_config.DefaultMaxLoopRepetitions {
 				return true
 			}
 		}
@@ -265,8 +286,8 @@ func injectSyntheticLoopFeedback(ctx context.Context, Turn *Turn) error {
 	return Turn.CtxManager.AddContent(ctx, warning)
 }
 
-func isDuplicateResponse(currentHash string, recentHashes []string) bool {
-	for _, prevHash := range recentHashes {
+func (d *loopDetector) isDuplicateResponse(currentHash string) bool {
+	for _, prevHash := range d.recentResponseHashes {
 		if currentHash == prevHash {
 			return true
 		}

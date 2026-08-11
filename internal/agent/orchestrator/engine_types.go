@@ -177,8 +177,6 @@ type TurnState struct {
 	// Prepare to apply the ADR-059 recovery budget for this turn only.
 	RecoveryFromOverflow bool           `json:"-"`
 	HasSeenRateLimit     bool           `json:"-"`
-	ToolCallCount        map[string]int `json:"-"`
-	RecentResponseHashes []string       `json:"-"`
 	PreparedHistory      []*llm.Content `json:"-"`
 	TaskCost             float64        `json:"task_cost"`
 	ToolReasons          []string       `json:"-"`

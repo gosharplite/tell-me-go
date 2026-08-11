@@ -141,7 +141,6 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 
 		// Run the turn
 		t0 := engine.CreateTurn(0, time.Now(), "")
-		t0.State.ToolCallCount = make(map[string]int)
 		err := engine.ExecuteTurn(ctx, t0)
 		assert.NoError(t, err, "Engine should not crash on truncation")
 
@@ -206,7 +205,6 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		counter.historyVal = 8500
 
 		turn0 := engine.CreateTurn(0, time.Now(), "")
-		turn0.State.ToolCallCount = make(map[string]int)
 		refiner := &orchestrator.ContextRefiner{}
 		_, err := refiner.Process(ctx, turn0)
 		assert.NoError(t, err)
@@ -336,7 +334,6 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	// 3. Execute turn in goroutine
 	errCh := make(chan error, 1)
 	turn0 := engine.CreateTurn(0, time.Now(), "")
-	turn0.State.ToolCallCount = make(map[string]int)
 
 	go func() {
 		errCh <- engine.ExecuteTurn(ctx, turn0)

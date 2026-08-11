@@ -194,7 +194,8 @@ func TestWithMetrics_Scenarios(t *testing.T) {
 func TestLoopDetector_Scenarios(t *testing.T) {
 	t.Run("Detect Text Loop", func(t *testing.T) {
 		bus := &eventstest.MockEventBus{}
-		mw := withLoopDetector()
+		e := &Engine{loopDetector: newLoopDetector()}
+		mw := e.withLoopDetector()
 
 		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
 			turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Repeat me"}}}
@@ -208,9 +209,6 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 		turn := &Turn{
 			State: &TurnState{
 				Phase: PhaseInference,
-				// Ensure clean state
-				RecentResponseHashes: nil,
-				ToolCallCount:        make(map[string]int),
 			},
 			CtxManager: cm,
 			Events:     bus,
@@ -220,7 +218,7 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 		_, err := mw(next).Process(context.Background(), turn)
 		assert.NoError(t, err)
 		assert.NotNil(t, turn.State.Response, "Response should NOT be nil on first call")
-		assert.Equal(t, 1, len(turn.State.RecentResponseHashes))
+		assert.Equal(t, 1, len(e.loopDetector.recentResponseHashes))
 
 		// Second call with same response - loop detected (triggers on immediate duplicate for text)
 		_, err = mw(next).Process(context.Background(), turn)
@@ -240,7 +238,8 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 
 	t.Run("Detect Tool Loop", func(t *testing.T) {
 		bus := &eventstest.MockEventBus{}
-		mw := withLoopDetector()
+		e := &Engine{loopDetector: newLoopDetector()}
+		mw := e.withLoopDetector()
 
 		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
 			turn.State.Response = &llm.Content{
@@ -259,12 +258,14 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
 		cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
+		// Seed the detector with different response hashes to prevent early
+		// text-loop detection; the tool-call map is pre-allocated by newLoopDetector.
+		e.loopDetector.recentResponseHashes = []string{"h1", "h2", "h3", "h4", "h5"}
+		e.loopDetector.toolCallCount = make(map[string]int)
+
 		turn := &Turn{
 			State: &TurnState{
 				Phase: PhaseInference,
-				// Populate RecentResponseHashes with different hashes to prevent early text-loop detection
-				RecentResponseHashes: []string{"h1", "h2", "h3", "h4", "h5"},
-				ToolCallCount:        make(map[string]int),
 			},
 			CtxManager: cm,
 			Events:     bus,
@@ -274,12 +275,14 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 		for i := 0; i < 5; i++ {
 			// Change the hash to avoid text loop detection on subsequent calls
 			// Note: mw(next) will calculate hash of current response and add it.
-			// To bypass, we can just ensure the hash of the current response is NOT in RecentResponseHashes yet.
+			// To bypass, we can just ensure the hash of the current response is NOT
+			// in the detector's recentResponseHashes yet.
 			_, _ = mw(next).Process(context.Background(), turn)
 			assert.NotNil(t, turn.State.Response, "Should not be nil on attempt %d", i+1)
 
-			// Manually clear RecentResponseHashes or modify them to keep bypassing text loop detection
-			turn.State.RecentResponseHashes = []string{"unique" + time.Now().String() + string(rune(i))}
+			// Manually replace the detector's response-hash window to keep
+			// bypassing text loop detection
+			e.loopDetector.recentResponseHashes = []string{"unique" + time.Now().String() + string(rune(i))}
 		}
 
 		// 6th call - tool loop detected

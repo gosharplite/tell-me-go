@@ -31,10 +31,13 @@ import (
 
 // Turn carries state and configuration for a single agent Turn.
 type Turn struct {
-	Index        int
-	SessionID    string
-	StartTime    time.Time
-	State        *TurnState
+	Index     int
+	SessionID string
+	StartTime time.Time
+	State     *TurnState
+	// LoopDetector is the shared Run-scoped loop-detection accumulator;
+	// set by CreateTurn from the Engine; nil in bare-Turn unit tests.
+	LoopDetector *loopDetector
 	CtxManager   *sessctx.Manager
 	Gateway      llm.LLMGateway
 	Executor     ToolExecutor
@@ -74,6 +77,7 @@ type Engine struct {
 	hooks        []TurnHook
 	RetryPolicy  RetryPolicy
 	clock        clock.Clock
+	loopDetector *loopDetector
 }
 
 // engineOption allows configuring the Engine.
@@ -187,6 +191,7 @@ func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *sessctx.Manager, reg tool
 		processors:   make(map[TurnPhase]TurnProcessor),
 		RetryPolicy:  &DefaultRetryPolicy{MaxRetries: 6, Backoff: backoff, RateLimitBackoff: rateLimitBackoff},
 		clock:        clock.RealClock{},
+		loopDetector: newLoopDetector(),
 	}
 
 	cfg := &engineConfig{}
@@ -215,7 +220,7 @@ func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *sessctx.Manager, reg tool
 		e.middleware = append(e.middleware,
 			e.withMetrics(),
 			e.withStatusReporter(),
-			withLoopDetector(),
+			e.withLoopDetector(),
 		)
 	}
 
@@ -232,9 +237,12 @@ func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *sessctx.Manager, reg tool
 
 // Run executes the multi-Turn orchestration loop.
 func (e *Engine) Run(ctx context.Context, startTime time.Time, sessionID string) error {
-	sessionToolCallCount := make(map[string]int)
+	// The loop detector is Engine-owned, so it must be reset once per Run.
+	// Previously the accumulators lived on TurnState (fresh per Run via
+	// CreateTurn); without this reset a reused Engine leaks stale hashes and
+	// tool-call counts into the next Run.
+	e.loopDetector.reset()
 	Turn := e.CreateTurn(0, startTime, sessionID)
-	Turn.State.ToolCallCount = sessionToolCallCount
 
 	for Turn.State.Phase != PhaseComplete {
 		err := e.ExecuteTurn(ctx, Turn)
@@ -273,6 +281,7 @@ func (e *Engine) CreateTurn(index int, startTime time.Time, sessionID string) *T
 		Index:        index,
 		StartTime:    startTime,
 		State:        &TurnState{CurrentTurns: index, Phase: PhaseGuard, RetryCount: 0},
+		LoopDetector: e.loopDetector,
 		CtxManager:   e.ctxManager,
 		Gateway:      e.gateway,
 		Executor:     e.executor,
