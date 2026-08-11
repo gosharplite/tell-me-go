@@ -10,6 +10,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
 func setupAnalysisManager(t *testing.T) (*analysisManager, string) {
@@ -26,7 +27,7 @@ func setupAnalysisManager(t *testing.T) (*analysisManager, string) {
 	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
 
-	m := newAnalysisManager(idx, cache, sp, nil, &mockHealthExecutor{}, persistencetest.NewPlainOSFileSystem(), infra_persistence.NewWorkspacePolicy(), newDeadCodeAnalyzer(sp, idx))
+	m := newAnalysisManager(idx, cache, sp, nil, &mockHealthExecutor{}, &toolstest.FakeToolchainRunner{}, persistencetest.NewPlainOSFileSystem(), infra_persistence.NewWorkspacePolicy(), newDeadCodeAnalyzer(sp, idx))
 	return m, tmpDir
 }
 

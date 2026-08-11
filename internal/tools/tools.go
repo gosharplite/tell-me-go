@@ -28,6 +28,7 @@ type ToolRegistrationParams struct {
 	SecurityManager  domain_security.Manager
 	CommandExecutor  tools.CommandExecutor
 	CommandValidator domain_security.CommandValidator
+	ToolchainRunner  tools.ToolchainRunner
 	SessionProvider  ports.SessionProvider
 	LogFile          string
 	TraceFile        string
@@ -57,6 +58,18 @@ func validateRegistrationParams(params ToolRegistrationParams) error {
 	if params.FileSystem == nil {
 		return fmt.Errorf("RegisterAll: FileSystem is required and must not be nil")
 	}
+	if params.CommandExecutor == nil {
+		return fmt.Errorf("RegisterAll: CommandExecutor is required and must not be nil")
+	}
+	if params.CommandValidator == nil {
+		return fmt.Errorf("RegisterAll: CommandValidator is required and must not be nil")
+	}
+	if params.EventBus == nil {
+		return fmt.Errorf("RegisterAll: EventBus is required and must not be nil")
+	}
+	if params.ToolchainRunner == nil {
+		return fmt.Errorf("RegisterAll: ToolchainRunner is required and must not be nil")
+	}
 	return nil
 }
 
@@ -73,11 +86,11 @@ func RegisterAll(params ToolRegistrationParams) error {
 			return fmt.Errorf("workspace.RegisterPersistence: %w", err)
 		}
 	}
-	archVerify, err := analysis.Register(params.Registry, params.SecurityManager, params.EventBus, params.CommandExecutor, params.FileSystem, params.WorkspacePolicy)
+	archVerify, err := analysis.Register(params.Registry, params.SecurityManager, params.EventBus, params.CommandExecutor, params.ToolchainRunner, params.FileSystem, params.WorkspacePolicy)
 	if err != nil {
 		return fmt.Errorf("analysis.Register: %w", err)
 	}
-	if err := developer.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, params.WorkspacePolicy, archVerify, params.EventBus); err != nil {
+	if err := developer.Register(params.Registry, params.SecurityManager, params.ToolchainRunner, params.CommandValidator, params.FileSystem, params.WorkspacePolicy, archVerify, params.EventBus); err != nil {
 		return fmt.Errorf("developer.Register: %w", err)
 	}
 	if err := integrations.RegisterAll(params.Registry, params.FileSystem, params.SecurityManager, params.Client, params.AssetsDir); err != nil {

@@ -15,17 +15,15 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 type mockReleaseRunner struct {
-	runLinterFunc            func(ctx context.Context) (string, string, error)
-	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
-	runTestsFunc             func(ctx context.Context, path string) ([]byte, error)
-	buildCodeFunc            func(ctx context.Context, outputBinary, path string) ([]byte, error)
+	runLinterFunc func(ctx context.Context) (string, string, error)
+	runTestsFunc  func(ctx context.Context, path string) ([]byte, error)
+	buildCodeFunc func(ctx context.Context, outputBinary, path string) ([]byte, error)
 }
 
 func (m *mockReleaseRunner) RunLinter(ctx context.Context) (string, string, error) {
@@ -33,13 +31,6 @@ func (m *mockReleaseRunner) RunLinter(ctx context.Context) (string, string, erro
 		return m.runLinterFunc(ctx)
 	}
 	return "", "mock-linter", nil
-}
-
-func (m *mockReleaseRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
-	if m.runTestsWithCoverageFunc != nil {
-		return m.runTestsWithCoverageFunc(ctx, path, short, profilePath)
-	}
-	return toolchain.CoverageReport{PassedCount: 1, CoveragePct: "100.0%"}, nil
 }
 
 func (m *mockReleaseRunner) RunTests(ctx context.Context, path string) ([]byte, error) {
@@ -228,7 +219,7 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 			setupRunner: func() *mockReleaseRunner {
 				return &mockReleaseRunner{
 					runLinterFunc: func(ctx context.Context) (string, string, error) {
-						return "", "", toolchain.ErrNoSupportedLinter
+						return "", "", tools.ErrNoSupportedLinter
 					},
 				}
 			},
@@ -679,7 +670,7 @@ func TestLinterChecker_NoSupportedLinter(t *testing.T) {
 	t.Parallel()
 	runner := &mockReleaseRunner{
 		runLinterFunc: func(ctx context.Context) (string, string, error) {
-			return "", "", toolchain.ErrNoSupportedLinter
+			return "", "", tools.ErrNoSupportedLinter
 		},
 	}
 	c := &linterChecker{runner: runner}

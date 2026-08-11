@@ -15,7 +15,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,7 +52,7 @@ func (mv *mockValidator) IsSafe(command string) (bool, string) {
 }
 
 type mockGoRunner struct {
-	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
+	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error)
 	runBenchmarksFunc        func(ctx context.Context, path string, benchRegex string) (string, error)
 	runLinterFunc            func(ctx context.Context) (string, string, error)
 	checkGovulncheckFunc     func(ctx context.Context) error
@@ -61,11 +61,11 @@ type mockGoRunner struct {
 	runTestsFunc             func(ctx context.Context, path string) ([]byte, error)
 }
 
-func (m *mockGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+func (m *mockGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error) {
 	if m.runTestsWithCoverageFunc != nil {
 		return m.runTestsWithCoverageFunc(ctx, path, short, profilePath)
 	}
-	return toolchain.CoverageReport{}, nil
+	return tools.CoverageSummary{}, nil
 }
 
 func (m *mockGoRunner) RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error) {
@@ -216,17 +216,17 @@ func TestCheckVulnerabilities(t *testing.T) {
 
 func setupCoverageMock(t *testing.T, m *devManager, executeErr error, summaryOut string, tempErr error, noGoFiles bool) {
 	runner := m.runner.(*mockGoRunner)
-	runner.runTestsWithCoverageFunc = func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+	runner.runTestsWithCoverageFunc = func(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error) {
 		if tempErr != nil {
-			return toolchain.CoverageReport{}, tempErr
+			return tools.CoverageSummary{}, tempErr
 		}
 		if executeErr != nil {
-			return toolchain.CoverageReport{}, executeErr
+			return tools.CoverageSummary{}, executeErr
 		}
 		if noGoFiles {
-			return toolchain.CoverageReport{NoGoFiles: true}, nil
+			return tools.CoverageSummary{NoGoFiles: true}, nil
 		}
-		return toolchain.CoverageReport{SummaryOutput: summaryOut}, nil
+		return tools.CoverageSummary{SummaryOutput: summaryOut}, nil
 	}
 }
 

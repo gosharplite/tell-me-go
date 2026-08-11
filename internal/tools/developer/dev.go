@@ -15,7 +15,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
 	"github.com/gosharplite/tell-me-go/internal/pkg/telemetry"
 )
@@ -29,7 +28,7 @@ func withHeartbeatInterval(d time.Duration) devOption {
 }
 
 type goRunner interface {
-	RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
+	RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error)
 	RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error)
 	RunLinter(ctx context.Context) (string, string, error)
 	CheckGovulncheck(ctx context.Context) error
@@ -218,7 +217,7 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 
 	// Prompt user for authorization
 	command := fmt.Sprintf("Run coverage on %s", path)
-	var report toolchain.CoverageReport
+	var report tools.CoverageSummary
 	err := m.runWithHeartbeat(ctx, hb, "get_coverage", command, "Getting test coverage summary", func() error {
 		var err error
 		report, err = m.runner.RunTestsWithCoverage(ctx, path, false, "")

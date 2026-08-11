@@ -87,6 +87,13 @@ func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.R
 		WorkspacePolicy:  f.WorkspacePolicy,
 	}
 
+	// Single production construction of the runner (issue #1325, ADR-060):
+	// the direct-construction class in tools is eliminated; only the di
+	// composition root constructs. Reuses the &exec.RealExecutor{} from the
+	// literal above; *toolchain.goRunner satisfies tools.ToolchainRunner
+	// directly (CoverageSummary boundary).
+	regParams.ToolchainRunner = infra_toolchain.NewGoRunner(regParams.CommandExecutor)
+
 	if err := f.RegisterAllTools(regParams); err != nil {
 		return nil, fmt.Errorf("%w: failed to register core tools: %w", errInfraInit, err)
 	}

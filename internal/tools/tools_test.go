@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
@@ -21,69 +22,65 @@ import (
 
 func TestNewToolRegistry(t *testing.T) {
 	t.Parallel()
-	sm := &toolstest.MockSecurityManager{AllowAll: true}
-	r := registry.New()
-	if err := tools.RegisterAll(tools.ToolRegistrationParams{
-		HealthManager:   nil,
-		Registry:        r,
-		SecurityManager: sm,
-		LogFile:         "tokens.log",
-		Model:           "model",
-		Mode:            "mode",
-		AssetsDir:       t.TempDir(),
-		FileSystem:      persistencetest.NewPlainOSFileSystem(),
-		WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
-	}); err != nil {
+	params := newTestParams()
+	params.LogFile = "tokens.log"
+	params.Model = "model"
+	params.Mode = "mode"
+	params.AssetsDir = t.TempDir()
+	if err := tools.RegisterAll(params); err != nil {
 		t.Fatalf("RegisterAll failed: %v", err)
 	}
 
-	if len(r.GetDeclarations()) == 0 {
+	if len(params.Registry.GetDeclarations()) == 0 {
 		t.Error("expected registered tools, got none")
+	}
+}
+
+// newTestParams returns a ToolRegistrationParams with every guarded field set
+// (8-guard table per issue #1325 / ADR-060) and a real non-failing registry.
+// Tests override individual fields to exercise specific paths. Client,
+// SessionProvider, and HealthManager stay unset (documented exclusions).
+func newTestParams() tools.ToolRegistrationParams {
+	return tools.ToolRegistrationParams{
+		Registry:         registry.New(),
+		SecurityManager:  &toolstest.MockSecurityManager{AllowAll: true},
+		WorkspacePolicy:  infra_persistence.NewWorkspacePolicy(),
+		FileSystem:       persistencetest.NewPlainOSFileSystem(),
+		CommandExecutor:  &toolstest.MockExecutor{},
+		CommandValidator: &toolstest.MockCommandValidator{},
+		EventBus:         &eventstest.TestEventBus{},
+		ToolchainRunner:  &toolstest.FakeToolchainRunner{},
 	}
 }
 
 func TestRegisterAll_WithSessionProvider(t *testing.T) {
 	t.Parallel()
-	sm := &toolstest.MockSecurityManager{AllowAll: true}
-	r := registry.New()
 	sp := &testfixtures.MockSessionProvider{}
-	if err := tools.RegisterAll(tools.ToolRegistrationParams{
-		HealthManager:   nil,
-		Registry:        r,
-		SecurityManager: sm,
-		SessionProvider: sp,
-		LogFile:         "tokens.log",
-		Model:           "model",
-		Mode:            "mode",
-		AssetsDir:       t.TempDir(),
-		FileSystem:      persistencetest.NewPlainOSFileSystem(),
-		WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
-	}); err != nil {
+	params := newTestParams()
+	params.SessionProvider = sp
+	params.LogFile = "tokens.log"
+	params.Model = "model"
+	params.Mode = "mode"
+	params.AssetsDir = t.TempDir()
+	if err := tools.RegisterAll(params); err != nil {
 		t.Fatalf("RegisterAll with SessionProvider failed: %v", err)
 	}
 }
 
 func TestToolExecution(t *testing.T) {
 	t.Parallel()
-	sm := &toolstest.MockSecurityManager{AllowAll: true}
-	r := registry.New()
-	if err := tools.RegisterAll(tools.ToolRegistrationParams{
-		HealthManager:   nil,
-		Registry:        r,
-		SecurityManager: sm,
-		LogFile:         "tokens.log",
-		Model:           "model",
-		Mode:            "mode",
-		AssetsDir:       t.TempDir(),
-		FileSystem:      persistencetest.NewPlainOSFileSystem(),
-		WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
-	}); err != nil {
+	params := newTestParams()
+	params.LogFile = "tokens.log"
+	params.Model = "model"
+	params.Mode = "mode"
+	params.AssetsDir = t.TempDir()
+	if err := tools.RegisterAll(params); err != nil {
 		t.Fatalf("RegisterAll failed: %v", err)
 	}
 
 	ctx := context.Background()
 	// list_files is registered by workspace.Register
-	_, err := r.Execute(ctx, "list_files", map[string]interface{}{"path": "."}, nil)
+	_, err := params.Registry.Execute(ctx, "list_files", map[string]interface{}{"path": "."}, nil)
 	if err != nil {
 		t.Errorf("failed to execute list_files: %v", err)
 	}
@@ -91,19 +88,12 @@ func TestToolExecution(t *testing.T) {
 
 func TestGenerateMermaidDiagram(t *testing.T) {
 	t.Parallel()
-	sm := &toolstest.MockSecurityManager{AllowAll: true}
-	r := registry.New()
-	if err := tools.RegisterAll(tools.ToolRegistrationParams{
-		HealthManager:   nil,
-		Registry:        r,
-		SecurityManager: sm,
-		LogFile:         "tokens.log",
-		Model:           "model",
-		Mode:            "mode",
-		AssetsDir:       t.TempDir(),
-		FileSystem:      persistencetest.NewPlainOSFileSystem(),
-		WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
-	}); err != nil {
+	params := newTestParams()
+	params.LogFile = "tokens.log"
+	params.Model = "model"
+	params.Mode = "mode"
+	params.AssetsDir = t.TempDir()
+	if err := tools.RegisterAll(params); err != nil {
 		t.Fatalf("RegisterAll failed: %v", err)
 	}
 
@@ -113,7 +103,7 @@ func TestGenerateMermaidDiagram(t *testing.T) {
 		"pkg2": []string{"pkg3"},
 	}
 
-	res, err := r.Execute(ctx, "generate_mermaid_diagram", map[string]interface{}{"graph": graph}, nil)
+	res, err := params.Registry.Execute(ctx, "generate_mermaid_diagram", map[string]interface{}{"graph": graph}, nil)
 	if err != nil {
 		t.Fatalf("failed to execute generate_mermaid_diagram: %v", err)
 	}
@@ -123,7 +113,7 @@ func TestGenerateMermaidDiagram(t *testing.T) {
 	}
 
 	// Test invalid graph
-	res, err = r.Execute(ctx, "generate_mermaid_diagram", map[string]interface{}{"graph": 123}, nil)
+	res, err = params.Registry.Execute(ctx, "generate_mermaid_diagram", map[string]interface{}{"graph": 123}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -132,7 +122,7 @@ func TestGenerateMermaidDiagram(t *testing.T) {
 	}
 
 	// Test missing graph
-	res, err = r.Execute(ctx, "generate_mermaid_diagram", map[string]interface{}{}, nil)
+	res, err = params.Registry.Execute(ctx, "generate_mermaid_diagram", map[string]interface{}{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -177,46 +167,74 @@ func TestRegisterAll_Errors(t *testing.T) {
 
 	t.Run("nil Registry returns error", func(t *testing.T) {
 		t.Parallel()
-		err := tools.RegisterAll(tools.ToolRegistrationParams{
-			Registry:        nil,
-			SecurityManager: &toolstest.MockSecurityManager{AllowAll: true},
-			WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
-		})
+		params := newTestParams()
+		params.Registry = nil
+		err := tools.RegisterAll(params)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "Registry is required")
 	})
 
 	t.Run("nil SecurityManager returns error", func(t *testing.T) {
 		t.Parallel()
-		err := tools.RegisterAll(tools.ToolRegistrationParams{
-			Registry:        new(MockRegistry),
-			SecurityManager: nil,
-			WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
-		})
+		params := newTestParams()
+		params.SecurityManager = nil
+		err := tools.RegisterAll(params)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "SecurityManager is required")
 	})
 
 	t.Run("nil WorkspacePolicy returns error", func(t *testing.T) {
 		t.Parallel()
-		err := tools.RegisterAll(tools.ToolRegistrationParams{
-			Registry:        new(MockRegistry),
-			SecurityManager: &toolstest.MockSecurityManager{AllowAll: true},
-			WorkspacePolicy: nil,
-		})
+		params := newTestParams()
+		params.WorkspacePolicy = nil
+		err := tools.RegisterAll(params)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "WorkspacePolicy is required")
 	})
 
 	t.Run("nil FileSystem returns error", func(t *testing.T) {
 		t.Parallel()
-		err := tools.RegisterAll(tools.ToolRegistrationParams{
-			Registry:        new(MockRegistry),
-			SecurityManager: &toolstest.MockSecurityManager{AllowAll: true},
-			WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
-		})
+		params := newTestParams()
+		params.FileSystem = nil
+		err := tools.RegisterAll(params)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "FileSystem is required")
+	})
+
+	t.Run("nil CommandExecutor returns error", func(t *testing.T) {
+		t.Parallel()
+		params := newTestParams()
+		params.CommandExecutor = nil
+		err := tools.RegisterAll(params)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "CommandExecutor is required")
+	})
+
+	t.Run("nil CommandValidator returns error", func(t *testing.T) {
+		t.Parallel()
+		params := newTestParams()
+		params.CommandValidator = nil
+		err := tools.RegisterAll(params)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "CommandValidator is required")
+	})
+
+	t.Run("nil EventBus returns error", func(t *testing.T) {
+		t.Parallel()
+		params := newTestParams()
+		params.EventBus = nil
+		err := tools.RegisterAll(params)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "EventBus is required")
+	})
+
+	t.Run("nil ToolchainRunner returns error", func(t *testing.T) {
+		t.Parallel()
+		params := newTestParams()
+		params.ToolchainRunner = nil
+		err := tools.RegisterAll(params)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "ToolchainRunner is required")
 	})
 
 	tests := []struct {
@@ -262,14 +280,8 @@ func TestRegisterAll_Errors(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			mockReg := &MockRegistry{failAfter: tt.failAfter}
-			params := tools.ToolRegistrationParams{
-				HealthManager:   nil,
-				Registry:        mockReg,
-				SecurityManager: &toolstest.MockSecurityManager{AllowAll: true},
-				WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
-				FileSystem:      persistencetest.NewPlainOSFileSystem(),
-			}
+			params := newTestParams()
+			params.Registry = &MockRegistry{failAfter: tt.failAfter}
 			if tt.setup != nil {
 				tt.setup(&params)
 			}
@@ -333,14 +345,8 @@ func TestRegisterAll_ErrorWrapping(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			mockReg := &MockRegistry{failAfter: tt.failAfter}
-			params := tools.ToolRegistrationParams{
-				Registry:        mockReg,
-				SecurityManager: &toolstest.MockSecurityManager{AllowAll: true},
-				WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
-				HealthManager:   nil,
-				FileSystem:      persistencetest.NewPlainOSFileSystem(),
-			}
+			params := newTestParams()
+			params.Registry = &MockRegistry{failAfter: tt.failAfter}
 			if tt.setup != nil {
 				tt.setup(&params)
 			}
@@ -374,4 +380,25 @@ func (m *MockRegistry) GetDeclarationsByToolkits(toolkits []string) []*domaintoo
 
 func (m *MockRegistry) ListAvailableToolkits() []string {
 	return []string{"core"}
+}
+
+// TestRegisterAll_GoDoc_ReachesFakeRunner proves infoManager.Runner is wired
+// through RegisterAll (issue #1325, ADR-060): the fake ToolchainRunner's
+// GetGoDoc must be reached via registry.Execute("go_doc", ...). Zero
+// subprocesses — the fake returns no output and the handler completes.
+// hb nil is safe: GoDoc's heartbeat goroutine guards `if hb != nil`.
+func TestRegisterAll_GoDoc_ReachesFakeRunner(t *testing.T) {
+	t.Parallel()
+	fake := &toolstest.FakeToolchainRunner{}
+	params := newTestParams()
+	params.ToolchainRunner = fake
+	if err := tools.RegisterAll(params); err != nil {
+		t.Fatalf("RegisterAll failed: %v", err)
+	}
+	if _, err := params.Registry.Execute(context.Background(), "go_doc", map[string]interface{}{"symbol": "fmt.Println"}, nil); err != nil {
+		t.Fatalf("go_doc failed: %v", err)
+	}
+	if !fake.Called("GetGoDoc") {
+		t.Error("fake runner GetGoDoc was not reached through the go_doc handler")
+	}
 }
