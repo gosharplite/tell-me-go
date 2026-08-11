@@ -28,6 +28,7 @@ type ToolRegistrationParams struct {
 	SecurityManager  domain_security.Manager
 	CommandExecutor  tools.CommandExecutor
 	CommandValidator domain_security.CommandValidator
+	ToolchainRunner  tools.ToolchainRunner
 	SessionProvider  ports.SessionProvider
 	LogFile          string
 	TraceFile        string
@@ -56,6 +57,18 @@ func validateRegistrationParams(params ToolRegistrationParams) error {
 	}
 	if params.FileSystem == nil {
 		return fmt.Errorf("RegisterAll: FileSystem is required and must not be nil")
+	}
+	if params.CommandExecutor == nil {
+		return fmt.Errorf("RegisterAll: CommandExecutor is required and must not be nil")
+	}
+	if params.CommandValidator == nil {
+		return fmt.Errorf("RegisterAll: CommandValidator is required and must not be nil")
+	}
+	if params.EventBus == nil {
+		return fmt.Errorf("RegisterAll: EventBus is required and must not be nil")
+	}
+	if params.ToolchainRunner == nil {
+		return fmt.Errorf("RegisterAll: ToolchainRunner is required and must not be nil")
 	}
 	return nil
 }
