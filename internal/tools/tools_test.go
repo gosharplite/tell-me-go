@@ -381,3 +381,24 @@ func (m *MockRegistry) GetDeclarationsByToolkits(toolkits []string) []*domaintoo
 func (m *MockRegistry) ListAvailableToolkits() []string {
 	return []string{"core"}
 }
+
+// TestRegisterAll_GoDoc_ReachesFakeRunner proves infoManager.Runner is wired
+// through RegisterAll (issue #1325, ADR-060): the fake ToolchainRunner's
+// GetGoDoc must be reached via registry.Execute("go_doc", ...). Zero
+// subprocesses — the fake returns no output and the handler completes.
+// hb nil is safe: GoDoc's heartbeat goroutine guards `if hb != nil`.
+func TestRegisterAll_GoDoc_ReachesFakeRunner(t *testing.T) {
+	t.Parallel()
+	fake := &toolstest.FakeToolchainRunner{}
+	params := newTestParams()
+	params.ToolchainRunner = fake
+	if err := tools.RegisterAll(params); err != nil {
+		t.Fatalf("RegisterAll failed: %v", err)
+	}
+	if _, err := params.Registry.Execute(context.Background(), "go_doc", map[string]interface{}{"symbol": "fmt.Println"}, nil); err != nil {
+		t.Fatalf("go_doc failed: %v", err)
+	}
+	if !fake.Called("GetGoDoc") {
+		t.Error("fake runner GetGoDoc was not reached through the go_doc handler")
+	}
+}
