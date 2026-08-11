@@ -350,7 +350,7 @@ catalog a new gap no one reviewed. Policy:
   (`HasToolCalls` is derived from the presence of `FunctionCall` parts).
   Defensive guard — same acceptance class as defensive nil/empty guards on
   internal pipeline state (2026-07 Batch Triage).
-- **See**: `internal/agent/orchestrator/middleware.go:255`
+- **See**: `internal/agent/orchestrator/middleware.go:279` (re-anchored 2026-08, #1327 T2: the `return nil` after the `if len(syntheticParts) > 0` block moved from 255 to 279 in T1)
 
 ### agent/agenttest/helpers.go — 0% coverage on interface-satisfying stubs (16 methods)
 
@@ -714,7 +714,7 @@ catalog a new gap no one reviewed. Policy:
   `json.Marshaler` with error-return semantics. Structurally unreachable — same
   acceptance class as `json.Marshal` on all-string structs in
   `global_prompt_tracker.go`.
-- **See**: `internal/agent/orchestrator/middleware.go:164-166`
+- **See**: `internal/agent/orchestrator/middleware.go:181` (re-anchored 2026-08, #1327 T2: `detectLoop` became a `loopDetector` method in T1, moving the `json.Marshal(&sanitized)` line from 164-166 to 181)
 
 ### skills.sh integration — structurally unreachable and fault-injection gaps (17 sites)
 

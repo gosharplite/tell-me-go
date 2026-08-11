@@ -139,6 +139,7 @@ func (e *Engine) withMetrics() turnMiddleware {
 type loopDetector struct {
 	toolCallCount        map[string]int
 	recentResponseHashes []string
+	seenRateLimit        bool
 }
 
 func newLoopDetector() *loopDetector {
@@ -150,7 +151,16 @@ func newLoopDetector() *loopDetector {
 func (d *loopDetector) reset() {
 	d.toolCallCount = make(map[string]int)
 	d.recentResponseHashes = nil
+	d.seenRateLimit = false
 }
+
+// hasSeenRateLimit reports whether a rate-limit error has occurred during
+// this Run. Nil-safe: a nil detector (bare-Turn unit tests/benches) reports
+// false, mirroring the ADR-059 nil-safe read pattern.
+func (d *loopDetector) hasSeenRateLimit() bool { return d != nil && d.seenRateLimit }
+
+// recordRateLimit marks that a rate-limit error occurred. Nil-safe no-op.
+func (d *loopDetector) recordRateLimit() { if d != nil { d.seenRateLimit = true } }
 
 // withLoopDetector returns a middleware that detects and breaks infinite tool loops.
 func (e *Engine) withLoopDetector() turnMiddleware {
