@@ -22,7 +22,7 @@ entities=$(grep -E '^  [A-Z][A-Za-z]+:$' "$MODEL" | sed 's/^  //;s/:$//' | sort 
 
 # Glossary terms
 glossary=$(sed -n '/^glossary:/,/^enums:/p' "$MODEL" \
-  | grep -E '^  [A-Za-z]+:' | sed 's/^  //;s/:$//' | sort -u)
+  | grep -E '^  [A-Za-z]+:' | sed -E 's/^  ([A-Za-z]+):.*$/\1/' | sort -u)
 
 # Enum names
 enums=$(sed -n '/^enums:/,/^entities:/p' "$MODEL" \

@@ -51,7 +51,7 @@ Traced against `scripts/modelith-drift.sh` against the code model:
 | Symbol | Drift status |
 | --- | --- |
 | `ToolchainRunner` | **Escapes** — only via the `Tool`-substring false-negative (the entity-substring loop matches `"ToolchainRunner"` against the modeled entity `Tool`). An accidental escape, not model coverage; the gate is too weak to be decision-relevant. |
-| `CoverageSummary` | **TRIPS** — accepted advisory; the DTO is a port data shape like `CommandExecutor`/`ToolResult`/`Schema`/`Registry` (all in `domain/tools`, none modeled). No model edit. |
+| `CoverageSummary` | **TRIPS** — accepted advisory; the DTO is a port data shape like `CommandExecutor`/`ToolResult`/`Schema`/`Registry` (all in `domain/tools`, none modeled). No model edit. Amended 2026-08: drift resolved by a `CoverageSummary` glossary entry in the domain model (vocabulary, not an entity) — `modelith-drift` now silent. |
 | `ErrNoSupportedLinter` | **Escapes** — deterministic via the pinned single-line declaration `var ErrNoSupportedLinter = errors.New(...)` (a `var (...)` block would trip). The pin is part of the sentinel contract. |
 
 The DTO choice rests on the verified 4-field consumer union (`PassedCount`, `NoGoFiles`, `CoveragePct`, `SummaryOutput` consumed at `dev.go` `getCoverage` and `health.go` `runTestsAndCoverage`) and `TestOutput`'s zero assertion consumers — not on drift (both DTO and report trip identically). Sentinel contract: couplings to *our* wording are typed (`errors.Is`); couplings to stdlib wording (`"exit status 1"`) are documented, not converted; semantics are "detection; severity consumer-decided" (health SKIP vs release FAIL).
