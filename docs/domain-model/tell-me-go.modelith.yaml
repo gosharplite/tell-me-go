@@ -39,6 +39,14 @@ glossary:
     file. The environment tools (Niffler, Dobby, etc.) manage this directory;
     tell-me-go treats it as the stable namespace for everything it persists.
 
+  CoverageSummary: >
+    The tools-layer view of a coverage run, returned by the Go toolchain
+    runner: the passed-test count, whether the package has no Go files,
+    the coverage percentage, and the summary output. It is the
+    consumer-facing projection of the infrastructure-internal coverage
+    report, which stays infrastructure-internal by design (ADR-060).
+    Not an entity — a value type with no relationships or lifecycle.
+
 enums:
   APIFamily:
     description: >
@@ -421,7 +429,8 @@ entities:
       registered at startup and carry a JSON Schema describing their
       parameters. Categories include workspace (files, git), analysis
       (AST, architecture), integrations (Jira, ADO, Teams), and system
-      (shell, testing).
+      (shell, testing). Analysis tools return a `CoverageSummary` of a
+      coverage run.
     attributes:
       - name: name
         type: string

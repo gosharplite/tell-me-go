@@ -15,10 +15,10 @@ import (
 )
 
 // Register adds all consolidated analysis tools to the registry.
-func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem, wp services.WorkspacePolicy) (tools.ToolFunc, error) {
+func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus, executor tools.CommandExecutor, runner tools.ToolchainRunner, fs persistence.FileSystem, wp services.WorkspacePolicy) (tools.ToolFunc, error) {
 	idx, _ := newIndexer(".")
 	cache := newASTCache(".")
-	m := newAnalysisManager(idx, cache, sm, bus, executor, fs, wp, newDeadCodeAnalyzer(sm, idx))
+	m := newAnalysisManager(idx, cache, sm, bus, executor, runner, fs, wp, newDeadCodeAnalyzer(sm, idx))
 
 	type toolSpec struct {
 		decl    *tools.ToolDeclaration

@@ -47,41 +47,14 @@ func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
 	return nil
 }
 
-type mockToolchainExecutor struct {
-	runFunc      func(ctx context.Context, name string, args ...string) ([]byte, error)
-	lookPathFunc func(file string) (string, error)
-}
-
-func (m *mockToolchainExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
-	if m.runFunc != nil {
-		return m.runFunc(ctx, name, args...)
-	}
-	return []byte(""), nil
-}
-
-func (m *mockToolchainExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
-	if m.runFunc != nil {
-		return m.runFunc(ctx, name, args...)
-	}
-	return []byte(""), nil
-}
-
-func (m *mockToolchainExecutor) LookPath(file string) (string, error) {
-	if m.lookPathFunc != nil {
-		return m.lookPathFunc(file)
-	}
-	return "/usr/bin/" + file, nil
-}
-
 func TestRegister(t *testing.T) {
 	t.Parallel()
 	registry := &mockToolRegistry{}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	validator := &toolstest.MockCommandValidator{}
 	fs := persistence.NewMockFileSystem()
-	exec := &mockToolchainExecutor{}
 
-	if err := Register(registry, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), nil, &events.NoOpEventBus{}); err != nil {
+	if err := Register(registry, sm, &toolstest.FakeToolchainRunner{}, validator, fs, infra_persistence.NewWorkspacePolicy(), nil, &events.NoOpEventBus{}); err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
 
@@ -162,9 +135,8 @@ func TestRegister_PartialFailure(t *testing.T) {
 			sm := &toolstest.MockSecurityManager{AllowAll: true}
 			validator := &toolstest.MockCommandValidator{}
 			fs := persistence.NewMockFileSystem()
-			exec := &mockToolchainExecutor{}
 
-			err := Register(registry, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), nil, &events.NoOpEventBus{})
+			err := Register(registry, sm, &toolstest.FakeToolchainRunner{}, validator, fs, infra_persistence.NewWorkspacePolicy(), nil, &events.NoOpEventBus{})
 
 			if err == nil {
 				t.Fatal("expected error, got nil")
@@ -191,10 +163,9 @@ func TestRegister_DuplicateRegistration(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	validator := &toolstest.MockCommandValidator{}
 	fs := persistence.NewMockFileSystem()
-	exec := &mockToolchainExecutor{}
 
 	// First registration
-	if err := Register(registry, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), nil, &events.NoOpEventBus{}); err != nil {
+	if err := Register(registry, sm, &toolstest.FakeToolchainRunner{}, validator, fs, infra_persistence.NewWorkspacePolicy(), nil, &events.NoOpEventBus{}); err != nil {
 		t.Fatalf("first Register failed: %v", err)
 	}
 
@@ -213,7 +184,7 @@ func TestRegister_DuplicateRegistration(t *testing.T) {
 	}
 
 	// Second registration
-	if err := Register(registry, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), nil, &events.NoOpEventBus{}); err != nil {
+	if err := Register(registry, sm, &toolstest.FakeToolchainRunner{}, validator, fs, infra_persistence.NewWorkspacePolicy(), nil, &events.NoOpEventBus{}); err != nil {
 		t.Fatalf("second Register failed: %v", err)
 	}
 

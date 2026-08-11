@@ -7,6 +7,7 @@ A high-performance CLI assistant that unifies reasoning engines (Gemini, OpenAI,
 ## Glossary
 
 - **`Chatter`** — The conversation interface between the `Orchestrator` and the `Provider` gateway. Defines how prompts are sent, responses are streamed, and chat sessions are configured. Not an entity — it is a behavioral role with no persisted state, analogous to `Orchestrator` and `SecurityManager`.
+- **`CoverageSummary`** — The tools-layer view of a coverage run, returned by the Go toolchain runner: the passed-test count, whether the package has no Go files, the coverage percentage, and the summary output. It is the consumer-facing projection of the infrastructure-internal coverage report, which stays infrastructure-internal by design (ADR-060). Not an entity — a value type with no relationships or lifecycle.
 - **`Orchestrator`** — The top-level loop that drives a `Session`: receives a user prompt, delegates to the active `Provider`, dispatches `Tool` calls, and manages the `Turn` lifecycle.
 - **`SecurityManager`** — The component that validates `Tool` requests against the `SafePath` registry and delegates to the `UserInteractor` when user confirmation is required.
 - **`TellMeHome`** — The filesystem root directory for all tell-me-go state — `Config`s, local `Skill`s, `History`, `SafePath`s, and `Task`s. A `Session`'s `History` can be archived (`--new`) without affecting `SafePath`s or `Task`s because they are stored under `TellMeHome`, not inside the `Session`-scoped `History` file. The environment tools (Niffler, Dobby, etc.) manage this directory; tell-me-go treats it as the stable namespace for everything it persists.
@@ -254,7 +255,7 @@ A unit of work tracked by the system for the user. `Task`s form a simple to-do l
 
 ### `Tool`
 
-A capability exposed to the LLM for agentic execution. `Tool`s are registered at startup and carry a JSON Schema describing their parameters. Categories include workspace (files, git), analysis (AST, architecture), integrations (Jira, ADO, Teams), and system (shell, testing).
+A capability exposed to the LLM for agentic execution. `Tool`s are registered at startup and carry a JSON Schema describing their parameters. Categories include workspace (files, git), analysis (AST, architecture), integrations (Jira, ADO, Teams), and system (shell, testing). Analysis tools return a `CoverageSummary` of a coverage run.
 
 **Attributes**
 

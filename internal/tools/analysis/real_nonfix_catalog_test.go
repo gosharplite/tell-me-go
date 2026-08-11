@@ -92,6 +92,8 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"(*renderer).makeSubscriber":                      {Line: 48, Complexity: 11, FilePath: "internal/ui/tui/progress/renderer.go"},
 		"TestMediaBlocks":                                 {Line: 18, Complexity: 11, FilePath: "internal/infrastructure/llm/openai/client_vision_test.go"},
 		"TestRunCommand_NonExitErrorWaitPath":             {Line: 817, Complexity: 11, FilePath: "internal/tools/workspace/process_executor_stream_test.go"},
+		"TestFakeToolchainRunner_PresetValues":            {Line: 36, Complexity: 28, FilePath: "internal/tools/toolstest/fake_toolchain_runner_test.go"},
+		"TestFakeToolchainRunner_ZeroDefaults":            {Line: 249, Complexity: 38, FilePath: "internal/tools/toolstest/fake_toolchain_runner_test.go"},
 	}
 
 	require.Equal(t, expectedCataloged, cataloged)

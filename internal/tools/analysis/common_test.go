@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -213,7 +213,7 @@ type mockAnalysisGoRunner struct {
 	getGoDocFunc             func(ctx context.Context, symbol string) ([]byte, error)
 	getModulePathFunc        func(ctx context.Context) (string, error)
 	getModuleDirFunc         func(ctx context.Context) (string, error)
-	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
+	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error)
 	runLinterFunc            func(ctx context.Context) (string, string, error)
 }
 
@@ -245,11 +245,11 @@ func (m *mockAnalysisGoRunner) GetModuleDir(ctx context.Context) (string, error)
 	return "", nil
 }
 
-func (m *mockAnalysisGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+func (m *mockAnalysisGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error) {
 	if m.runTestsWithCoverageFunc != nil {
 		return m.runTestsWithCoverageFunc(ctx, path, short, profilePath)
 	}
-	return toolchain.CoverageReport{}, nil
+	return tools.CoverageSummary{}, nil
 }
 
 func (m *mockAnalysisGoRunner) RunLinter(ctx context.Context) (string, string, error) {

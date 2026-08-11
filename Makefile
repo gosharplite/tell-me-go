@@ -32,7 +32,7 @@ ifeq ($(OS),Windows_NT)
     endif
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-no-test-sleep verify-architecture verify-exit-query verify-transitive-gate verify-nonfix-catalog verify-adr-index verify-no-context-window-cache lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-tools-toolchain-import verify-no-test-sleep verify-architecture verify-exit-query verify-transitive-gate verify-nonfix-catalog verify-adr-index verify-no-context-window-cache lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -45,6 +45,7 @@ help:
 	@echo "  make verify-nonfix-catalog - Verify the complexity-pin catalog partition (issue #1297)"
 	@echo "  make verify-no-test-sleep - Verify no time.Sleep for synchronization in tests"
 	@echo "  make verify-tools-adapter-import - Verify tools adapter imports are confined to default_fs.go (ADR-055)"
+	@echo "  make verify-tools-toolchain-import - Verify no infrastructure/toolchain imports in tools production files (issue #1325)"
 	@echo "  make verify-no-context-window-cache - Verify no context window cache references (ADR-057; part of make check/check-full)"
 	@echo "  make test-coverage - Run tests with coverage (excludes mocks/generated)"
 	@echo "  make tidy       - Tidy and vendor dependencies"
@@ -67,7 +68,7 @@ help:
 build:
 	go build -ldflags="-X 'main.version=$(VERSION)'" -o tell-me-go ./cmd/tell-me-go
 
-test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import
+test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-tools-toolchain-import
 	go test ./...
 
 # Verify ADR-021: no testutil packages (centralized test-double dump).
@@ -413,6 +414,70 @@ else
 	@echo "  ✓ Adapter imports confined to the two default_fs.go files."
 endif
 
+# Verify issue #1325: no internal/tools production file imports the
+# internal/infrastructure/toolchain adapter. The Go toolchain runner is
+# injected via the domain port (tools.ToolchainRunner) with a single
+# construction in internal/infrastructure/di/toolchain_factory.go.
+#
+# Predicate: "production files" = non-_test.go files under internal/tools/
+# OUTSIDE analysistest/ and toolstest/ (explicit path exclusions mirroring
+# verify-no-testing-import). Test-layer files are deliberately exempt: the 22
+# surviving toolchain.NewGoRunner constructions across coverage_parser_test.go,
+# health_test.go, real_nonfix_catalog_test.go, and architecture_bench_test.go
+# are the real-adapter-over-mock verification surface the e2e deferral depends
+# on. ANTI-EXTENSION DECISION (ADR-060): this gate must never be extended to
+# _test.go files — doing so would break those sites and destroy the
+# verification surface.
+verify-tools-toolchain-import:
+ifeq ($(IS_POSIX),true)
+	@echo "Checking for infrastructure/toolchain adapter imports in tools production files (issue #1325)..."
+	@VIOLATIONS="$$( grep -rn 'github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"' internal/tools/ --include='*.go' \
+		| grep -v '_test\.go:' \
+		| grep -v '^internal/tools/analysis/analysistest/' \
+		| grep -v '^internal/tools/toolstest/' )"; \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ issue #1325 violation: infrastructure/toolchain import in a tools production file."; \
+		echo "   The Go toolchain runner must be injected via tools.ToolchainRunner (domain port,"; \
+		echo "   single construction in internal/infrastructure/di/toolchain_factory.go)."; \
+		echo "   See: docs/adr/2026-08-toolchain-runner-injection.md (ADR-060)"; \
+		echo ""; \
+		echo "Violating files:"; \
+		echo "$$VIOLATIONS"; \
+		echo ""; \
+		echo "Fix: delete the direct construction and thread the injected runner through"; \
+		echo "RegisterAll -> analysis.Register / developer.Register."; \
+		exit 1; \
+	fi
+	@echo "  ✓ No infrastructure/toolchain imports in tools production files."
+else
+	@echo "Checking for infrastructure/toolchain adapter imports in tools production files (issue #1325)..."
+	@powershell -Command " \
+		$$ErrorActionPreference = 'Stop'; \
+		$$violations = @(); \
+		Get-ChildItem -Path internal/tools -Recurse -Filter '*.go' | Where-Object { \
+			$$_.Name -notlike '*_test.go' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/analysis/analysistest/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/toolstest/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch '.git/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'vendor/' \
+		} | ForEach-Object { \
+			$$matches = Select-String -Path $$_.FullName -Pattern 'github\.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"'; \
+			if ($$matches) { foreach ($$m in $$matches) { $$violations += ('{0}:{1}' -f $$m.Path, $$m.LineNumber) } } \
+		}; \
+		if ($$violations.Count -gt 0) { \
+			Write-Host ''; \
+			Write-Host '❌ issue #1325 violation: infrastructure/toolchain import in a tools production file.'; \
+			Write-Host '   See: docs/adr/2026-08-toolchain-runner-injection.md (ADR-060)'; \
+			Write-Host ''; \
+			$$violations | Sort-Object -Unique | ForEach-Object { Write-Host $$_ }; \
+			Write-Host ''; \
+			exit 1 \
+		}; \
+		Write-Host '  ✓ No infrastructure/toolchain imports in tools production files.' \
+	"
+endif
+
 # Verify no time.Sleep for synchronization in test files (Issue #580 / ADR-036).
 # Legitimate I/O simulation and hardware observation sleeps are explicitly allow-listed.
 verify-no-test-sleep:
@@ -686,6 +751,8 @@ check: fmt tidy build
 	@$(MAKE) verify-session-provider-mock
 	@echo "=== verify-tools-adapter-import ==="
 	@$(MAKE) verify-tools-adapter-import
+	@echo "=== verify-tools-toolchain-import ==="
+	@$(MAKE) verify-tools-toolchain-import
 	@echo "=== verify-no-test-sleep ==="
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="
@@ -726,6 +793,8 @@ check-full: fmt tidy build
 	@$(MAKE) verify-session-provider-mock
 	@echo "=== verify-tools-adapter-import ==="
 	@$(MAKE) verify-tools-adapter-import
+	@echo "=== verify-tools-toolchain-import ==="
+	@$(MAKE) verify-tools-toolchain-import
 	@echo "=== verify-no-test-sleep ==="
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="
@@ -742,6 +811,8 @@ check-full: fmt tidy build
 	@$(MAKE) test
 	@echo "=== dead-code ==="
 	@$(MAKE) dead-code
+	@echo "=== test-coverage ==="
+	@$(MAKE) test-coverage
 	@echo "=== test-race ==="
 	@$(MAKE) test-race
 	@echo ""
