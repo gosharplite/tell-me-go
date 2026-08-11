@@ -31,6 +31,7 @@ type defaultUIFactory struct {
 	Stderr                io.Writer
 	Logger                *slog.Logger
 	systemMetricsProvider ports.SystemMetricsProvider
+	newProgram            func(model tea.Model, opts ...tea.ProgramOption) tui.ProgramRunner
 }
 
 func newUIFactory(sm ConfigurableSecurityManager, stdout, stderr io.Writer, logger *slog.Logger) uiFactory {
@@ -40,6 +41,9 @@ func newUIFactory(sm ConfigurableSecurityManager, stdout, stderr io.Writer, logg
 		Stderr:                stderr,
 		Logger:                logger,
 		systemMetricsProvider: telemetry.NewSystemMetricsProvider(),
+		newProgram: func(model tea.Model, opts ...tea.ProgramOption) tui.ProgramRunner {
+			return &teaProgramRunner{p: tea.NewProgram(model, opts...)}
+		},
 	}
 }
 
@@ -101,11 +105,5 @@ func (f *defaultUIFactory) HistoryBrowser() ports.HistoryBrowser {
 }
 
 func (f *defaultUIFactory) HistoryEditor() ports.HistoryEditor {
-	return tui.NewHistoryEditor(
-		f.Logger,
-		tui.InitLogger,
-		func(model tea.Model, opts ...tea.ProgramOption) tui.ProgramRunner {
-			return &teaProgramRunner{p: tea.NewProgram(model, opts...)}
-		},
-	)
+	return tui.NewHistoryEditor(f.Logger, tui.InitLogger, f.newProgram)
 }

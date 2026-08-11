@@ -665,3 +665,22 @@ func TestDefaultUIFactory_HistoryBrowser_Constructor(t *testing.T) {
 	_, ok = runner.(*teaProgramRunner)
 	assert.True(t, ok, "newProgram should return a *teaProgramRunner")
 }
+
+func TestDefaultUIFactory_HistoryEditor_Constructor(t *testing.T) {
+	sm := new(mockConfigurableSecurityManager)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	factory := newUIFactory(sm, io.Discard, io.Discard, logger).(*defaultUIFactory)
+
+	editor := factory.HistoryEditor()
+	require.NotNil(t, editor)
+
+	// The production closure must be reachable and return a *teaProgramRunner.
+	runner := factory.newProgram(quitModel{})
+	require.NotNil(t, runner)
+	_, ok := runner.(*teaProgramRunner)
+	assert.True(t, ok, "newProgram should return a *teaProgramRunner")
+
+	// HistoryEditor returns the TUI editor wired with the factory's seam.
+	_, ok = editor.(*tui.HistoryEditor)
+	assert.True(t, ok, "HistoryEditor should return *tui.HistoryEditor")
+}

@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	infra_skills "github.com/gosharplite/tell-me-go/internal/infrastructure/skills"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
@@ -610,6 +612,15 @@ type mockTracker struct {
 }
 
 func (m *mockTracker) Warmup() {}
+
+type mockStatsTracker struct {
+	pricing.CostTracker
+	stats pricing.UsageStats
+}
+
+func (m *mockStatsTracker) GetStats(ctx context.Context) (pricing.UsageStats, float64) {
+	return m.stats, 0
+}
 
 func TestBuildSessionDependencies_NewSession(t *testing.T) {
 	ctx := context.Background()
@@ -1700,4 +1711,81 @@ func TestLogBuildStart(t *testing.T) {
 	assert.Contains(t, output, "Building session dependencies")
 	assert.Contains(t, output, "test-model")
 	assert.Contains(t, output, "/path/to/config.yaml")
+}
+
+func TestBuildSharedSkillRepo_FileRepoFallback(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod(0000) does not prevent directory reads on Windows")
+	}
+
+	tempDir := t.TempDir()
+
+	// Local docs/skills repo: one valid skill file so the file repo loads it.
+	docsSkillsDir := filepath.Join(tempDir, "docs", "skills")
+	require.NoError(t, os.MkdirAll(docsSkillsDir, 0755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(docsSkillsDir, "doc.md"),
+		[]byte("---\nname: My Skill\ndescription: My Desc\n---\nContent"),
+		0644,
+	))
+
+	// .skills repo structured to fail NewSkillsShRepository on traversal:
+	// $HOME/.skills/owner-repo/skills/no_access/ containing a valid SKILL.md,
+	// with the no_access dir chmod'ed 0000 (mirrors
+	// TestNewSkillsShRepository_UnreadableSubdirectory).
+	skillsShDir := filepath.Join(tempDir, ".skills")
+	skillsNested := filepath.Join(skillsShDir, "owner-repo", "skills")
+	require.NoError(t, os.MkdirAll(skillsNested, 0755))
+	noAccessDir := filepath.Join(skillsNested, "no_access")
+	require.NoError(t, os.MkdirAll(noAccessDir, 0755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(noAccessDir, "SKILL.md"),
+		[]byte("---\nname: Valid\ndescription: Valid\n---\nContent"),
+		0644,
+	))
+	require.NoError(t, os.Chmod(noAccessDir, 0000))
+	t.Cleanup(func() { _ = os.Chmod(noAccessDir, 0755) })
+
+	// Precondition: the traversal failure must actually be triggered, so this
+	// test exercises the `return fileRepo` fallback rather than passing
+	// vacuously through the composite path.
+	_, err := infra_skills.NewSkillsShRepository(skillsShDir)
+	require.Error(t, err, "precondition: NewSkillsShRepository must fail on unreadable subdirectory")
+	require.Contains(t, err.Error(), "load skills from")
+
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = new(mockConfigurableSecurityManager)
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	b := NewBootstrapper(bcfg)
+
+	repo := b.buildSharedSkillRepo(&config.Config{})
+
+	assert.NotNil(t, repo)
+	_, isComposite := repo.(*infra_skills.CompositeRepository)
+	assert.False(t, isComposite, "expected plain file repo fallback, got composite")
+}
+
+func TestFinalizeSession_RecordCostError(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = new(mockConfigurableSecurityManager)
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	b := NewBootstrapper(bcfg)
+
+	deps := &mockSessionDeps{
+		tracker: &mockStatsTracker{stats: pricing.UsageStats{PromptTokens: 10}},
+	}
+
+	err := b.FinalizeSession(ctx, &mockHistoryManager{}, deps, &config.Config{Mode: "assistant", Model: "test-model"})
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to record final session cost")
 }
