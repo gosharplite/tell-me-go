@@ -174,7 +174,11 @@ func (d *loopDetector) reset() {
 func (d *loopDetector) hasSeenRateLimit() bool { return d != nil && d.seenRateLimit }
 
 // recordRateLimit marks that a rate-limit error occurred. Nil-safe no-op.
-func (d *loopDetector) recordRateLimit() { if d != nil { d.seenRateLimit = true } }
+func (d *loopDetector) recordRateLimit() {
+	if d != nil {
+		d.seenRateLimit = true
+	}
+}
 
 // withLoopDetector returns a middleware that detects and breaks infinite tool loops.
 func (e *Engine) withLoopDetector() turnMiddleware {
