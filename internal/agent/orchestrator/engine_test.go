@@ -225,32 +225,6 @@ func TestEngine_DetermineNextPhase(t *testing.T) {
 	}
 }
 
-func TestEngine_PrepareNextTurn(t *testing.T) {
-	e := &Engine{}
-	turn := &Turn{
-		Index: 0,
-		State: &TurnState{
-			Phase:        PhaseComplete,
-			RetryCount:   5,
-			Response:     &llm.Content{},
-			ToolResponse: &llm.Content{},
-			HasToolCalls: true,
-			ToolReasons:  []string{"reason"},
-		},
-	}
-
-	e.prepareNextTurn(turn)
-
-	assert.Equal(t, 1, turn.Index)
-	assert.Equal(t, 1, turn.State.CurrentTurns)
-	assert.Equal(t, PhaseGuard, turn.State.Phase)
-	assert.Equal(t, 0, turn.State.RetryCount)
-	assert.Nil(t, turn.State.Response)
-	assert.Nil(t, turn.State.ToolResponse)
-	assert.False(t, turn.State.HasToolCalls)
-	assert.Nil(t, turn.State.ToolReasons)
-}
-
 func TestExecutePhase_UnknownProcessor(t *testing.T) {
 	t.Parallel()
 

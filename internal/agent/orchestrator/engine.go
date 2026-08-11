@@ -77,6 +77,10 @@ type Engine struct {
 	hooks        []TurnHook
 	RetryPolicy  RetryPolicy
 	clock        clock.Clock
+	// loopDetector is the fallback loop-detection accumulator for
+	// direct-ExecuteTurn paths and bare-Turn tests; production Run allocates
+	// a fresh per-Run detector and installs it on each Turn via
+	// Turn.LoopDetector (never shared across concurrent Runs).
 	loopDetector *loopDetector
 }
 
@@ -237,12 +241,12 @@ func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *sessctx.Manager, reg tool
 
 // Run executes the multi-Turn orchestration loop.
 func (e *Engine) Run(ctx context.Context, startTime time.Time, sessionID string) error {
-	// The loop detector is Engine-owned, so it must be reset once per Run.
-	// Previously the accumulators lived on TurnState (fresh per Run via
-	// CreateTurn); without this reset a reused Engine leaks stale hashes and
-	// tool-call counts into the next Run.
-	e.loopDetector.reset()
+	// Fresh per-Run accumulators: goroutine-local (concurrent Runs on one
+	// Engine must stay race-free) and semantically per-chat (pre-T6). The
+	// detector survives across this Run's turns via Turn.LoopDetector.
+	detector := newLoopDetector()
 	Turn := e.CreateTurn(0, startTime, sessionID)
+	Turn.LoopDetector = detector
 
 	for Turn.State.Phase != PhaseComplete {
 		err := e.ExecuteTurn(ctx, Turn)
@@ -250,28 +254,29 @@ func (e *Engine) Run(ctx context.Context, startTime time.Time, sessionID string)
 			return err
 		}
 
+		// CRITICAL ORDERING: evaluate the stop condition on the COMPLETED
+		// turn BEFORE allocating the fresh one — handleLoopBreak signals
+		// "continue to a next generation turn" via HasToolCalls=true; a
+		// fresh turn would read false and terminate the run (issue #1327).
 		if e.shouldStopRunning(Turn) {
 			break
 		}
 
-		// Prepare for next Turn
-		e.prepareNextTurn(Turn)
+		// Fresh Turn per iteration — the constructor is the reset. Every
+		// TurnState field starts zeroed; dependencies are re-attached from
+		// live Engine/config state; StartTime stays Run-fixed.
+		Turn = e.CreateTurn(Turn.Index+1, startTime, sessionID)
+		Turn.LoopDetector = detector
 	}
 	return nil
 }
 
-func (e *Engine) prepareNextTurn(Turn *Turn) {
-	Turn.Index++
-	Turn.State.CurrentTurns = Turn.Index
-	Turn.State.Phase = PhaseGuard
-	Turn.State.RetryCount = 0
-	Turn.State.RecoveryFromOverflow = false
-	Turn.State.Response = nil
-	Turn.State.ToolResponse = nil
-	Turn.State.HasToolCalls = false
-	Turn.State.ToolReasons = nil
-}
-
+// CreateTurn allocates a fresh per-turn Turn — the constructor is the reset;
+// every TurnState field starts zeroed. It attaches the Engine's dependency
+// fields (gateway, executor, registry, context manager, clock, cost tracker,
+// logger, limits) and the Engine's fallback loopDetector; Run overrides the
+// detector with its per-Run instance so cross-turn accumulators survive the
+// fresh allocation.
 func (e *Engine) CreateTurn(index int, startTime time.Time, sessionID string) *Turn {
 	cfg := e.config.Load()
 	counter := e.tokenCounter

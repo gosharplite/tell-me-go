@@ -49,8 +49,9 @@ func (e *Engine) withStatusReporter() turnMiddleware {
 }
 
 func (e *Engine) publishTurnStatus(ctx context.Context, Turn *Turn, isPostCall bool, isFinal bool) {
-	// Always retrieve fresh limits from the context manager to ensure
-	// autonomous turns (which reuse the same 'Turn' object) stay in sync with config.
+	// Always retrieve fresh limits from the context manager: each Run
+	// iteration allocates a fresh Turn and limits are read live, so
+	// mid-session config reloads are reflected in status events.
 	limits := Turn.CtxManager.GetLimits()
 	maxTokens := limits.MaxHistoryTokens
 	maxHistTurns := limits.MaxHistoryTurns
@@ -110,7 +111,16 @@ func (e *Engine) withMetrics() turnMiddleware {
 					// Calculate and accumulate into session total (thread-safe)
 					turnCost := Turn.CostTracker.AccumulateAndReturn(*Turn.State.Metrics)
 					Turn.State.Metrics.Cost = turnCost
-					Turn.State.TaskCost += turnCost
+					// Run-scoped cumulative task cost (pre-T6: accumulated on the reused
+					// Turn). Lives on the per-Run loopDetector so fresh Turns and concurrent
+					// Runs stay isolated; bare-engine/bare-Turn unit tests fall back to
+					// per-Turn accumulation.
+					if d := Turn.LoopDetector; d != nil {
+						d.taskCost += turnCost
+						Turn.State.TaskCost = d.taskCost
+					} else {
+						Turn.State.TaskCost += turnCost
+					}
 				}
 
 				evt := events.UsageMetricsEvent{
@@ -132,14 +142,17 @@ func (e *Engine) withMetrics() turnMiddleware {
 }
 
 // loopDetector owns the Run-scoped accumulators for hallucination-loop
-// detection: the tool-call repetition counter and the sliding window of
-// recent response hashes. Constructed once per Engine, reset once per Run.
-// Single-Run-at-a-time contract (one agent Chat at a time); intentionally
+// detection: the tool-call repetition counter, the sliding window of recent
+// response hashes, and the Run-scoped cumulative task cost. Constructed once
+// per Run by Run; also reachable via the Engine for direct-ExecuteTurn paths;
+// one detector per Run — never shared across concurrent Runs. Intentionally
 // lock-free, matching the pre-T6 TurnState design.
 type loopDetector struct {
 	toolCallCount        map[string]int
 	recentResponseHashes []string
 	seenRateLimit        bool
+	// taskCost is the Run-scoped cumulative task cost (USD); shares the per-Run lifecycle with the loop accumulators.
+	taskCost float64
 }
 
 func newLoopDetector() *loopDetector {
@@ -152,6 +165,7 @@ func (d *loopDetector) reset() {
 	d.toolCallCount = make(map[string]int)
 	d.recentResponseHashes = nil
 	d.seenRateLimit = false
+	d.taskCost = 0
 }
 
 // hasSeenRateLimit reports whether a rate-limit error has occurred during
@@ -171,7 +185,11 @@ func (e *Engine) withLoopDetector() turnMiddleware {
 				return res, err
 			}
 
-			if e.loopDetector != nil && e.loopDetector.detectLoop(Turn.State) {
+			detector := Turn.LoopDetector
+			if detector == nil {
+				detector = e.loopDetector
+			}
+			if detector != nil && detector.detectLoop(Turn.State) {
 				return handleLoopBreak(ctx, Turn)
 			}
 

@@ -50,28 +50,6 @@ func TestRecoveryStep_ContextOverflow_SetsRecoveryFromOverflow(t *testing.T) {
 	require.Equal(t, 1, turn.State.RetryCount)
 }
 
-// TestPrepareNextTurn_ResetsRecoveryFromOverflow verifies D1 RESET: the signal
-// is cleared beside the RetryCount reset, preventing cross-turn leakage since
-// Turn is reused across turns.
-func TestPrepareNextTurn_ResetsRecoveryFromOverflow(t *testing.T) {
-	e := &Engine{}
-	turn := &Turn{
-		Index: 2,
-		State: &TurnState{
-			RecoveryFromOverflow: true,
-			RetryCount:           3,
-			Phase:                PhaseComplete,
-		},
-	}
-
-	e.prepareNextTurn(turn)
-
-	require.False(t, turn.State.RecoveryFromOverflow, "prepareNextTurn must clear the ADR-059 recovery signal")
-	require.Equal(t, 0, turn.State.RetryCount)
-	require.Equal(t, PhaseGuard, turn.State.Phase)
-	require.Equal(t, 3, turn.Index)
-}
-
 // TestContextRefiner_PassesRecoverySignalToPrepare verifies the wiring
 // end-to-end: ContextRefiner reads Turn.State.RecoveryFromOverflow and passes
 // WithOverflowRecovery() into Prepare, so the gatekeeper forces summarization.
