@@ -1166,6 +1166,18 @@ to reason about.
 - **Rationale**: Single-scenario test pinning via model message ID in a plain user→model text turn to close the `contentHasFunctionCall` false-return gap. CC=12 is entirely error-checking boilerplate: `t.Fatalf` on `AddContent`, `GetWindow`, and `SetPinned` calls, plus pin/unpin assertions. Same acceptance class as `TestGetModelTurn` (CC=16) and `TestHistoryManager_SetPinned_WithFunctionCall` (CC=21).
 - **See**: `internal/infrastructure/history/history_test.go:493`
 
+### internal/tools/toolstest/fake_toolchain_runner_test.go — TestFakeToolchainRunner_PresetValues (CC=28)
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: Table-driven test with 12 subtests (one per ToolchainRunner method) asserting preset-Func returns, call-log recording, and last-Call identity via the assertCallLog helper. CC=28 comes from subtest enumeration and assertion boilerplate, not branching business logic — each subtest is a one-liner closure. Same acceptance class as `TestGetModelTurn` (CC=16) and `TestHistoryManager_SetPinned_WithFunctionCall` (CC=21).
+- **See**: `internal/tools/toolstest/fake_toolchain_runner_test.go:35`
+
+### internal/tools/toolstest/fake_toolchain_runner_test.go — TestFakeToolchainRunner_ZeroDefaults (CC=38)
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: Table-driven test with 12 subtests (one per ToolchainRunner method) asserting exact zero-value defaults and call-log recording on an unset-Func fake. CC=38 comes from subtest enumeration and assertion boilerplate, not branching business logic. Same acceptance class as `TestFakeToolchainRunner_PresetValues` (CC=28) and `TestHistoryManager_SetPinned_WithFunctionCall` (CC=21).
+- **See**: `internal/tools/toolstest/fake_toolchain_runner_test.go:248`
+
 ---
 
 ## Coverage Gaps (ACCEPTED — 2026-08 pricing-file removal follow-up)
@@ -1220,4 +1232,4 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08)*
+*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake)*
