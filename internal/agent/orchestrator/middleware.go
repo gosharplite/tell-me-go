@@ -159,15 +159,6 @@ func newLoopDetector() *loopDetector {
 	return &loopDetector{toolCallCount: make(map[string]int)}
 }
 
-// reset clears all accumulators for a fresh Run. MUST re-allocate the map —
-// map writes on a nil map panic (append on a nil slice is fine).
-func (d *loopDetector) reset() {
-	d.toolCallCount = make(map[string]int)
-	d.recentResponseHashes = nil
-	d.seenRateLimit = false
-	d.taskCost = 0
-}
-
 // hasSeenRateLimit reports whether a rate-limit error has occurred during
 // this Run. Nil-safe: a nil detector (bare-Turn unit tests/benches) reports
 // false, mirroring the ADR-059 nil-safe read pattern.
