@@ -8,6 +8,10 @@
 
 The "forgot to reset" bug class. `Turn` is a long-lived mutable object reused across the turns of a multi-turn `Run`; `prepareNextTurn` (engine.go) was the **sole manual reset site**, and its reset list had grown to **nine fields** — `Index`, `CurrentTurns`, `Phase`, `RetryCount`, `RecoveryFromOverflow`, `Response`, `ToolResponse`, `HasToolCalls`, `ToolReasons`. Every new `TurnState` field is one more field that must be remembered in the reset path.
 
+> Mutable `Turn` reuse across turns with manual reset discipline. Per ADR-059, `Turn` is reused across turns and `prepareNextTurn` (engine.go) is the manual reset site — ADR-059 itself had to add a dedicated `RecoveryFromOverflow = false` reset because a forgotten reset leaks state cross-turn. Current: every new `TurnState` field (now 20) is one more field that must be remembered in the reset path; the bug class is "forgot to reset". Scalable: construct `Turn` fresh per turn (allocation is trivial vs. the leak class), or a single explicit `Turn.Reset()` invoked by one owner.
+>
+> — 2026-08 full-repo architecture review finding, quoted verbatim (issue #1327)
+
 ADR-059 is the proof the discipline was already a real bug source: it had to add an explicit `RecoveryFromOverflow = false` reset (engine.go) precisely because a forgotten reset leaks state cross-turn — `Turn` is reused across turns, so a flag set during one turn's recovery would bleed into the next. The reset list only grows as `TurnState` grows; the failure mode is not "we forgot once" but "the list is unmaintainable by construction".
 
 The 2026-08 full-repo architecture review identified this as a structural defect: a long-lived mutable `Turn` reused across turns, with `prepareNextTurn` as the sole manual reset site whose reset list had grown to nine fields; the discipline is inherently fragile — each new `TurnState` field silently widens the reset obligation, and the ADR-059 `RecoveryFromOverflow` reset (added to fix a real cross-turn leak) demonstrates the bug class already produced production bugs.

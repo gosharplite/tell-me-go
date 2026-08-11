@@ -54,7 +54,7 @@ Because the single-refinement policy means the recovery `Prepare` is the **last 
 
 Presence greps (implemented reality — 6 production files, 8 code matches for the signal):
 
-- `RecoveryFromOverflow` — `engine_types.go` (field), `engine_phases.go` ×2 (`RecoveryStep` set + `ContextRefiner` read), `engine.go` (`prepareNextTurn` reset), `contracts.go` (`ContextRequest` field), `manager.go` (`WithOverflowRecovery` setter), `gatekeeper.go` ×2 (Lever 1 + Lever 2 reads).
+- `RecoveryFromOverflow` — `engine_types.go` (field), `engine_phases.go` ×2 (`RecoveryStep` set + `ContextRefiner` read), ~~`engine.go` (`prepareNextTurn` reset)~~ *(as amended by ADR-061: `prepareNextTurn` deleted — the reset is structural via fresh `Turn` per iteration; this grep row is historical)*, `contracts.go` (`ContextRequest` field), `manager.go` (`WithOverflowRecovery` setter), `gatekeeper.go` ×2 (Lever 1 + Lever 2 reads).
 - `WithOverflowRecovery` — `manager.go` (definition) + `engine_phases.go` (call site).
 - `PrepareOption` — `manager.go` (type + variadic param) + `engine_phases.go` (`[]sessctx.PrepareOption` — the pinned `ContextRefiner` snippet).
 - `ContextRequest.RecoveryFromOverflow` — `contracts.go`.
