@@ -31,10 +31,13 @@ import (
 
 // Turn carries state and configuration for a single agent Turn.
 type Turn struct {
-	Index        int
-	SessionID    string
-	StartTime    time.Time
-	State        *TurnState
+	Index     int
+	SessionID string
+	StartTime time.Time
+	State     *TurnState
+	// LoopDetector is the shared Run-scoped loop-detection accumulator;
+	// set by CreateTurn from the Engine; nil in bare-Turn unit tests.
+	LoopDetector *loopDetector
 	CtxManager   *sessctx.Manager
 	Gateway      llm.LLMGateway
 	Executor     ToolExecutor
@@ -74,6 +77,11 @@ type Engine struct {
 	hooks        []TurnHook
 	RetryPolicy  RetryPolicy
 	clock        clock.Clock
+	// loopDetector is the fallback loop-detection accumulator for
+	// direct-ExecuteTurn paths and bare-Turn tests; production Run allocates
+	// a fresh per-Run detector and installs it on each Turn via
+	// Turn.LoopDetector (never shared across concurrent Runs).
+	loopDetector *loopDetector
 }
 
 // engineOption allows configuring the Engine.
@@ -187,6 +195,7 @@ func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *sessctx.Manager, reg tool
 		processors:   make(map[TurnPhase]TurnProcessor),
 		RetryPolicy:  &DefaultRetryPolicy{MaxRetries: 6, Backoff: backoff, RateLimitBackoff: rateLimitBackoff},
 		clock:        clock.RealClock{},
+		loopDetector: newLoopDetector(),
 	}
 
 	cfg := &engineConfig{}
@@ -215,7 +224,7 @@ func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *sessctx.Manager, reg tool
 		e.middleware = append(e.middleware,
 			e.withMetrics(),
 			e.withStatusReporter(),
-			withLoopDetector(),
+			e.withLoopDetector(),
 		)
 	}
 
@@ -232,9 +241,12 @@ func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *sessctx.Manager, reg tool
 
 // Run executes the multi-Turn orchestration loop.
 func (e *Engine) Run(ctx context.Context, startTime time.Time, sessionID string) error {
-	sessionToolCallCount := make(map[string]int)
+	// Fresh per-Run accumulators: goroutine-local (concurrent Runs on one
+	// Engine must stay race-free) and semantically per-chat (pre-T6). The
+	// detector survives across this Run's turns via Turn.LoopDetector.
+	detector := newLoopDetector()
 	Turn := e.CreateTurn(0, startTime, sessionID)
-	Turn.State.ToolCallCount = sessionToolCallCount
+	Turn.LoopDetector = detector
 
 	for Turn.State.Phase != PhaseComplete {
 		err := e.ExecuteTurn(ctx, Turn)
@@ -242,28 +254,29 @@ func (e *Engine) Run(ctx context.Context, startTime time.Time, sessionID string)
 			return err
 		}
 
+		// CRITICAL ORDERING: evaluate the stop condition on the COMPLETED
+		// turn BEFORE allocating the fresh one — handleLoopBreak signals
+		// "continue to a next generation turn" via HasToolCalls=true; a
+		// fresh turn would read false and terminate the run (issue #1327).
 		if e.shouldStopRunning(Turn) {
 			break
 		}
 
-		// Prepare for next Turn
-		e.prepareNextTurn(Turn)
+		// Fresh Turn per iteration — the constructor is the reset. Every
+		// TurnState field starts zeroed; dependencies are re-attached from
+		// live Engine/config state; StartTime stays Run-fixed.
+		Turn = e.CreateTurn(Turn.Index+1, startTime, sessionID)
+		Turn.LoopDetector = detector
 	}
 	return nil
 }
 
-func (e *Engine) prepareNextTurn(Turn *Turn) {
-	Turn.Index++
-	Turn.State.CurrentTurns = Turn.Index
-	Turn.State.Phase = PhaseGuard
-	Turn.State.RetryCount = 0
-	Turn.State.RecoveryFromOverflow = false
-	Turn.State.Response = nil
-	Turn.State.ToolResponse = nil
-	Turn.State.HasToolCalls = false
-	Turn.State.ToolReasons = nil
-}
-
+// CreateTurn allocates a fresh per-turn Turn — the constructor is the reset;
+// every TurnState field starts zeroed. It attaches the Engine's dependency
+// fields (gateway, executor, registry, context manager, clock, cost tracker,
+// logger, limits) and the Engine's fallback loopDetector; Run overrides the
+// detector with its per-Run instance so cross-turn accumulators survive the
+// fresh allocation.
 func (e *Engine) CreateTurn(index int, startTime time.Time, sessionID string) *Turn {
 	cfg := e.config.Load()
 	counter := e.tokenCounter
@@ -273,6 +286,7 @@ func (e *Engine) CreateTurn(index int, startTime time.Time, sessionID string) *T
 		Index:        index,
 		StartTime:    startTime,
 		State:        &TurnState{CurrentTurns: index, Phase: PhaseGuard, RetryCount: 0},
+		LoopDetector: e.loopDetector,
 		CtxManager:   e.ctxManager,
 		Gateway:      e.gateway,
 		Executor:     e.executor,

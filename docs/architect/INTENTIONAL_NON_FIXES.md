@@ -350,7 +350,7 @@ catalog a new gap no one reviewed. Policy:
   (`HasToolCalls` is derived from the presence of `FunctionCall` parts).
   Defensive guard — same acceptance class as defensive nil/empty guards on
   internal pipeline state (2026-07 Batch Triage).
-- **See**: `internal/agent/orchestrator/middleware.go:255`
+- **See**: `internal/agent/orchestrator/middleware.go:302` (re-anchored 2026-08, #1327 T5: unused reset() method deleted)
 
 ### agent/agenttest/helpers.go — 0% coverage on interface-satisfying stubs (16 methods)
 
@@ -714,7 +714,7 @@ catalog a new gap no one reviewed. Policy:
   `json.Marshaler` with error-return semantics. Structurally unreachable — same
   acceptance class as `json.Marshal` on all-string structs in
   `global_prompt_tracker.go`.
-- **See**: `internal/agent/orchestrator/middleware.go:164-166`
+- **See**: `internal/agent/orchestrator/middleware.go:204` (re-anchored 2026-08, #1327 T5: unused reset() method deleted)
 
 ### skills.sh integration — structurally unreachable and fault-injection gaps (17 sites)
 
@@ -1232,4 +1232,4 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake)*
+*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor))*

@@ -225,32 +225,6 @@ func TestEngine_DetermineNextPhase(t *testing.T) {
 	}
 }
 
-func TestEngine_PrepareNextTurn(t *testing.T) {
-	e := &Engine{}
-	turn := &Turn{
-		Index: 0,
-		State: &TurnState{
-			Phase:        PhaseComplete,
-			RetryCount:   5,
-			Response:     &llm.Content{},
-			ToolResponse: &llm.Content{},
-			HasToolCalls: true,
-			ToolReasons:  []string{"reason"},
-		},
-	}
-
-	e.prepareNextTurn(turn)
-
-	assert.Equal(t, 1, turn.Index)
-	assert.Equal(t, 1, turn.State.CurrentTurns)
-	assert.Equal(t, PhaseGuard, turn.State.Phase)
-	assert.Equal(t, 0, turn.State.RetryCount)
-	assert.Nil(t, turn.State.Response)
-	assert.Nil(t, turn.State.ToolResponse)
-	assert.False(t, turn.State.HasToolCalls)
-	assert.Nil(t, turn.State.ToolReasons)
-}
-
 func TestExecutePhase_UnknownProcessor(t *testing.T) {
 	t.Parallel()
 
@@ -699,7 +673,11 @@ func TestEngine_AdditionalOptions(t *testing.T) {
 }
 
 func TestMiddleware_LoopDetector(t *testing.T) {
-	mw := withLoopDetector()
+	// The loop-detection accumulators live on the Engine's loopDetector
+	// (pre-allocated by newLoopDetector). Each subtest keeps its own event
+	// bus wiring on the Turn; the middleware reads only e.loopDetector.
+	e := &Engine{loopDetector: newLoopDetector()}
+	mw := e.withLoopDetector()
 	ctx := context.Background()
 
 	t.Run("Duplicate Response", func(t *testing.T) {
@@ -718,7 +696,6 @@ func TestMiddleware_LoopDetector(t *testing.T) {
 					Role:  "model",
 					Parts: []*llm.Part{{Text: "repeat"}},
 				},
-				RecentResponseHashes: []string{},
 			},
 		}
 
@@ -728,7 +705,7 @@ func TestMiddleware_LoopDetector(t *testing.T) {
 		})
 		_, err := mw(proc).Process(ctx, turn)
 		assert.NoError(t, err)
-		assert.Len(t, turn.State.RecentResponseHashes, 1)
+		assert.Len(t, e.loopDetector.recentResponseHashes, 1)
 
 		// Second call: same response -> loop detected
 		_, err = mw(proc).Process(ctx, turn)
@@ -755,7 +732,6 @@ func TestMiddleware_LoopDetector(t *testing.T) {
 						FunctionCall: &llm.FunctionCall{Name: "test", Args: map[string]any{"a": 1}},
 					}},
 				},
-				ToolCallCount: make(map[string]int),
 			},
 		}
 
