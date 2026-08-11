@@ -31,7 +31,7 @@ type ToolchainRunner interface {
 }
 
 // CoverageSummary is the tools-layer view of a coverage run: the verified
-// 4-field consumer union of the infrastructure toolchain.CoverageReport
+// 4-field consumer union of the infrastructure-internal CoverageReport
 // (TestOutput is intentionally absent — it has zero assertion consumers; see
 // ADR-060). Full report stays infrastructure-internal.
 type CoverageSummary struct {

@@ -15,7 +15,7 @@ import (
 // ErrNoSupportedLinter is returned when neither golangci-lint nor staticcheck is found.
 var ErrNoSupportedLinter = errors.New("no supported linter found (golangci-lint or staticcheck)")
 
-// CoverageReport encapsulates the result of running tests with coverage.
+// CoverageReport is the infrastructure-internal parse container for coverage runs; the boundary type is tools.CoverageSummary (see ADR-060).
 type CoverageReport struct {
 	TestOutput    string
 	SummaryOutput string
@@ -82,8 +82,9 @@ func (r *goRunner) applyTimeout(ctx context.Context) (context.Context, context.C
 	return context.WithTimeout(ctx, r.defaultTimeout)
 }
 
-// RunTestsWithCoverage executes tests with coverage and returns a parsed report.
-func (r *goRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (CoverageReport, error) {
+// RunTestsWithCoverage executes tests with coverage and returns the boundary
+// CoverageSummary (CoverageReport stays internal to this package).
+func (r *goRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error) {
 	ctx, cancel := r.applyTimeout(ctx)
 	defer cancel()
 
@@ -93,7 +94,7 @@ func (r *goRunner) RunTestsWithCoverage(ctx context.Context, path string, short 
 	if tempName == "" {
 		f, err := r.createTemp("", "coverage-*.out")
 		if err != nil {
-			return report, fmt.Errorf("failed to create temp coverage file: %w", err)
+			return tools.CoverageSummary{}, fmt.Errorf("failed to create temp coverage file: %w", err)
 		}
 		tempName = f.Name()
 		// Safe to ignore: immediate closure to prepare file for OS write by child process.
@@ -116,9 +117,9 @@ func (r *goRunner) RunTestsWithCoverage(ctx context.Context, path string, short 
 		if r.isNoGoFiles(outStr) {
 			report.NoGoFiles = true
 			report.CoveragePct = "0.0%"
-			return report, nil
+			return tools.CoverageSummary{NoGoFiles: true, CoveragePct: "0.0%"}, nil
 		}
-		return report, fmt.Errorf("test execution failed: %w (output: %s)", testErr, outStr)
+		return tools.CoverageSummary{}, fmt.Errorf("test execution failed: %w (output: %s)", testErr, outStr)
 	}
 
 	report.PassedCount = r.countPassedPackages(outStr)
@@ -126,13 +127,18 @@ func (r *goRunner) RunTestsWithCoverage(ctx context.Context, path string, short 
 	// Get summary
 	sumOut, summaryErr := r.combinedOutput(ctx, "go", "tool", "cover", "-func="+tempName)
 	if summaryErr != nil {
-		return report, fmt.Errorf("coverage summary execution failed: %w", summaryErr)
+		return tools.CoverageSummary{}, fmt.Errorf("coverage summary execution failed: %w", summaryErr)
 	}
 
 	report.SummaryOutput = string(sumOut)
 	report.CoveragePct = r.parseCoveragePct(report.SummaryOutput)
 
-	return report, nil
+	return tools.CoverageSummary{
+		PassedCount:   report.PassedCount,
+		NoGoFiles:     report.NoGoFiles,
+		CoveragePct:   report.CoveragePct,
+		SummaryOutput: report.SummaryOutput,
+	}, nil
 }
 
 func (r *goRunner) countPassedPackages(output string) int {

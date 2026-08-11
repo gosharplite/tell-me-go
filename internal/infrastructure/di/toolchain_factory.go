@@ -87,15 +87,12 @@ func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.R
 		WorkspacePolicy:  f.WorkspacePolicy,
 	}
 
-	// Single production construction of the runner (issue #1325: the
-	// direct-construction class in tools is eliminated; only the di
-	// composition root constructs). toolchainRunnerAdapter bridges the
-	// infrastructure goRunner's CoverageReport return to the port's
-	// CoverageSummary (TestOutput deliberately absent per ADR-060); it can be
-	// replaced by a plain assignment once the infrastructure toolchain
-	// satisfies tools.ToolchainRunner directly.
-	runner := infra_toolchain.NewGoRunner(regParams.CommandExecutor)
-	regParams.ToolchainRunner = toolchainRunnerAdapter{toolchainRunnerCore: runner}
+	// Single production construction of the runner (issue #1325, ADR-060):
+	// the direct-construction class in tools is eliminated; only the di
+	// composition root constructs. Reuses the &exec.RealExecutor{} from the
+	// literal above; *toolchain.goRunner satisfies tools.ToolchainRunner
+	// directly (CoverageSummary boundary).
+	regParams.ToolchainRunner = infra_toolchain.NewGoRunner(regParams.CommandExecutor)
 
 	if err := f.RegisterAllTools(regParams); err != nil {
 		return nil, fmt.Errorf("%w: failed to register core tools: %w", errInfraInit, err)
@@ -141,47 +138,4 @@ func (f *defaultToolchainFactory) BuildHealthChecker() ports.HealthChecker {
 		[]string{"git", "go"}, // required binaries
 		[]string{"make"},      // optional binaries
 	)
-}
-
-// toolchainRunnerCore is the concrete method set of infra_toolchain.NewGoRunner:
-// the 12 ToolchainRunner operations with the infrastructure CoverageReport
-// return on RunTestsWithCoverage. It exists so toolchainRunnerAdapter can embed
-// (and thus promote) every method except the one whose signature differs from
-// the port. Satisfied by *infra_toolchain.goRunner.
-type toolchainRunnerCore interface {
-	GetPackageList(ctx context.Context, path string) ([]byte, error)
-	GetGoDoc(ctx context.Context, symbol string) ([]byte, error)
-	GetModulePath(ctx context.Context) (string, error)
-	GetModuleDir(ctx context.Context) (string, error)
-	RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (infra_toolchain.CoverageReport, error)
-	RunLinter(ctx context.Context) (string, string, error)
-	RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error)
-	CheckGovulncheck(ctx context.Context) error
-	RunModTidy(ctx context.Context) ([]byte, error)
-	FormatCode(ctx context.Context, path string) ([]byte, error)
-	RunTests(ctx context.Context, path string) ([]byte, error)
-	BuildCode(ctx context.Context, outputBinary, path string) ([]byte, error)
-}
-
-// toolchainRunnerAdapter bridges infra_toolchain's goRunner to the
-// tools.ToolchainRunner port. The only signature difference is
-// RunTestsWithCoverage: the infrastructure implementation returns its full
-// CoverageReport while the port requires the tools-layer CoverageSummary
-// (TestOutput intentionally absent — it has zero assertion consumers per
-// ADR-060). All other methods are promoted from the embedded interface. Once
-// the infrastructure toolchain returns tools.CoverageSummary directly
-// (issue #1325 follow-up tasks), this adapter can be deleted and the plain
-// assignment restored.
-type toolchainRunnerAdapter struct {
-	toolchainRunnerCore
-}
-
-func (a toolchainRunnerAdapter) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error) {
-	report, err := a.toolchainRunnerCore.RunTestsWithCoverage(ctx, path, short, profilePath)
-	return tools.CoverageSummary{
-		PassedCount:   report.PassedCount,
-		NoGoFiles:     report.NoGoFiles,
-		CoveragePct:   report.CoveragePct,
-		SummaryOutput: report.SummaryOutput,
-	}, err
 }

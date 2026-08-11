@@ -36,7 +36,7 @@ func (m *mockDeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map
 }
 
 type mockGoRunner struct {
-	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
+	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error)
 	runBenchmarksFunc        func(ctx context.Context, path string, benchRegex string) (string, error)
 	runLinterFunc            func(ctx context.Context) (string, string, error)
 	runModTidyFunc           func(ctx context.Context) ([]byte, error)
@@ -48,14 +48,13 @@ type mockGoRunner struct {
 	getModuleDirFunc         func(ctx context.Context) (string, error)
 }
 
-func (m *mockGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+func (m *mockGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error) {
 	if m.runTestsWithCoverageFunc != nil {
 		return m.runTestsWithCoverageFunc(ctx, path, short, profilePath)
 	}
-	return toolchain.CoverageReport{
+	return tools.CoverageSummary{
 		PassedCount:   2,
 		CoveragePct:   "82.5%",
-		TestOutput:    "ok package1\nok package2",
 		SummaryOutput: "total: (statements) 82.5%",
 	}, nil
 }
@@ -444,12 +443,12 @@ func TestHealthManager_GetDetailedCoverage(t *testing.T) {
 	t.Parallel()
 	mockExec := &coverageMockExecutor{t: t}
 	mockRunner := &mockGoRunner{
-		runTestsWithCoverageFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+		runTestsWithCoverageFunc: func(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error) {
 			content := "mode: set\ngithub.com/gosharplite/tell-me-go/internal/domain/events/events.go:1.1,2.1 1 0\n"
 			if err := os.WriteFile(profilePath, []byte(content), 0644); err != nil {
 				t.Errorf("failed to write mock coverage file: %v", err)
 			}
-			return toolchain.CoverageReport{}, nil
+			return tools.CoverageSummary{}, nil
 		},
 	}
 	hea := &healthManager{Exec: mockExec, Runner: mockRunner}
@@ -774,7 +773,7 @@ func TestRunTestsAndCoverage_ErrorPaths(t *testing.T) {
 	tests := []struct {
 		name             string
 		ctxFunc          func() (context.Context, func())
-		runnerFunc       func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
+		runnerFunc       func(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error)
 		wantTestStatus   string
 		wantTestContains string
 		wantCovStatus    string
@@ -786,8 +785,8 @@ func TestRunTestsAndCoverage_ErrorPaths(t *testing.T) {
 				ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-1*time.Hour))
 				return ctx, cancel
 			},
-			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
-				return toolchain.CoverageReport{}, context.DeadlineExceeded
+			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error) {
+				return tools.CoverageSummary{}, context.DeadlineExceeded
 			},
 			wantTestStatus:   "TIMEOUT",
 			wantTestContains: "timed out",
@@ -801,8 +800,8 @@ func TestRunTestsAndCoverage_ErrorPaths(t *testing.T) {
 				cancel() // ctx.Err() returns context.Canceled
 				return ctx, cancel
 			},
-			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
-				return toolchain.CoverageReport{}, context.Canceled
+			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error) {
+				return tools.CoverageSummary{}, context.Canceled
 			},
 			wantTestStatus:   "CANCELLED",
 			wantTestContains: "cancelled",
@@ -814,8 +813,8 @@ func TestRunTestsAndCoverage_ErrorPaths(t *testing.T) {
 			ctxFunc: func() (context.Context, func()) {
 				return context.Background(), func() {}
 			},
-			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
-				return toolchain.CoverageReport{}, errors.New("exit status 1")
+			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error) {
+				return tools.CoverageSummary{}, errors.New("exit status 1")
 			},
 			wantTestStatus:   "FAIL",
 			wantTestContains: "failed",
@@ -827,8 +826,8 @@ func TestRunTestsAndCoverage_ErrorPaths(t *testing.T) {
 			ctxFunc: func() (context.Context, func()) {
 				return context.Background(), func() {}
 			},
-			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
-				return toolchain.CoverageReport{CoveragePct: "N/A", PassedCount: 3}, nil
+			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error) {
+				return tools.CoverageSummary{CoveragePct: "N/A", PassedCount: 3}, nil
 			},
 			wantTestStatus:   "PASS",
 			wantTestContains: "3 packages passed",
@@ -840,8 +839,8 @@ func TestRunTestsAndCoverage_ErrorPaths(t *testing.T) {
 			ctxFunc: func() (context.Context, func()) {
 				return context.Background(), func() {}
 			},
-			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
-				return toolchain.CoverageReport{NoGoFiles: true, PassedCount: 0}, nil
+			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error) {
+				return tools.CoverageSummary{NoGoFiles: true, PassedCount: 0}, nil
 			},
 			wantTestStatus:   "PASS",
 			wantTestContains: "0 packages passed",
@@ -853,8 +852,8 @@ func TestRunTestsAndCoverage_ErrorPaths(t *testing.T) {
 			ctxFunc: func() (context.Context, func()) {
 				return context.Background(), func() {}
 			},
-			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
-				return toolchain.CoverageReport{CoveragePct: "", PassedCount: 1}, nil
+			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error) {
+				return tools.CoverageSummary{CoveragePct: "", PassedCount: 1}, nil
 			},
 			wantTestStatus:   "PASS",
 			wantTestContains: "1 packages passed",
@@ -866,8 +865,8 @@ func TestRunTestsAndCoverage_ErrorPaths(t *testing.T) {
 			ctxFunc: func() (context.Context, func()) {
 				return context.Background(), func() {}
 			},
-			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
-				return toolchain.CoverageReport{CoveragePct: "85.0%", PassedCount: 5}, nil
+			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error) {
+				return tools.CoverageSummary{CoveragePct: "85.0%", PassedCount: 5}, nil
 			},
 			wantTestStatus:   "PASS",
 			wantTestContains: "5 packages passed",

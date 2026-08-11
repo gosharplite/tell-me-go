@@ -5,6 +5,7 @@ package developer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -20,11 +21,9 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 )
 
 type releaseGoRunner interface {
-	RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
 	RunLinter(ctx context.Context) (string, string, error)
 	RunTests(ctx context.Context, path string) ([]byte, error)
 	BuildCode(ctx context.Context, outputBinary, path string) ([]byte, error)
@@ -314,7 +313,7 @@ func (c *linterChecker) Name() string { return "Linter Verification" }
 func (c *linterChecker) Run(ctx context.Context) checkResult {
 	out, tool, err := c.runner.RunLinter(ctx)
 	if err != nil {
-		if strings.Contains(err.Error(), "no supported linter found") {
+		if errors.Is(err, tools.ErrNoSupportedLinter) {
 			return checkResult{OK: false, Message: "No linter found (golangci-lint or staticcheck)."}
 		}
 		// If it's an exit status 1, it usually means issues found, but we should check output.

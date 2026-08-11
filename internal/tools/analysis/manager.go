@@ -52,7 +52,7 @@ type AnalysisGoRunner interface {
 	GetGoDoc(ctx context.Context, symbol string) ([]byte, error)
 	GetModulePath(ctx context.Context) (string, error)
 	GetModuleDir(ctx context.Context) (string, error)
-	RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
+	RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (tools.CoverageSummary, error)
 	RunLinter(ctx context.Context) (string, string, error)
 }
 
