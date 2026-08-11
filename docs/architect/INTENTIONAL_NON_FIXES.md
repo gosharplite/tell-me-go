@@ -1170,13 +1170,13 @@ to reason about.
 
 - **Status**: ACCEPTED (2026-08)
 - **Rationale**: Table-driven test with 12 subtests (one per ToolchainRunner method) asserting preset-Func returns, call-log recording, and last-Call identity via the assertCallLog helper. CC=28 comes from subtest enumeration and assertion boilerplate, not branching business logic — each subtest is a one-liner closure. Same acceptance class as `TestGetModelTurn` (CC=16) and `TestHistoryManager_SetPinned_WithFunctionCall` (CC=21).
-- **See**: `internal/tools/toolstest/fake_toolchain_runner_test.go:35`
+- **See**: `internal/tools/toolstest/fake_toolchain_runner_test.go:36`
 
 ### internal/tools/toolstest/fake_toolchain_runner_test.go — TestFakeToolchainRunner_ZeroDefaults (CC=38)
 
 - **Status**: ACCEPTED (2026-08)
 - **Rationale**: Table-driven test with 12 subtests (one per ToolchainRunner method) asserting exact zero-value defaults and call-log recording on an unset-Func fake. CC=38 comes from subtest enumeration and assertion boilerplate, not branching business logic. Same acceptance class as `TestFakeToolchainRunner_PresetValues` (CC=28) and `TestHistoryManager_SetPinned_WithFunctionCall` (CC=21).
-- **See**: `internal/tools/toolstest/fake_toolchain_runner_test.go:248`
+- **See**: `internal/tools/toolstest/fake_toolchain_runner_test.go:249`
 
 ---
 
