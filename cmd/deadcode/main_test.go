@@ -395,3 +395,46 @@ func TestRun_ExitQueryVerbose(t *testing.T) {
 		t.Errorf("verbose mode must print the full candidate table: %q", stdout)
 	}
 }
+
+// TestRun_ExitQueryError covers the exit-query ERROR path in runExitQuery:
+// with -exit-query and a failing analyzer, run() dispatches to the exit
+// query channel, prints "Error: boom" to stderr, and returns exit code 1.
+func TestRun_ExitQueryError(t *testing.T) {
+	origNewAnalyzer := newAnalyzer
+	t.Cleanup(func() { newAnalyzer = origNewAnalyzer })
+
+	// run() dispatches on *exitQueryMode: this test exercises the exit-query
+	// ERROR path. Restore the prior value so sibling tests see the default.
+	origExitQueryMode := *exitQueryMode
+	*exitQueryMode = true
+	t.Cleanup(func() { *exitQueryMode = origExitQueryMode })
+
+	injectedErr := errors.New("boom")
+	newAnalyzer = func(sp domain_security.PathValidator) deadCodeAnalyzer {
+		return &mockDeadCodeAnalyzer{err: injectedErr}
+	}
+
+	oldStderr := os.Stderr
+	t.Cleanup(func() { os.Stderr = oldStderr })
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stderr = w
+
+	exitCode := run()
+
+	if err := w.Close(); err != nil {
+		t.Logf("closing stderr pipe writer: %v", err)
+	}
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	if exitCode != 1 {
+		t.Errorf("exit code = %d, want 1", exitCode)
+	}
+	stderr := buf.String()
+	if !strings.Contains(stderr, "Error: boom") {
+		t.Errorf("stderr = %q, want it to contain %q", stderr, "Error: boom")
+	}
+}

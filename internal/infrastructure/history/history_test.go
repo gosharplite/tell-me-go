@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -1561,5 +1562,308 @@ func TestManager_WithLogger(t *testing.T) {
 	}
 	if _, ok := m.logger.(*captureLogger); !ok {
 		t.Errorf("expected logger to be *captureLogger, got %T", m.logger)
+	}
+}
+
+// --- Edge-case branch coverage (task T1) -----------------------------------
+// Each test below closes a previously uncovered branch in history.go via the
+// public API only (AddContent, SetPinned, GetLastModelTurn, UpdateTurnContent).
+
+func TestHistoryManager_SetPinned_ModelFunctionCallNoFollowingMessage(t *testing.T) {
+	// validateTurnPair rule 0 (model+FunctionCall, forward): i+1 >= total.
+	// contents = [user text, model-with-FunctionCall]; pin the model message.
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	ctx := context.Background()
+
+	modelFC := &llm.Content{
+		Role: "model",
+		ID:   llm.NewID(),
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{ID: "fc-1", Name: "f", Args: map[string]interface{}{}}},
+		},
+	}
+	if err := m.AddContent(ctx, &llm.Content{Role: "user", ID: llm.NewID(), Parts: []*llm.Part{{Text: "call f"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AddContent(ctx, modelFC); err != nil {
+		t.Fatal(err)
+	}
+
+	err := m.SetPinned(ctx, modelFC.ID, true)
+	if err == nil || !strings.Contains(err.Error(), "no following message") {
+		t.Fatalf("expected error containing %q, got %v", "no following message", err)
+	}
+}
+
+func TestHistoryManager_SetPinned_UserFunctionResponseNoPrecedingMessage(t *testing.T) {
+	// validateTurnPair rule 1 (user+FunctionResponse, backward): i-1 < 0.
+	// contents = [user-with-FunctionResponse] alone; pin the user message.
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	ctx := context.Background()
+
+	userFR := &llm.Content{
+		Role: "user",
+		ID:   llm.NewID(),
+		Parts: []*llm.Part{
+			{FunctionResponse: &llm.FunctionResponse{ID: "fr-1", Name: "f", Response: map[string]interface{}{"result": "ok"}}},
+		},
+	}
+	if err := m.AddContent(ctx, userFR); err != nil {
+		t.Fatal(err)
+	}
+
+	err := m.SetPinned(ctx, userFR.ID, true)
+	if err == nil || !strings.Contains(err.Error(), "no preceding message") {
+		t.Fatalf("expected error containing %q, got %v", "no preceding message", err)
+	}
+}
+
+func TestHistoryManager_SetPinned_FunctionCallUnexpectedPartnerRole(t *testing.T) {
+	// validateTurnPair rule 0 (model+FunctionCall, forward): partner at i+1 has
+	// role "model" but rule 0 expects "user".
+	// contents = [model-with-FunctionCall, model text]; pin the FC message.
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	ctx := context.Background()
+
+	modelFC := &llm.Content{
+		Role: "model",
+		ID:   llm.NewID(),
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{ID: "fc-1", Name: "f", Args: map[string]interface{}{}}},
+		},
+	}
+	if err := m.AddContent(ctx, modelFC); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AddContent(ctx, &llm.Content{Role: "model", ID: llm.NewID(), Parts: []*llm.Part{{Text: "text"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := m.SetPinned(ctx, modelFC.ID, true)
+	if err == nil || !strings.Contains(err.Error(), "unexpected partner role") {
+		t.Fatalf("expected error containing %q, got %v", "unexpected partner role", err)
+	}
+}
+
+func TestHistoryManager_SetPinned_FunctionCallMismatchedPartnerContent(t *testing.T) {
+	// validateTurnPair rule 0 (model+FunctionCall, forward): partner role is
+	// "user" (ok) but the partner has no FunctionResponse → mismatched content.
+	// contents = [model-with-FunctionCall, user text]; pin the FC message.
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	ctx := context.Background()
+
+	modelFC := &llm.Content{
+		Role: "model",
+		ID:   llm.NewID(),
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{ID: "fc-1", Name: "f", Args: map[string]interface{}{}}},
+		},
+	}
+	if err := m.AddContent(ctx, modelFC); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AddContent(ctx, &llm.Content{Role: "user", ID: llm.NewID(), Parts: []*llm.Part{{Text: "plain text"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := m.SetPinned(ctx, modelFC.ID, true)
+	if err == nil || !strings.Contains(err.Error(), "mismatched partner content") {
+		t.Fatalf("expected error containing %q, got %v", "mismatched partner content", err)
+	}
+}
+
+func TestHistoryManager_SetPinned_InvalidRoleForTurnPairing(t *testing.T) {
+	// findTurnPair: a system message hits the explicit system branch (line 320);
+	// any role outside {system, user, model} falls through the rule loop (line 334).
+	// Both branches return "invalid role for turn pairing".
+	tests := []struct {
+		name    string
+		content *llm.Content
+	}{
+		{
+			name:    "system message",
+			content: &llm.Content{Role: "system", ID: llm.NewID(), Parts: []*llm.Part{{Text: "sys"}}},
+		},
+		{
+			name:    "unknown role",
+			content: &llm.Content{Role: "assistant", ID: llm.NewID(), Parts: []*llm.Part{{Text: "hi"}}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+			ctx := context.Background()
+
+			if err := m.AddContent(ctx, tt.content); err != nil {
+				t.Fatal(err)
+			}
+
+			err := m.SetPinned(ctx, tt.content.ID, true)
+			if err == nil || !strings.Contains(err.Error(), "invalid role for turn pairing") {
+				t.Fatalf("expected error containing %q, got %v", "invalid role for turn pairing", err)
+			}
+		})
+	}
+}
+
+func TestGetLastModelTurn_EmptyHistory(t *testing.T) {
+	// GetLastModelTurn on an empty history returns ports.ErrHistoryNotFound.
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	ctx := context.Background()
+
+	_, _, err := m.GetLastModelTurn(ctx)
+	if !errors.Is(err, ports.ErrHistoryNotFound) {
+		t.Fatalf("expected ports.ErrHistoryNotFound, got %v", err)
+	}
+}
+
+func TestUpdateTurnContent_OutOfBoundsIndex(t *testing.T) {
+	// UpdateTurnContent rejects indices outside [0, len(Contents)).
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+
+	for _, idx := range []int{-1, 0, 5} {
+		err := m.UpdateTurnContent(ctx, idx, "text", "")
+		if err == nil {
+			t.Errorf("expected out-of-bounds error for index %d, got nil", idx)
+		}
+	}
+}
+
+func TestUpdateTurnContent_WrongRole(t *testing.T) {
+	// UpdateTurnContent requires the target index to be a model-role entry.
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+
+	if err := m.AddContent(ctx, &llm.Content{Role: "user", ID: llm.NewID(), Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := m.UpdateTurnContent(ctx, 0, "text", "")
+	if err == nil || !strings.Contains(err.Error(), `has role "user", expected "model"`) {
+		t.Fatalf("expected error containing %q, got %v", `has role "user", expected "model"`, err)
+	}
+}
+
+func TestUpdateTurnContent_AppendThoughtWhenNoPriorThought(t *testing.T) {
+	// findThoughtIndex returns -1 when the original model turn has no thought
+	// part; insertThoughtIfPresent then appends the new thought after the text.
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+
+	if err := m.AddContent(ctx, &llm.Content{Role: "user", ID: llm.NewID(), Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AddContent(ctx, &llm.Content{Role: "model", ID: llm.NewID(), Parts: []*llm.Part{{Text: "old response"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.UpdateTurnContent(ctx, 1, "new text", "new thought"); err != nil {
+		t.Fatalf("UpdateTurnContent failed: %v", err)
+	}
+
+	contents, err := m.GetWindow(ctx, 0, -1)
+	if err != nil {
+		t.Fatalf("GetWindow failed: %v", err)
+	}
+	parts := contents[1].Parts
+	if len(parts) != 2 {
+		t.Fatalf("expected 2 parts, got %d: %+v", len(parts), parts)
+	}
+	if parts[0].Text != "new text" || parts[0].IsThought {
+		t.Errorf("expected text part %q at index 0, got %+v", "new text", parts[0])
+	}
+	if parts[1].Text != "new thought" || !parts[1].IsThought {
+		t.Errorf("expected thought part %q at index 1, got %+v", "new thought", parts[1])
+	}
+}
+
+func TestUpdateTurnContent_InsertThoughtAtPriorThoughtPosition(t *testing.T) {
+	// findThoughtIndex returns 0 for a leading thought part; insertThoughtIfPresent
+	// inserts the new thought at that in-range position (insertion branch).
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+
+	if err := m.AddContent(ctx, &llm.Content{Role: "user", ID: llm.NewID(), Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AddContent(ctx, &llm.Content{
+		Role: "model",
+		ID:   llm.NewID(),
+		Parts: []*llm.Part{
+			{Text: "old think", IsThought: true},
+			{Text: "old answer"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.UpdateTurnContent(ctx, 1, "hi", "hi-thought"); err != nil {
+		t.Fatalf("UpdateTurnContent failed: %v", err)
+	}
+
+	contents, err := m.GetWindow(ctx, 0, -1)
+	if err != nil {
+		t.Fatalf("GetWindow failed: %v", err)
+	}
+	parts := contents[1].Parts
+	if len(parts) != 2 {
+		t.Fatalf("expected 2 parts, got %d: %+v", len(parts), parts)
+	}
+	if parts[0].Text != "hi-thought" || !parts[0].IsThought {
+		t.Errorf("expected thought part %q at index 0, got %+v", "hi-thought", parts[0])
+	}
+	if parts[1].Text != "hi" || parts[1].IsThought {
+		t.Errorf("expected text part %q at index 1, got %+v", "hi", parts[1])
+	}
+}
+
+func TestUpdateTurnContent_ReplaceTextWhenThoughtPrecedesText(t *testing.T) {
+	// findTextReplacementIndex skips a leading thought part (continue branch)
+	// before locating the first text part; newText replaces the text. An empty
+	// newThought removes the old thought part.
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+
+	if err := m.AddContent(ctx, &llm.Content{Role: "user", ID: llm.NewID(), Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AddContent(ctx, &llm.Content{
+		Role: "model",
+		ID:   llm.NewID(),
+		Parts: []*llm.Part{
+			{Text: "old think", IsThought: true},
+			{Text: "old answer"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.UpdateTurnContent(ctx, 1, "hi", ""); err != nil {
+		t.Fatalf("UpdateTurnContent failed: %v", err)
+	}
+
+	contents, err := m.GetWindow(ctx, 0, -1)
+	if err != nil {
+		t.Fatalf("GetWindow failed: %v", err)
+	}
+	parts := contents[1].Parts
+	if len(parts) != 1 {
+		t.Fatalf("expected 1 part, got %d: %+v", len(parts), parts)
+	}
+	if parts[0].Text != "hi" || parts[0].IsThought {
+		t.Errorf("expected text part %q, got %+v", "hi", parts[0])
 	}
 }
