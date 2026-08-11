@@ -67,9 +67,9 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 	}
 
 	expectedCataloged := map[string]funcComplexity{
-		"TestHistoryManager_SetPinned_WithFunctionCall":   {Line: 391, Complexity: 21, FilePath: "internal/infrastructure/history/history_test.go"},
+		"TestHistoryManager_SetPinned_WithFunctionCall":   {Line: 392, Complexity: 21, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestStartSpinnerLifecycle":                       {Line: 176, Complexity: 17, FilePath: "internal/ui/renderer_spinner_test.go"},
-		"TestGetModelTurn":                                {Line: 1445, Complexity: 16, FilePath: "internal/infrastructure/history/history_test.go"},
+		"TestGetModelTurn":                                {Line: 1446, Complexity: 16, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestPrepareMediaAssets_KimiURL_UploadsVideo":     {Line: 379, Complexity: 16, FilePath: "internal/infrastructure/llm/openai/files_test.go"},
 		"(*rootBrowserModel).handleActionKeys":            {Line: 294, Complexity: 15, FilePath: "internal/ui/tui/browser.go"},
 		"TestHistoryNavigation_CompleteWorkflow":          {Line: 161, Complexity: 15, FilePath: "tests/e2e/history_flags_test.go"},
@@ -82,10 +82,10 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"(*RecoveryStep).Process":                         {Line: 129, Complexity: 12, FilePath: "internal/agent/orchestrator/engine_phases.go"},
 		"(*model).handleDomainEvent":                      {Line: 338, Complexity: 12, FilePath: "internal/ui/tui/progress/model.go"},
 		"TestDeadCodeAnalyzer_Precision":                  {Line: 177, Complexity: 12, FilePath: "internal/tools/analysis/precision_test.go"},
-		"TestHistoryManager_SetPinned_ViaModelID":         {Line: 493, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
+		"TestHistoryManager_SetPinned_ViaModelID":         {Line: 494, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestRecoveryStep_EmptyResponse_RetriesUpToLimit": {Line: 532, Complexity: 13, FilePath: "internal/agent/orchestrator/engine_phases_test.go"},
-		"TestUpdateTurnContent_AddTextWhenNone":           {Line: 1361, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
-		"TestUpdateTurnContent_ClearText":                 {Line: 1274, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
+		"TestUpdateTurnContent_AddTextWhenNone":           {Line: 1362, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
+		"TestUpdateTurnContent_ClearText":                 {Line: 1275, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestVision_KimiImagePayload":                     {Line: 128, Complexity: 12, FilePath: "internal/infrastructure/llm/openai/client_vision_test.go"},
 		"createPrecisionWorkspace":                        {Line: 118, Complexity: 12, FilePath: "internal/tools/analysis/precision_test.go"},
 		"renderHistory":                                   {Line: 26, Complexity: 12, FilePath: "internal/ui/history.go"},

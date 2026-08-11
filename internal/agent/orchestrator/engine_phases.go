@@ -139,7 +139,7 @@ func (p *RecoveryStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, 
 	// model up to maxEmptyResponseRetries attempts before accepting emptiness.
 	if errors.Is(err, errEmptyResponse) {
 		if Turn.State.RetryCount < maxEmptyResponseRetries {
-			delay, ok := p.Policy.ShouldRetry(Turn.Clock, err, Turn.State.RetryCount, Turn.State.HasSeenRateLimit)
+			delay, ok := p.Policy.ShouldRetry(Turn.Clock, err, Turn.State.RetryCount, Turn.LoopDetector.hasSeenRateLimit())
 			if !ok {
 				delay = 2 * time.Second
 			}
@@ -155,7 +155,7 @@ func (p *RecoveryStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, 
 
 	switch category {
 	case llm.LLMErrorRateLimited:
-		Turn.State.HasSeenRateLimit = true
+		Turn.LoopDetector.recordRateLimit()
 	case llm.LLMErrorAuthFailure:
 		// Auth failures are non-retryable — surface immediately
 		return ProcessResult{NextPhase: PhaseComplete}, err
@@ -184,7 +184,7 @@ func (p *RecoveryStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, 
 		// Unknown category — fall through to retry logic
 	}
 
-	delay, retry := p.Policy.ShouldRetry(Turn.Clock, err, Turn.State.RetryCount, Turn.State.HasSeenRateLimit)
+	delay, retry := p.Policy.ShouldRetry(Turn.Clock, err, Turn.State.RetryCount, Turn.LoopDetector.hasSeenRateLimit())
 	if !retry {
 		return p.handleFailure(err)
 	}

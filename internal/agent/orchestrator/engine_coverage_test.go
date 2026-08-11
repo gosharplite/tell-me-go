@@ -965,7 +965,7 @@ func TestRecoveryStep_AttemptRetry_ContextCancelledAfterPublish(t *testing.T) {
 }
 
 func TestRecoveryStep_Process_RateLimitError(t *testing.T) {
-	t.Run("rate limit error sets HasSeenRateLimit", func(t *testing.T) {
+	t.Run("rate limit error sets hasSeenRateLimit on loopDetector", func(t *testing.T) {
 		// Use a generous retry policy so ShouldRetry returns (delay, true)
 		policy := &DefaultRetryPolicy{MaxRetries: 5, Backoff: 100 * time.Millisecond}
 		step := &RecoveryStep{Policy: policy}
@@ -978,11 +978,12 @@ func TestRecoveryStep_Process_RateLimitError(t *testing.T) {
 				LastError:  llm.ErrRateLimit,
 				RetryCount: 0,
 			},
+			LoopDetector: newLoopDetector(),
 		}
 
 		_, _ = step.Process(context.Background(), turn)
-		assert.True(t, turn.State.HasSeenRateLimit,
-			"HasSeenRateLimit must be true after processing a rate-limit error")
+		assert.True(t, turn.LoopDetector.hasSeenRateLimit(),
+			"hasSeenRateLimit must be true after processing a rate-limit error")
 	})
 }
 

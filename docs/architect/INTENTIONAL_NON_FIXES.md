@@ -350,7 +350,7 @@ catalog a new gap no one reviewed. Policy:
   (`HasToolCalls` is derived from the presence of `FunctionCall` parts).
   Defensive guard — same acceptance class as defensive nil/empty guards on
   internal pipeline state (2026-07 Batch Triage).
-- **See**: `internal/agent/orchestrator/middleware.go:255`
+- **See**: `internal/agent/orchestrator/middleware.go:302` (re-anchored 2026-08, #1327 T5: unused reset() method deleted)
 
 ### agent/agenttest/helpers.go — 0% coverage on interface-satisfying stubs (16 methods)
 
@@ -714,7 +714,7 @@ catalog a new gap no one reviewed. Policy:
   `json.Marshaler` with error-return semantics. Structurally unreachable — same
   acceptance class as `json.Marshal` on all-string structs in
   `global_prompt_tracker.go`.
-- **See**: `internal/agent/orchestrator/middleware.go:164-166`
+- **See**: `internal/agent/orchestrator/middleware.go:204` (re-anchored 2026-08, #1327 T5: unused reset() method deleted)
 
 ### skills.sh integration — structurally unreachable and fault-injection gaps (17 sites)
 
@@ -1110,13 +1110,13 @@ to reason about.
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Sequential state-mutation test verifying text clearing and thought preservation through multiple update cycles. Steps are not independent — each mutates shared history state. Splitting would duplicate setup. Same acceptance class as `TestHistoryNavigation_CompleteWorkflow`.
-- **See**: `internal/infrastructure/history/history_test.go:1274`
+- **See**: `internal/infrastructure/history/history_test.go:1275` (re-anchored 2026-09, +1 import shift in history_test.go)
 
 ### internal/infrastructure/history/history_test.go — TestUpdateTurnContent_AddTextWhenNone (CC=12)
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Same sequential state-mutation pattern as `TestUpdateTurnContent_ClearText`, verifying the complementary code path. CC is assertion boilerplate across dependent steps.
-- **See**: `internal/infrastructure/history/history_test.go:1361`
+- **See**: `internal/infrastructure/history/history_test.go:1362` (re-anchored 2026-09, +1 import shift in history_test.go)
 
 ### internal/domain/llm/capabilities_test.go — TestResolveCapabilities (CC=13)
 
@@ -1152,19 +1152,19 @@ to reason about.
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Table-driven test with 5 subtests covering valid index, OOB negative, OOB pos, non-model role, and deep-copy isolation for `GetModelTurn`. Each subtest contains its own setup (temp dir, `NewManager`, `AddContent`). CC comes from subtest enumeration and assertion boilerplate, not branching business logic. Same acceptance class as `TestUpdateTurnContent_ClearText` (CC=12) and `TestUpdateTurnContent_AddTextWhenNone` (CC=12) in the same file.
-- **See**: `internal/infrastructure/history/history_test.go:1445`
+- **See**: `internal/infrastructure/history/history_test.go:1446` (re-anchored 2026-09, +1 import shift in history_test.go)
 
 ### internal/infrastructure/history/history_test.go — TestHistoryManager_SetPinned_WithFunctionCall (CC=21)
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Two-subtest test with a per-subtest `setup` helper that creates a FunctionCall→FunctionResponse turn. The CC=21 is entirely from error-checking boilerplate: `t.Fatalf` on every `AddContent` and `GetWindow` call in setup, plus pin/unpin assertions in each subtest. All branches are guard clauses, not business logic. Same acceptance class as `TestGetModelTurn` (CC=16) and `TestUpdateTurnContent_ClearText` (CC=12).
-- **See**: `internal/infrastructure/history/history_test.go:391`
+- **See**: `internal/infrastructure/history/history_test.go:392` (re-anchored 2026-09, +1 import shift in history_test.go)
 
 ### internal/infrastructure/history/history_test.go — TestHistoryManager_SetPinned_ViaModelID (CC=12)
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Single-scenario test pinning via model message ID in a plain user→model text turn to close the `contentHasFunctionCall` false-return gap. CC=12 is entirely error-checking boilerplate: `t.Fatalf` on `AddContent`, `GetWindow`, and `SetPinned` calls, plus pin/unpin assertions. Same acceptance class as `TestGetModelTurn` (CC=16) and `TestHistoryManager_SetPinned_WithFunctionCall` (CC=21).
-- **See**: `internal/infrastructure/history/history_test.go:493`
+- **See**: `internal/infrastructure/history/history_test.go:494` (re-anchored 2026-09, +1 import shift in history_test.go)
 
 ### internal/tools/toolstest/fake_toolchain_runner_test.go — TestFakeToolchainRunner_PresetValues (CC=28)
 
@@ -1191,8 +1191,8 @@ to reason about.
 ### di/container.go — skills repository init error paths
 
 - **Status**: ACCEPTED (2026-08)
-- **Rationale**: The error branches of `infra_skills.NewFileSkillRepository(skillsDir)` (`container.go:197-200`) and `infra_skills.NewSkillsShRepository(skillsShDir)` (`container.go:203-206`) require filesystem fault injection (unreadable skills directory, mkdir failure). Both degrade gracefully — `slog.Warn` + continue without skills, and `slog.Debug` + nil repo — and the happy paths are covered by container tests. Same acceptance class as the filesystem fault-injection gaps in the 2026-07 Batch Triage.
-- **See**: `internal/infrastructure/di/container.go:197-206`
+- **Rationale**: The remaining error branch of `infra_skills.NewFileSkillRepository(skillsDir)` (`container.go:197-200`) requires filesystem fault injection (unreadable skills directory). The sibling `infra_skills.NewSkillsShRepository(skillsShDir)` error branch (`container.go:203-206`) is covered since 2026-09 by `TestBuildSharedSkillRepo_FileRepoFallback` — the only path to the `return fileRepo` fall-through at `container.go:213` passes through it, so it is exercised as a side effect (coverage edge-case batch). Both degrade gracefully — `slog.Warn` + continue without skills, and `slog.Debug` + nil repo — and the happy paths are covered by container tests. Same acceptance class as the filesystem fault-injection gaps in the 2026-07 Batch Triage.
+- **See**: `internal/infrastructure/di/container.go:197-200` (file-repo error branch only; skills.sh branch 203-206 covered — see rationale)
 
 ---
 
@@ -1232,4 +1232,4 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake)*
+*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift))*

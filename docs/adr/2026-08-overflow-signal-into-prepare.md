@@ -27,7 +27,7 @@ Because the single-refinement policy means the recovery `Prepare` is the **last 
 - `RecoveryStep.Process` (`internal/agent/orchestrator/engine_phases.go`, `LLMErrorContextOverflow` branch, `RetryCount == 0`): set `Turn.State.RecoveryFromOverflow = true` immediately before returning `NextPhase: PhaseRefining`. The `RetryCount >= 1` fall-through (turn dies on second overflow) is unchanged.
 - `ContextRefiner.Process`: pass the signal via a new variadic option — `Turn.CtxManager.Prepare(ctx, Turn.Index, sessctx.WithOverflowRecovery())` when the flag is set, else the existing bare call. This requires adding the `internal/agent/session/context` import to `engine_phases.go`. The bare call form stays source-compatible (all existing callers/tests compile unchanged).
 - `Manager.Prepare` (`internal/agent/session/context/manager.go`) gains `opts ...PrepareOption` where `type PrepareOption func(*ContextRequest)` and `WithOverflowRecovery() PrepareOption` sets a new `ContextRequest.RecoveryFromOverflow bool` field (`contracts.go`, documented). The signal never leaves the request scope — **NO** Manager-level state, no persistence, no new config keys (the recovery margin is derived from the existing `SystemContextBuffer`).
-- **RESET**: `prepareNextTurn` (`internal/agent/orchestrator/engine.go`, where `RetryCount` is already reset) sets `Turn.State.RecoveryFromOverflow = false` — prevents cross-turn leakage since `Turn` is reused across turns.
+- **RESET (amended 2026-08, ADR-061/issue #1327):** per ADR-061, `prepareNextTurn` (`internal/agent/orchestrator/engine.go`) no longer exists — the reset is **structural**: `Run` allocates a fresh `Turn` per iteration, so `Turn.State.RecoveryFromOverflow` starts `false` each turn. Signal behavior unchanged. (Original: `prepareNextTurn`, where `RetryCount` is already reset, set `Turn.State.RecoveryFromOverflow = false` — preventing cross-turn leakage since `Turn` was reused across turns.)
 
 ### D2 — The effective-budget mechanism (two levers, both owned by the gatekeeper)
 
@@ -54,7 +54,7 @@ Because the single-refinement policy means the recovery `Prepare` is the **last 
 
 Presence greps (implemented reality — 6 production files, 8 code matches for the signal):
 
-- `RecoveryFromOverflow` — `engine_types.go` (field), `engine_phases.go` ×2 (`RecoveryStep` set + `ContextRefiner` read), `engine.go` (`prepareNextTurn` reset), `contracts.go` (`ContextRequest` field), `manager.go` (`WithOverflowRecovery` setter), `gatekeeper.go` ×2 (Lever 1 + Lever 2 reads).
+- `RecoveryFromOverflow` — `engine_types.go` (field), `engine_phases.go` ×2 (`RecoveryStep` set + `ContextRefiner` read), ~~`engine.go` (`prepareNextTurn` reset)~~ *(as amended by ADR-061: `prepareNextTurn` deleted — the reset is structural via fresh `Turn` per iteration; this grep row is historical)*, `contracts.go` (`ContextRequest` field), `manager.go` (`WithOverflowRecovery` setter), `gatekeeper.go` ×2 (Lever 1 + Lever 2 reads).
 - `WithOverflowRecovery` — `manager.go` (definition) + `engine_phases.go` (call site).
 - `PrepareOption` — `manager.go` (type + variadic param) + `engine_phases.go` (`[]sessctx.PrepareOption` — the pinned `ContextRefiner` snippet).
 - `ContextRequest.RecoveryFromOverflow` — `contracts.go`.
