@@ -32,7 +32,7 @@ ifeq ($(OS),Windows_NT)
     endif
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-tools-toolchain-import verify-no-test-sleep verify-architecture verify-exit-query verify-transitive-gate verify-nonfix-catalog verify-adr-index verify-no-context-window-cache lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-tools-toolchain-import verify-tools-infrastructure-import verify-no-test-sleep verify-architecture verify-exit-query verify-transitive-gate verify-nonfix-catalog verify-adr-index verify-no-context-window-cache lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -46,6 +46,7 @@ help:
 	@echo "  make verify-no-test-sleep - Verify no time.Sleep for synchronization in tests"
 	@echo "  make verify-tools-adapter-import - Verify tools adapter imports are confined to default_fs.go (ADR-055)"
 	@echo "  make verify-tools-toolchain-import - Verify no infrastructure/toolchain imports in tools production files (issue #1325)"
+	@echo "  make verify-tools-infrastructure-import - Verify no internal/infrastructure imports in tools production files (ADR-062)"
 	@echo "  make verify-no-context-window-cache - Verify no context window cache references (ADR-057; part of make check/check-full)"
 	@echo "  make test-coverage - Run tests with coverage (excludes mocks/generated)"
 	@echo "  make tidy       - Tidy and vendor dependencies"
@@ -68,7 +69,7 @@ help:
 build:
 	go build -ldflags="-X 'main.version=$(VERSION)'" -o tell-me-go ./cmd/tell-me-go
 
-test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-tools-toolchain-import
+test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-tools-toolchain-import verify-tools-infrastructure-import
 	go test ./...
 
 # Verify ADR-021: no testutil packages (centralized test-double dump).
@@ -478,6 +479,116 @@ else
 	"
 endif
 
+# Verify issue #1336 (ADR-062): no internal/tools production file imports an
+# internal/infrastructure package. The ADR-055 (persistence) and ADR-060
+# (toolchain) gates run before this one (6th and 7th test: prerequisites) and
+# remain primary; this is the generalized recurrence backstop for the whole
+# tools→infrastructure class. Predicate is module-prefixed so the bare
+# composition-root string literals (architecture.go:296-297,
+# exit_query.go:235-236) cannot false-positive.
+#
+# Predicate: "production files" = non-_test.go files under internal/tools/
+# OUTSIDE the two sanctioned default_fs.go paths (ADR-055) and
+# analysistest//toolstest/ (explicit path exclusions mirroring
+# verify-tools-toolchain-import). Test-layer files are deliberately exempt:
+# ~35 tools test files legitimately import infrastructure.
+verify-tools-infrastructure-import:
+ifeq ($(IS_POSIX),true)
+	@echo "Checking for infrastructure imports in tools production files (ADR-062)..."
+	@VIOLATIONS="$$( grep -rn 'github.com/gosharplite/tell-me-go/internal/infrastructure/' internal/tools/ --include='*.go' \
+		| grep -v '_test\.go:' \
+		| grep -v '^internal/tools/analysis/default_fs\.go:' \
+		| grep -v '^internal/tools/workspace/default_fs\.go:' \
+		| grep -v '^internal/tools/analysis/analysistest/' \
+		| grep -v '^internal/tools/toolstest/' )"; \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ ADR-062 violation: a tools production file imports an infrastructure package."; \
+		echo "   Tools-layer production code may not import internal/infrastructure/ directly."; \
+		echo "   This is the general tools→infrastructure gate (ADR-062). The ADR-055 and"; \
+		echo "   ADR-060 gates for persistence and toolchain run before this one and remain"; \
+		echo "   primary: an edge this gate reports is, by construction, neither persistence"; \
+		echo "   nor toolchain."; \
+		echo ""; \
+		echo "   Triage:"; \
+		echo "   1. Dependency-free utility? Move it to internal/pkg/ and import it from"; \
+		echo "      there. internal/pkg may depend only on internal/domain and other"; \
+		echo "      internal/pkg (ADR-062, Decision 2)."; \
+		echo "   2. Adapter for a domain port? Follow the ADR-055/060 injection pattern:"; \
+		echo "      define the port in internal/domain, construct the adapter once at the"; \
+		echo "      composition root (internal/infrastructure/di), inject it through"; \
+		echo "      registration. See docs/adr/2026-08-tools-filesystem-injection.md"; \
+		echo "      (ADR-055) and docs/adr/2026-08-toolchain-runner-injection.md (ADR-060)."; \
+		echo "   3. Otherwise: a gate exception is required — architect-sanctioned,"; \
+		echo "      ADR-cited, whitelist-edit, per ADR-062 Decision 5 (Gate-Exception"; \
+		echo "      Contract). Edit the exclusion list in the verify-tools-infrastructure-import"; \
+		echo "      target of the Makefile AND record a NEW ADR adjudicating the edge (the"; \
+		echo "      R1 pattern: persistence → ADR-055, toolchain → ADR-060), in the same"; \
+		echo "      change. See docs/adr/2026-08-encoding-relocation-and-tools-infrastructure-gate.md"; \
+		echo "      (ADR-062), Decision 5."; \
+		echo ""; \
+		echo "   Violating files:"; \
+		echo "$$VIOLATIONS"; \
+		echo ""; \
+		echo "   Fix: apply triage 1 or 2; if neither applies, follow triage 3 (ADR-062"; \
+		echo "   Decision 5 — Gate-Exception Contract: docs/adr/2026-08-encoding-relocation-and-tools-infrastructure-gate.md)."; \
+		exit 1; \
+	fi
+	@echo "  ✓ No infrastructure imports in tools production files."
+else
+	@echo "Checking for infrastructure imports in tools production files (ADR-062)..."
+	@powershell -Command " \
+		$$ErrorActionPreference = 'Stop'; \
+		$$violations = @(); \
+		Get-ChildItem -Path internal/tools -Recurse -Filter '*.go' | Where-Object { \
+			$$_.Name -notlike '*_test.go' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/analysis/default_fs\.go$$' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/workspace/default_fs\.go$$' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/analysis/analysistest/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/toolstest/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch '.git/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'vendor/' \
+		} | ForEach-Object { \
+			$$matches = Select-String -Path $$_.FullName -Pattern 'github\.com/gosharplite/tell-me-go/internal/infrastructure/'; \
+			if ($$matches) { foreach ($$m in $$matches) { $$violations += ('{0}:{1}' -f $$m.Path, $$m.LineNumber) } } \
+		}; \
+		if ($$violations.Count -gt 0) { \
+			Write-Host ''; \
+			Write-Host '❌ ADR-062 violation: a tools production file imports an infrastructure package.'; \
+			Write-Host '   Tools-layer production code may not import internal/infrastructure/ directly.'; \
+			Write-Host '   This is the general tools→infrastructure gate (ADR-062). The ADR-055 and'; \
+			Write-Host '   ADR-060 gates for persistence and toolchain run before this one and remain'; \
+			Write-Host '   primary: an edge this gate reports is, by construction, neither persistence'; \
+			Write-Host '   nor toolchain.'; \
+			Write-Host ''; \
+			Write-Host '   Triage:'; \
+			Write-Host '   1. Dependency-free utility? Move it to internal/pkg/ and import it from'; \
+			Write-Host '      there. internal/pkg may depend only on internal/domain and other'; \
+			Write-Host '      internal/pkg (ADR-062, Decision 2).'; \
+			Write-Host '   2. Adapter for a domain port? Follow the ADR-055/060 injection pattern:'; \
+			Write-Host '      define the port in internal/domain, construct the adapter once at the'; \
+			Write-Host '      composition root (internal/infrastructure/di), inject it through'; \
+			Write-Host '      registration. See docs/adr/2026-08-tools-filesystem-injection.md'; \
+			Write-Host '      (ADR-055) and docs/adr/2026-08-toolchain-runner-injection.md (ADR-060).'; \
+			Write-Host '   3. Otherwise: a gate exception is required — architect-sanctioned,'; \
+			Write-Host '      ADR-cited, whitelist-edit, per ADR-062 Decision 5 (Gate-Exception'; \
+			Write-Host '      Contract). Edit the exclusion list in the verify-tools-infrastructure-import'; \
+			Write-Host '      target of the Makefile AND record a NEW ADR adjudicating the edge (the'; \
+			Write-Host '      R1 pattern: persistence → ADR-055, toolchain → ADR-060), in the same'; \
+			Write-Host '      change. See docs/adr/2026-08-encoding-relocation-and-tools-infrastructure-gate.md'; \
+			Write-Host '      (ADR-062), Decision 5.'; \
+			Write-Host ''; \
+			Write-Host '   Violating files:'; \
+			$$violations | Sort-Object -Unique | ForEach-Object { Write-Host $$_ }; \
+			Write-Host ''; \
+			Write-Host '   Fix: apply triage 1 or 2; if neither applies, follow triage 3 (ADR-062'; \
+			Write-Host '   Decision 5 — Gate-Exception Contract: docs/adr/2026-08-encoding-relocation-and-tools-infrastructure-gate.md).'; \
+			exit 1 \
+		} \
+	"
+	@echo "  ✓ No infrastructure imports in tools production files."
+endif
+
 # Verify no time.Sleep for synchronization in test files (Issue #580 / ADR-036).
 # Legitimate I/O simulation and hardware observation sleeps are explicitly allow-listed.
 verify-no-test-sleep:
@@ -565,7 +676,7 @@ verify-exit-query:
 
 # Verify the complexity-pin catalog partition (issue #1297): runs the real
 # GatherComplexities against the live INTENTIONAL_NON_FIXES.md catalog and
-# asserts the post-fix 25-cataloged / 1-alert partition by name (line +
+# asserts the post-fix 27-cataloged / 0-alert partition by name (line +
 # recorded CC). RED-first: the gate must fail against a drifted catalog —
 # never weaken it to land green.
 verify-nonfix-catalog:
@@ -753,6 +864,8 @@ check: fmt tidy build
 	@$(MAKE) verify-tools-adapter-import
 	@echo "=== verify-tools-toolchain-import ==="
 	@$(MAKE) verify-tools-toolchain-import
+	@echo "=== verify-tools-infrastructure-import ==="
+	@$(MAKE) verify-tools-infrastructure-import
 	@echo "=== verify-no-test-sleep ==="
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="
@@ -795,6 +908,8 @@ check-full: fmt tidy build
 	@$(MAKE) verify-tools-adapter-import
 	@echo "=== verify-tools-toolchain-import ==="
 	@$(MAKE) verify-tools-toolchain-import
+	@echo "=== verify-tools-infrastructure-import ==="
+	@$(MAKE) verify-tools-infrastructure-import
 	@echo "=== verify-no-test-sleep ==="
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="

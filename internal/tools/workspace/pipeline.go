@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/encoding"
+	"github.com/gosharplite/tell-me-go/internal/pkg/encoding"
 )
 
 // pipeline manages a sequence of piped commands.

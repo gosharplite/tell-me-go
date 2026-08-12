@@ -43,7 +43,7 @@ type agent struct {
 	ctxManager    *sessctx.Manager
 	configWatcher domain_config.ConfigWatcher
 	strategy      *sessctx.Strategy
-	executor      *executor.Dispatcher
+	executor      *executor.Dispatcher // write-only: assigned in initComponents; the dispatcher value is consumed by NewEngine via the local
 	events        events.EventBus
 	tracker       domain_pricing.CostTracker
 	turnsLogger   ports.TurnsLogger

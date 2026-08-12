@@ -24,6 +24,22 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// newTestChatService builds a ChatService with default test wiring; callers
+// override individual config fields via the variadic functional overrides.
+func newTestChatService(t *testing.T, overrides ...func(*agent.ChatServiceConfig)) agent.ChatService {
+	t.Helper()
+	cfg := agent.ChatServiceConfig{
+		HomeDir: "home",
+		Version: "v1",
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+	}
+	for _, o := range overrides {
+		o(&cfg)
+	}
+	return agent.NewChatService(cfg)
+}
+
 // newProcessMessageFixtures creates the 7 mocks, chatterFactory, and ChatService
 // instance used by all TestProcessMessage_* sub-functions. Callers set per-case
 // expectations on the returned mocks and then invoke service.ProcessMessage.
@@ -54,10 +70,15 @@ func newProcessMessageFixtures(
 		return agentMock, nil
 	})
 
-	service = agent.NewChatService(
-		"home", "v1", io.Discard, stderr, sm,
-		sf, chatterFactory, &agenttest.StubUIRenderer{}, &agenttest.StubHistoryRenderer{}, &agenttest.StubHistoryBrowser{}, nil, nil,
-	)
+	service = newTestChatService(t, func(c *agent.ChatServiceConfig) {
+		c.Stderr = stderr
+		c.SM = sm
+		c.LifecycleManager = sf
+		c.ChatterFactory = chatterFactory
+		c.UIRenderer = &agenttest.StubUIRenderer{}
+		c.HistoryRenderer = &agenttest.StubHistoryRenderer{}
+		c.HistoryBrowser = &agenttest.StubHistoryBrowser{}
+	})
 
 	return
 }
@@ -478,10 +499,9 @@ func TestGetLastUserMessage(t *testing.T) {
 
 	mockHM := &mockHistoryManagerForRetry{msg: "last message", turns: 1}
 
-	service := agent.NewChatService(
-		"home", "v1", io.Discard, io.Discard, sm,
-		nil, nil, &agenttest.StubUIRenderer{}, &agenttest.StubHistoryRenderer{}, &agenttest.StubHistoryBrowser{}, nil, nil,
-	)
+	service := newTestChatService(t, func(c *agent.ChatServiceConfig) {
+		c.SM = sm
+	})
 
 	msg, turns, err := service.GetLastUserMessage(ctx, mockHM)
 
@@ -648,10 +668,10 @@ func TestStreamTurnsLog(t *testing.T) {
 				tt.setupMock(mFS)
 			}
 
-			service := agent.NewChatService(
-				homeDir, "v1", io.Discard, io.Discard, nil,
-				nil, nil, nil, nil, nil, nil, mFS,
-			)
+			service := newTestChatService(t, func(c *agent.ChatServiceConfig) {
+				c.HomeDir = homeDir
+				c.LogOpener = mFS
+			})
 
 			var out bytes.Buffer
 			err := service.StreamTurnsLog(ctx, &config.Config{Mode: tt.mode}, &out)
@@ -793,7 +813,7 @@ func TestRunDiagnostics(t *testing.T) {
 
 				// Construct a report with an un-marshalable Details field.
 				// json.MarshalIndent cannot serialize a channel, so the defensive
-				// guard at service.go:258-260 is exercised.
+				// guard is exercised.
 				unmarshalableReport := &ports.HealthReport{
 					OverallStatus: ports.StatusHealthy,
 					Components: map[ports.Component]ports.ComponentReport{
@@ -894,10 +914,11 @@ func TestRunDiagnostics(t *testing.T) {
 			}
 
 			var stdout bytes.Buffer
-			service := agent.NewChatService(
-				"home", "v1", &stdout, io.Discard, nil,
-				sf, nil, uir, nil, nil, nil, nil,
-			)
+			service := newTestChatService(t, func(c *agent.ChatServiceConfig) {
+				c.Stdout = &stdout
+				c.LifecycleManager = sf
+				c.UIRenderer = uir
+			})
 
 			cfg := &config.Config{Mode: "assistant"}
 			err := service.RunDiagnostics(ctx, cfg, "config.yaml", tt.jsonOutput)
@@ -969,10 +990,9 @@ func TestBrowseHistory(t *testing.T) {
 				return tt.browseErr
 			}
 
-			service := agent.NewChatService(
-				"home", "v1", io.Discard, io.Discard, nil,
-				nil, nil, nil, nil, browser, nil, nil,
-			)
+			service := newTestChatService(t, func(c *agent.ChatServiceConfig) {
+				c.HistoryBrowser = browser
+			})
 
 			err := service.BrowseHistory(ctx, nil, mockHM)
 
@@ -1052,10 +1072,7 @@ func TestGetToolNames(t *testing.T) {
 			ctx := context.Background()
 			reg := &mockToolRegistry{declarations: tt.declarations}
 
-			service := agent.NewChatService(
-				"home", "v1", io.Discard, io.Discard, nil,
-				nil, nil, nil, nil, nil, nil, nil,
-			)
+			service := newTestChatService(t)
 
 			names, err := service.GetToolNames(ctx, reg)
 
@@ -1071,17 +1088,17 @@ func TestChatService_StreamTurnsLog_EmptyMode(t *testing.T) {
 	// Verifies that an empty Config.Mode falls back to "default" mode in path
 	// resolution.  The call proceeds to LogOpener.Open for the default-mode
 	// path, which fails with os.ErrNotExist, yielding a graceful "No turns log
-	// found" message.  (The empty-path guard — service.go:214 — is tested
-	// separately in TestChatService_StreamTurnsLog_EmptyPath.)
+	// found" message.  (The empty-path guard is tested separately in
+	// TestChatService_StreamTurnsLog_EmptyPath.)
 	mFS := new(mockFileSystemStream)
 	mFS.OpenFunc = func(ctx context.Context, name string) (persistence.File, error) {
 		return nil, os.ErrNotExist
 	}
 
-	service := agent.NewChatService(
-		"/nonexistent", "v1", io.Discard, io.Discard, nil,
-		nil, nil, nil, nil, nil, nil, mFS,
-	)
+	service := newTestChatService(t, func(c *agent.ChatServiceConfig) {
+		c.HomeDir = "/nonexistent"
+		c.LogOpener = mFS
+	})
 
 	var out bytes.Buffer
 	cfg := &config.Config{Mode: ""}
@@ -1095,21 +1112,20 @@ func TestChatService_StreamTurnsLog_EmptyMode(t *testing.T) {
 func TestChatService_StreamTurnsLog_EmptyPath(t *testing.T) {
 	ctx := context.Background()
 
-	// Inject a resolvePaths stub via WithPathResolver that returns a
-	// zero-value Paths struct (all fields empty, including TurnsLogPath).
-	// This exercises the defensive guard at service.go:214 which is
-	// otherwise unreachable through the real persistence.ResolvePaths.
+	// Inject a resolvePaths stub via the ResolvePaths config field that returns
+	// a zero-value Paths struct (all fields empty, including TurnsLogPath).
+	// This exercises the defensive guard which is otherwise unreachable through
+	// the real persistence.ResolvePaths.
 	emptyPathResolver := func(homeDir, mode string) *persistence.Paths {
 		return &persistence.Paths{}
 	}
 
 	// LogOpener must not be called — the guard should short-circuit before Open.
 	// Passing nil for LogOpener proves this: if Open is reached, the test panics.
-	service := agent.NewChatService(
-		"/test", "v1", io.Discard, io.Discard, nil,
-		nil, nil, nil, nil, nil, nil, nil,
-		agent.WithPathResolver(emptyPathResolver),
-	)
+	service := newTestChatService(t, func(c *agent.ChatServiceConfig) {
+		c.HomeDir = "/test"
+		c.ResolvePaths = emptyPathResolver
+	})
 
 	var out bytes.Buffer
 	cfg := &config.Config{Mode: "assistant"}
@@ -1119,13 +1135,29 @@ func TestChatService_StreamTurnsLog_EmptyPath(t *testing.T) {
 	assert.Equal(t, "turns log path not available", err.Error())
 }
 
+func TestChatService_ResolvePathsDefault(t *testing.T) {
+	ctx := context.Background()
+	mFS := new(mockFileSystemStream)
+	var gotName string
+	mFS.OpenFunc = func(ctx context.Context, name string) (persistence.File, error) {
+		gotName = name
+		return nil, os.ErrNotExist // graceful: proves Open was reached with the resolved path
+	}
+	service := newTestChatService(t, func(c *agent.ChatServiceConfig) { c.LogOpener = mFS })
+	var out bytes.Buffer
+	err := service.StreamTurnsLog(ctx, &config.Config{Mode: "assistant"}, &out)
+	assert.NoError(t, err)
+	assert.Equal(t, "No turns log found for this session yet.\n", out.String())
+	want := persistence.ResolvePaths("home", "assistant").TurnsLogPath
+	assert.Equal(t, want, gotName)
+}
+
 func TestUpdateLastTurn(t *testing.T) {
 	ctx := context.Background()
 
-	service := agent.NewChatService(
-		"home", "v1", io.Discard, io.Discard, &agenttest.MockServiceSecurityManager{},
-		nil, nil, &agenttest.StubUIRenderer{}, &agenttest.StubHistoryRenderer{}, &agenttest.StubHistoryBrowser{}, nil, nil,
-	)
+	service := newTestChatService(t, func(c *agent.ChatServiceConfig) {
+		c.SM = &agenttest.MockServiceSecurityManager{}
+	})
 
 	t.Run("delete when text is empty", func(t *testing.T) {
 		hm := &agenttest.MockHistoryManager{}

@@ -394,6 +394,115 @@ func TestArchitectureManager_CheckLayerViolations(t *testing.T) {
 	}
 }
 
+func TestArchitectureManager_CheckLayerViolations_LayerShared(t *testing.T) {
+	t.Parallel()
+	m := &architectureManager{ModulePath: "github.com/org/repo"}
+
+	const sharedReason = "Shared (internal/pkg) must not depend on Infrastructure, Tools, or Application layers."
+	const cmdReason = "Composition Root (cmd) should not be imported by internal packages."
+
+	tests := []struct {
+		name       string
+		pkgs       map[string][]string
+		wantCount  int
+		wantTarget string
+		wantReason string
+	}{
+		{
+			name: "pkg to infrastructure is forbidden",
+			pkgs: map[string][]string{
+				"github.com/org/repo/internal/pkg/encoding": {
+					"github.com/org/repo/internal/infrastructure/auth",
+				},
+			},
+			wantCount:  1,
+			wantTarget: "internal/infrastructure/auth",
+			wantReason: sharedReason,
+		},
+		{
+			name: "pkg to tools is forbidden",
+			pkgs: map[string][]string{
+				"github.com/org/repo/internal/pkg/encoding": {
+					"github.com/org/repo/internal/tools/workspace",
+				},
+			},
+			wantCount:  1,
+			wantTarget: "internal/tools/workspace",
+			wantReason: sharedReason,
+		},
+		{
+			name: "pkg to application layer is forbidden",
+			pkgs: map[string][]string{
+				"github.com/org/repo/internal/pkg/encoding": {
+					"github.com/org/repo/internal/agent",
+				},
+			},
+			wantCount:  1,
+			wantTarget: "internal/agent",
+			wantReason: sharedReason,
+		},
+		{
+			name: "pkg to pkg is allowed",
+			pkgs: map[string][]string{
+				"github.com/org/repo/internal/pkg/clock": {
+					"github.com/org/repo/internal/pkg/stringsutil",
+				},
+			},
+			wantCount: 0,
+		},
+		{
+			name: "pkg to domain is allowed",
+			pkgs: map[string][]string{
+				"github.com/org/repo/internal/pkg/testfixtures": {
+					"github.com/org/repo/internal/domain/ports",
+				},
+			},
+			wantCount: 0,
+		},
+		{
+			name: "pkg to external is allowed",
+			pkgs: map[string][]string{
+				"github.com/org/repo/internal/pkg/encoding": {
+					"golang.org/x/text",
+				},
+			},
+			wantCount: 0,
+		},
+		{
+			name: "pkg to cmd is one violation via checkGeneralCmdImport",
+			pkgs: map[string][]string{
+				"github.com/org/repo/internal/pkg/clock": {
+					"github.com/org/repo/cmd/tell-me-go",
+				},
+			},
+			wantCount:  1,
+			wantTarget: "cmd/tell-me-go",
+			wantReason: cmdReason,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			violations := m.checkLayerViolations(tt.pkgs, nil)
+			if len(violations) != tt.wantCount {
+				t.Fatalf("expected %d violation(s), got %d: %+v", tt.wantCount, len(violations), violations)
+			}
+			if tt.wantCount == 0 {
+				return
+			}
+			if violations[0].category != "[LAYER VIOLATION]" {
+				t.Errorf("expected LAYER VIOLATION category, got %s", violations[0].category)
+			}
+			if violations[0].target != tt.wantTarget {
+				t.Errorf("expected target %q, got %q", tt.wantTarget, violations[0].target)
+			}
+			if violations[0].reason != tt.wantReason {
+				t.Errorf("expected reason %q, got %q", tt.wantReason, violations[0].reason)
+			}
+		})
+	}
+}
+
 type mockSecurityProviderDenyGo struct {
 	mockSecurityProvider
 }

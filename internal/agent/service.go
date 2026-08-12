@@ -32,15 +32,25 @@ type LogFileOpener interface {
 	Open(ctx context.Context, name string) (persistence.File, error)
 }
 
-// ChatServiceOption configures a chatService during construction.
-type ChatServiceOption func(*chatService)
+// ChatServiceConfig configures a chatService during construction.
+type ChatServiceConfig struct {
+	HomeDir string
+	Version string
+	Stdout  io.Writer
+	Stderr  io.Writer
+	SM      domain_security.Manager
 
-// WithPathResolver overrides the default path resolution function.
-// The default is persistence.ResolvePaths.
-func WithPathResolver(resolver func(homeDir, mode string) *persistence.Paths) ChatServiceOption {
-	return func(s *chatService) {
-		s.resolvePaths = resolver
-	}
+	LifecycleManager SessionLifecycleManager
+	ChatterFactory   ports.ChatterFactory
+	UIRenderer       ports.UIRenderer
+	HistoryRenderer  ports.HistoryRenderer
+	HistoryBrowser   ports.HistoryBrowser
+	HistoryEditor    ports.HistoryEditor
+	LogOpener        LogFileOpener
+
+	// ResolvePaths resolves session filesystem paths. Defaults to persistence.ResolvePaths.
+	// Injectable for testing the empty-path defensive guard in StreamTurnsLog.
+	ResolvePaths func(homeDir, mode string) *persistence.Paths
 }
 
 type chatService struct {
@@ -64,40 +74,25 @@ type chatService struct {
 }
 
 // NewChatService creates a new concrete implementation of ChatService with explicit dependency injection.
-func NewChatService(
-	homeDir, version string,
-	stdout, stderr io.Writer,
-	sm domain_security.Manager,
-	lifecycleManager SessionLifecycleManager,
-	chatterFactory ports.ChatterFactory,
-	uiRenderer ports.UIRenderer,
-	historyRenderer ports.HistoryRenderer,
-	historyBrowser ports.HistoryBrowser,
-	historyEditor ports.HistoryEditor,
-	logOpener LogFileOpener,
-	opts ...ChatServiceOption,
-) ChatService {
-	svc := &chatService{
-		HomeDir:          homeDir,
-		Version:          version,
-		Stdout:           stdout,
-		Stderr:           stderr,
-		SM:               sm,
-		LifecycleManager: lifecycleManager,
-		ChatterFactory:   chatterFactory,
-		UIRenderer:       uiRenderer,
-		HistoryRenderer:  historyRenderer,
-		HistoryBrowser:   historyBrowser,
-		HistoryEditor:    historyEditor,
-		LogOpener:        logOpener,
-		resolvePaths:     persistence.ResolvePaths, // default
+func NewChatService(cfg ChatServiceConfig) ChatService {
+	if cfg.ResolvePaths == nil {
+		cfg.ResolvePaths = persistence.ResolvePaths
 	}
-
-	for _, opt := range opts {
-		opt(svc)
+	return &chatService{
+		HomeDir:          cfg.HomeDir,
+		Version:          cfg.Version,
+		Stdout:           cfg.Stdout,
+		Stderr:           cfg.Stderr,
+		SM:               cfg.SM,
+		LifecycleManager: cfg.LifecycleManager,
+		ChatterFactory:   cfg.ChatterFactory,
+		UIRenderer:       cfg.UIRenderer,
+		HistoryRenderer:  cfg.HistoryRenderer,
+		HistoryBrowser:   cfg.HistoryBrowser,
+		HistoryEditor:    cfg.HistoryEditor,
+		LogOpener:        cfg.LogOpener,
+		resolvePaths:     cfg.ResolvePaths,
 	}
-
-	return svc
 }
 
 // GetLastUserMessage implements ChatService.
