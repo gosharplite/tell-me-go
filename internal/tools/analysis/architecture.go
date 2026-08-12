@@ -319,6 +319,12 @@ func (m *architectureManager) checkLayerViolations(pkgs map[string][]string, hb 
 			Forbidden:   []string{layerApplication, layerCmd},
 			Reason:      "Tools layer must not depend on Application or Cmd layers.",
 		},
+		{
+			// ADR-062: internal/pkg (Shared) must not depend on Infrastructure, Tools, or Application layers.
+			SourceLayer: layerShared,
+			Forbidden:   []string{layerInfrastructure, layerTools, layerApplication},
+			Reason:      "Shared (internal/pkg) must not depend on Infrastructure, Tools, or Application layers.",
+		},
 	}
 
 	var violations []violation

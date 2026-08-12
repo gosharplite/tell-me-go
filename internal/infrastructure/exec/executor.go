@@ -7,7 +7,7 @@ import (
 	"context"
 	"os/exec"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/encoding"
+	"github.com/gosharplite/tell-me-go/internal/pkg/encoding"
 )
 
 // RealExecutor is a production implementation of CommandExecutor that runs actual processes.

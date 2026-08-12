@@ -468,6 +468,13 @@ Significant architectural decisions are documented in our [Architecture Decision
 *   **[ADR-057](docs/adr/2026-08-remove-context-window-cache.md)** — removal of the context window cache from the session context manager (`internal/agent/session/context`).
 *   **[ADR-058](docs/adr/2026-08-getwindow-clone-evaluation.md)** — acceptance of the per-round `GetWindow` deep clone as the sole remaining O(window) cost; F2 evaluation closes at candidate 3 (accept-with-data) for both the cheaper-clone and prune-then-clone candidates, continuing the ADR-057 removal lineage (issue #1321).
 *   **[ADR-059](docs/adr/2026-08-overflow-signal-into-prepare.md)** — overflow signal into `Prepare` (effective-budget reduction on recovery): the gatekeeper learns when `Prepare` is a recovery from a provider context overflow and responds with forced recovery summarization plus a reduced hard limit, so the last-chance recovery `Prepare` shrinks the window even when pass 1 already summarised (issue #1320).
+*   **[ADR-062](docs/adr/2026-08-encoding-relocation-and-tools-infrastructure-gate.md)** — relocation of `internal/infrastructure/encoding` → `internal/pkg/encoding` and the general tools→infrastructure import gate + `layerShared` rule (issue #1336).
+*   **[ADR-063](docs/adr/2026-08-sop-documentation-governance.md)** — maintainer note-only veto on the SOP documentation-governance apparatus; one-time SOP prose correction; layerUnknown known-gap (issue #1336).
+*   **[ADR-054](docs/adr/2026-08-catalog-cross-reference-reporting-contract.md)** — catalog cross-reference reporting contract for coverage & complexity reports.
+*   **[ADR-055](docs/adr/2026-08-tools-filesystem-injection.md)** — tools-layer filesystem access via injected domain port (defaultFS fallback).
+*   **[ADR-056](docs/adr/2026-08-contract-home-and-transitive-closure-gate.md)** — domain-home criterion for cross-layer contracts; transitive-closure gate; context-family extraction.
+*   **[ADR-060](docs/adr/2026-08-toolchain-runner-injection.md)** — inject the Go toolchain runner into the tools layer (ToolchainRunner domain port).
+*   **[ADR-061](docs/adr/2026-08-per-turn-turn-lifecycle.md)** — per-turn Turn lifecycle (constructor-is-the-reset).
 
 For the evolution of the shell-based environment management tooling — from simple bash aliases through Toby, Dobby, Porter, Sprawl, Winky, Flopsy, and Niffler — see [Evolution of Environment Management](docs/architect/environments/environment-management-evolution.md).
 
