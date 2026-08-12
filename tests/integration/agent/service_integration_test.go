@@ -44,10 +44,16 @@ func TestChatService_Initialization_Failures(t *testing.T) {
 				tt.setup(mockSF)
 			}
 
-			service := agent.NewChatService(
-				"home", "v1", io.Discard, io.Discard, nil,
-				mockSF, nil, &agenttest.StubUIRenderer{}, &agenttest.StubHistoryRenderer{}, &agenttest.StubHistoryBrowser{}, nil, nil,
-			)
+			service := agent.NewChatService(agent.ChatServiceConfig{
+				HomeDir:          "home",
+				Version:          "v1",
+				Stdout:           io.Discard,
+				Stderr:           io.Discard,
+				LifecycleManager: mockSF,
+				UIRenderer:       &agenttest.StubUIRenderer{},
+				HistoryRenderer:  &agenttest.StubHistoryRenderer{},
+				HistoryBrowser:   &agenttest.StubHistoryBrowser{},
+			})
 
 			// 3. Attempt ProcessMessage
 			cfg := &config.Config{}

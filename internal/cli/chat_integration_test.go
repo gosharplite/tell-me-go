@@ -78,16 +78,20 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	}
 
 	loader := &config.YAMLConfigLoader{Finder: config.NewDefaultConfigFinder()}
-	chatService := agent.NewChatService(
-		tmpDir, "1.0.0", &stdout, &stderr, sm,
-		container,
-		container.GetAgentFactory(),
-		container.GetUIRenderer(),
-		container.GetHistoryRenderer(),
-		container.GetHistoryBrowser(),
-		nil,
-		infra_persistence.NewOSFileSystem(),
-	)
+	chatService := agent.NewChatService(agent.ChatServiceConfig{
+		HomeDir:          tmpDir,
+		Version:          "1.0.0",
+		Stdout:           &stdout,
+		Stderr:           &stderr,
+		SM:               sm,
+		LifecycleManager: container,
+		ChatterFactory:   container.GetAgentFactory(),
+		UIRenderer:       container.GetUIRenderer(),
+		HistoryRenderer:  container.GetHistoryRenderer(),
+		HistoryBrowser:   container.GetHistoryBrowser(),
+		HistoryEditor:    nil,
+		LogOpener:        infra_persistence.NewOSFileSystem(),
+	})
 
 	cmdCtx := &cli.Context{
 		Version:      "1.0.0",
