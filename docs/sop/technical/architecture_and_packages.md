@@ -26,7 +26,7 @@ The project is organized into the following top-level directories:
     - *Constraint*: Keep `main.go` extremely minimal. It MUST ONLY initialize the `cli.App` and call `Run()`. All logic, specifically flag definitions, configuration loading, and component wiring, must reside in `internal/cli` to ensure the application lifecycle is programmatically testable.
 - **`internal/`**: Contains private application and library code.
     - `internal/agent`: The high-level coordination layer.
-        - `internal/agent/orchestration`: Multi-turn loop, state management, and turn-based logic.
+        - `internal/agent/orchestrator`: Multi-turn loop, state management, and turn-based logic.
         - `internal/agent/executor`: Tool execution and worker pool management.
     - `internal/cli`: Flat CLI layer, flag parsing, and command orchestration. Handles the **Mode-Scoped Storage** logic.
     - `internal/domain`: Pure interfaces and entities (LLM, Tools, Pricing, Security, Events, LLM Coordination).
@@ -47,7 +47,13 @@ The project is organized into the following top-level directories:
     - `internal/pkg`: Shared utility packages:
         - `internal/pkg/clock`: Time and duration abstractions.
         - `internal/pkg/concurrency`: Synchronization and goroutine management.
+        - `internal/pkg/encoding`: Locale-aware text decoding utilities (relocated from `internal/infrastructure/encoding`).
+        - `internal/pkg/filepathutil`: Cross-platform file path normalization utilities.
+        - `internal/pkg/ioutils`: Common I/O helpers.
+        - `internal/pkg/matcher`: Generic matching helpers.
         - `internal/pkg/stringsutil`: Common string manipulation helpers.
+        - `internal/pkg/telemetry`: Shared telemetry helpers.
+        - `internal/pkg/testfixtures`: Shared test fixtures and canonical test doubles.
     - `internal/tools`: Categorized agent capabilities:
         - `internal/tools/analysis`: AST-based code intelligence and semantic search.
         - `internal/tools/workspace`: Basic file system and project management.
@@ -69,6 +75,7 @@ The project is organized into the following top-level directories:
 - **Interfaces**: Define interfaces at the *consumer* side to enable easy mocking in tests.
 - **Avoid Globals**: Do not use global variables for state. Pass dependencies explicitly via constructors.
 - **Tools-Layer Filesystem Boundary**: Tools-layer packages must not import `internal/infrastructure/persistence` except the two `default_fs.go` files (`internal/tools/analysis/default_fs.go`, `internal/tools/workspace/default_fs.go`), enforced by the `verify-tools-adapter-import` gate (ADR-055). Every live tool path uses the injected domain port (`persistence.FileSystem`); the named `defaultFS` fallback is the only sanctioned adapter construction site per package.
+- **Internal/pkg Directional Boundary (ADR-062)**: `internal/pkg` packages may depend only on `internal/domain` and other `internal/pkg` packages (ADR-062 Decision 2). Dependency-free shared utilities live in `internal/pkg`; anything requiring an adapter belongs in `internal/infrastructure` with the port defined in `internal/domain` per the ADR-055/060 injection pattern. Enforced by the `layerShared` rule in the architecture layer gate (ADR-062 Decision 4) and the `verify-tools-infrastructure-import` gate (ADR-062 Decision 3).
 
 ---
 
@@ -81,11 +88,11 @@ tell-me-go/
 │       └── main.go       # Orchestration and Entry Point
 ├── internal/
 │   ├── agent/            # Coordination Layer
-│   │   ├── orchestration/ # Turn-based loop
+│   │   ├── orchestrator/ # Turn-based loop
 │   │   └── executor/     # Tool execution
 │   ├── cli/              # Flat CLI Layer
 │   ├── domain/           # Core Domain Models & Interfaces
-│   │   ├── llmcoord/     # LLM Coordination
+│   │   ├── llm/           # LLM Coordination
 │   │   └── persistence/  # File system & storage contracts
 │   ├── infrastructure/   # External Adapters
 │   │   ├── auth/         # Token Management
