@@ -189,6 +189,52 @@ func TestWithMetrics_Scenarios(t *testing.T) {
 		assert.Equal(t, 0.05, turn.State.TaskCost)
 		assert.Equal(t, 0.05, turn.State.Metrics.Cost)
 	})
+
+	t.Run("Scenario D: Run-scoped task cost via LoopDetector", func(t *testing.T) {
+		bus := &eventstest.MockEventBus{}
+		tracker := &agenttest.MockCostTracker{}
+		engine := &Engine{events: bus}
+		mw := engine.withMetrics()
+
+		metrics := &llm.Metrics{PromptTokens: 100}
+		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+			turn.State.Metrics = metrics
+			return ProcessResult{}, nil
+		})
+
+		turn := &Turn{
+			State:        &TurnState{Phase: PhaseInference},
+			CostTracker:  tracker,
+			LoopDetector: newLoopDetector(),
+		}
+
+		// Run the middleware twice with the same turn and the same detector:
+		// the Run-scoped cumulative task cost accumulates on the detector
+		// (d.taskCost += turnCost) across calls, and Turn.State.TaskCost
+		// mirrors the detector value.
+		_, err := mw(next).Process(context.Background(), turn)
+		assert.NoError(t, err)
+		_, err = mw(next).Process(context.Background(), turn)
+		assert.NoError(t, err)
+
+		// d.taskCost += turnCost accumulates across calls (0.05 + 0.05).
+		assert.Equal(t, 0.10, turn.LoopDetector.taskCost)
+		// Turn.State.TaskCost = d.taskCost mirrors the detector, not a separate counter.
+		assert.Equal(t, turn.LoopDetector.taskCost, turn.State.TaskCost)
+		assert.Equal(t, 0.10, turn.State.TaskCost)
+		// Metrics.Cost is per-call, not cumulative.
+		assert.Equal(t, 0.05, turn.State.Metrics.Cost)
+
+		// Block-level side effect still fires on this path: one
+		// UsageMetricsEvent per inference call (two calls → two events).
+		usageCount := 0
+		for _, e := range bus.GetEvents() {
+			if _, ok := e.(events.UsageMetricsEvent); ok {
+				usageCount++
+			}
+		}
+		assert.Equal(t, 2, usageCount, "UsageMetricsEvent should be published on every inference call")
+	})
 }
 
 func TestLoopDetector_Scenarios(t *testing.T) {
