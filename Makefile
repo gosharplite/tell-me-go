@@ -565,7 +565,7 @@ verify-exit-query:
 
 # Verify the complexity-pin catalog partition (issue #1297): runs the real
 # GatherComplexities against the live INTENTIONAL_NON_FIXES.md catalog and
-# asserts the post-fix 25-cataloged / 1-alert partition by name (line +
+# asserts the post-fix 27-cataloged / 0-alert partition by name (line +
 # recorded CC). RED-first: the gate must fail against a drifted catalog —
 # never weaken it to land green.
 verify-nonfix-catalog:

@@ -46,18 +46,18 @@ func (f *defaultChatFactory) AgentFactory() ports.ChatterFactory {
 }
 
 func (f *defaultChatFactory) ChatService() agent.ChatService {
-	return agent.NewChatService(
-		f.HomeDir,
-		f.Version,
-		f.Stdout,
-		f.Stderr,
-		f.SM,
-		f.LifecycleManager,
-		f.AgentFactory(),
-		f.UIFact.UIRenderer(),
-		f.UIFact.HistoryRenderer(),
-		f.UIFact.HistoryBrowser(),
-		f.UIFact.HistoryEditor(),
-		infra_persistence.NewDomainFS(f.FileSystem),
-	)
+	return agent.NewChatService(agent.ChatServiceConfig{
+		HomeDir:          f.HomeDir,
+		Version:          f.Version,
+		Stdout:           f.Stdout,
+		Stderr:           f.Stderr,
+		SM:               f.SM,
+		LifecycleManager: f.LifecycleManager,
+		ChatterFactory:   f.AgentFactory(),
+		UIRenderer:       f.UIFact.UIRenderer(),
+		HistoryRenderer:  f.UIFact.HistoryRenderer(),
+		HistoryBrowser:   f.UIFact.HistoryBrowser(),
+		HistoryEditor:    f.UIFact.HistoryEditor(),
+		LogOpener:        infra_persistence.NewDomainFS(f.FileSystem),
+	})
 }

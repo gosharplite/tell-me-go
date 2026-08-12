@@ -670,7 +670,7 @@ catalog a new gap no one reviewed. Policy:
   no value. Same acceptance class as `AppendTask`, `domainFS.Chmod`,
   `mockFileSystem.Chmod`, `plainOSFS.Chmod`, and `HasBareNewline` — all
   delegation wrappers already documented in this file.
-- **See**: `internal/agent/service.go:226-228`
+- **See**: `internal/agent/service.go:221-223`
 
 ### persistence/state.go — NewSessionStateFromEnv thin entry point at 0%
 
