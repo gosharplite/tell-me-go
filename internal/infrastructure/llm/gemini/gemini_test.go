@@ -21,10 +21,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	authcontract "github.com/gosharplite/tell-me-go/internal/infrastructure/auth/contract"
 	"google.golang.org/genai"
 )
 
-// stubAuthenticator is a local test double for ports.Authenticator.
+// stubAuthenticator is a local test double for authcontract.Authenticator.
 // It proves that consumer packages can now implement the interface
 // without importing any auth concrete type (ADR-033).
 type stubAuthenticator struct {
@@ -33,9 +34,9 @@ type stubAuthenticator struct {
 
 func (s *stubAuthenticator) Invalidate() {}
 
-func (s *stubAuthenticator) Apply(_ context.Context, req *ports.Request) error {
+func (s *stubAuthenticator) Apply(_ context.Context, headers authcontract.AuthHeaders) error {
 	if s.token != "" {
-		req.Headers["Authorization"] = "Bearer " + s.token
+		headers["Authorization"] = "Bearer " + s.token
 	}
 	return nil
 }
@@ -1322,7 +1323,7 @@ func TestGemini_ResetConnections_ThreadSafety(t *testing.T) {
 
 // TestNewClient_WithLocalStubAuthenticator verifies that a consumer-defined
 // test double (not importing any auth concrete type) satisfies
-// ports.Authenticator and correctly injects credentials.
+// authcontract.Authenticator and correctly injects credentials.
 func TestNewClient_WithLocalStubAuthenticator(t *testing.T) {
 	stub := &stubAuthenticator{token: "local-stub-token"}
 

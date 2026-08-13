@@ -15,13 +15,14 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	authcontract "github.com/gosharplite/tell-me-go/internal/infrastructure/auth/contract"
 )
 
 // client implements the llm.LLMClient interface for OpenAI-compatible APIs.
 type client struct {
 	httpClient         *http.Client
 	transport          http.RoundTripper
-	authenticator      ports.Authenticator
+	authenticator      authcontract.Authenticator
 	baseURL            string
 	model              string
 	capabilities       llm.Capabilities
@@ -129,7 +130,7 @@ func WithLogger(l ports.Logger) Option {
 }
 
 // NewClient creates a new OpenAI-compatible client.
-func NewClient(baseURL, model string, authenticator ports.Authenticator, opts ...Option) *client {
+func NewClient(baseURL, model string, authenticator authcontract.Authenticator, opts ...Option) *client {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
@@ -910,11 +911,11 @@ func (c *client) newAuthenticatedRequest(ctx context.Context, method, url string
 		req.Header.Set(k, v)
 	}
 	// Authenticator headers (e.g. Authorization, x-api-key)
-	authReq := &ports.Request{Headers: make(map[string]string)}
-	if err := c.authenticator.Apply(ctx, authReq); err != nil {
+	authHeaders := authcontract.AuthHeaders{}
+	if err := c.authenticator.Apply(ctx, authHeaders); err != nil {
 		return nil, err
 	}
-	for k, v := range authReq.Headers {
+	for k, v := range authHeaders {
 		req.Header.Set(k, v)
 	}
 	return req, nil

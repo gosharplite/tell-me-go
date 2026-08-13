@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	authcontract "github.com/gosharplite/tell-me-go/internal/infrastructure/auth/contract"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -158,13 +158,13 @@ func (a *VertexAuth) Invalidate() {
 }
 
 // Apply injects the Bearer token into the request headers.
-func (a *VertexAuth) Apply(ctx context.Context, req *ports.Request) error {
+func (a *VertexAuth) Apply(ctx context.Context, headers authcontract.AuthHeaders) error {
 	token, err := a.getToken(ctx)
 	if err != nil {
 		return err
 	}
 	if token != "" {
-		req.Headers["Authorization"] = "Bearer " + token
+		headers["Authorization"] = "Bearer " + token
 	}
 	return nil
 }
@@ -176,10 +176,10 @@ type APIKeyAuth struct {
 
 func (a *APIKeyAuth) Invalidate() {
 }
-func (a *APIKeyAuth) Apply(ctx context.Context, req *ports.Request) error {
+func (a *APIKeyAuth) Apply(ctx context.Context, headers authcontract.AuthHeaders) error {
 	if a.APIKey != "" {
 		// Default to Gemini-style header; this will be specialized per provider in Phase 2
-		req.Headers["x-goog-api-key"] = a.APIKey
+		headers["x-goog-api-key"] = a.APIKey
 	}
 	return nil
 }
@@ -191,9 +191,9 @@ type BearerAuth struct {
 
 func (a *BearerAuth) Invalidate() {
 }
-func (a *BearerAuth) Apply(ctx context.Context, req *ports.Request) error {
+func (a *BearerAuth) Apply(ctx context.Context, headers authcontract.AuthHeaders) error {
 	if a.Token != "" {
-		req.Headers["Authorization"] = "Bearer " + a.Token
+		headers["Authorization"] = "Bearer " + a.Token
 	}
 	return nil
 }
@@ -205,9 +205,9 @@ type AnthropicAuth struct {
 
 func (a *AnthropicAuth) Invalidate() {
 }
-func (a *AnthropicAuth) Apply(ctx context.Context, req *ports.Request) error {
+func (a *AnthropicAuth) Apply(ctx context.Context, headers authcontract.AuthHeaders) error {
 	if a.APIKey != "" {
-		req.Headers["x-api-key"] = a.APIKey
+		headers["x-api-key"] = a.APIKey
 	}
 	return nil
 }
@@ -292,13 +292,13 @@ func (a *ServiceAccountAuth) Invalidate() {
 	a.token = ""
 }
 
-func (a *ServiceAccountAuth) Apply(ctx context.Context, req *ports.Request) error {
+func (a *ServiceAccountAuth) Apply(ctx context.Context, headers authcontract.AuthHeaders) error {
 	token, err := a.getToken(ctx)
 	if err != nil {
 		return err
 	}
 	if token != "" {
-		req.Headers["Authorization"] = "Bearer " + token
+		headers["Authorization"] = "Bearer " + token
 	}
 	return nil
 }
@@ -308,6 +308,6 @@ type noOpAuth struct{}
 
 func (a *noOpAuth) Invalidate() {
 }
-func (a *noOpAuth) Apply(ctx context.Context, req *ports.Request) error {
+func (a *noOpAuth) Apply(ctx context.Context, headers authcontract.AuthHeaders) error {
 	return nil
 }

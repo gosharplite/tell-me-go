@@ -14,6 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	authcontract "github.com/gosharplite/tell-me-go/internal/infrastructure/auth/contract"
 	"google.golang.org/genai"
 )
 
@@ -22,7 +23,7 @@ type Client struct {
 	mu                sync.RWMutex
 	sdkClient         *genai.Client
 	newGenaiClient    func(context.Context, *genai.ClientConfig) (*genai.Client, error)
-	authenticator     ports.Authenticator
+	authenticator     authcontract.Authenticator
 	apiURL            string
 	model             string
 	thinkingBudget    int
@@ -68,7 +69,7 @@ type Client struct {
 const defaultMaxOutputTokens = 8192
 
 // NewClient returns a new Gemini API client.
-func NewClient(apiURL, model string, authenticator ports.Authenticator, opts ...geminiOption) (*Client, error) {
+func NewClient(apiURL, model string, authenticator authcontract.Authenticator, opts ...geminiOption) (*Client, error) {
 	c := &Client{
 		apiURL:          apiURL,
 		model:           model,
