@@ -868,6 +868,7 @@ check: fmt tidy build
 	@$(MAKE) verify-exit-query
 	@echo "=== verify-nonfix-catalog ==="
 	@$(MAKE) verify-nonfix-catalog
+	@echo "=== verify-ports-registry ==="
 	@$(MAKE) verify-ports-registry
 	@echo "=== verify-mock-pattern ==="
 	@$(MAKE) verify-mock-pattern
@@ -913,6 +914,7 @@ check-full: fmt tidy build
 	@$(MAKE) verify-exit-query
 	@echo "=== verify-nonfix-catalog ==="
 	@$(MAKE) verify-nonfix-catalog
+	@echo "=== verify-ports-registry ==="
 	@$(MAKE) verify-ports-registry
 	@echo "=== verify-mock-pattern ==="
 	@$(MAKE) verify-mock-pattern
