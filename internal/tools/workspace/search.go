@@ -14,6 +14,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/concurrentsearch"
 )
 
 type fileSearcher struct {
@@ -58,7 +59,7 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, path, hb, matcher, s.policy)
+	resChan, errChan := concurrentsearch.ConcurrentSearch(ctx, s.sm, s.fs, path, hb, matcher, s.policy)
 	results, truncated := s.collectSearchResults(resChan, cancel)
 
 	if err := s.checkConcurrentSearchError(errChan); err != nil {
@@ -122,7 +123,7 @@ func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]inte
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, path, hb, matcher, s.policy)
+	resChan, errChan := concurrentsearch.ConcurrentSearch(ctx, s.sm, s.fs, path, hb, matcher, s.policy)
 	results, truncated := s.collectSearchResults(resChan, cancel)
 
 	if err := s.checkConcurrentSearchError(errChan); err != nil {
