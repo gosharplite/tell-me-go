@@ -72,17 +72,13 @@ const portsRegistryFamilyLimit = 12
 //   - `//   - ` with an empty name
 //   - a bullet before any family/supporting marker
 func parsePortsRegistry(data string) (*portsRegistry, error) {
-	reg := &portsRegistry{}
-	familySeen := make(map[string]bool)
-	nameSeen := make(map[string]bool)
+	p := &portsRegistryParser{
+		reg:        &portsRegistry{},
+		familySeen: make(map[string]bool),
+		nameSeen:   make(map[string]bool),
+	}
 
-	var (
-		inBlock        bool
-		inSupporting   bool
-		seenSupporting bool
-		curFamily      *portsRegistryFamily
-	)
-
+	inBlock := false
 	for _, line := range strings.Split(data, "\n") {
 		trimmed := strings.TrimSpace(line)
 
@@ -93,64 +89,133 @@ func parsePortsRegistry(data string) (*portsRegistry, error) {
 			continue
 		}
 
-		if trimmed == "" || trimmed == "//" {
-			continue // blank separator (gofmt inserts these)
+		done, err := p.processLine(trimmed)
+		if err != nil {
+			return nil, err
 		}
-
-		if strings.HasPrefix(trimmed, "// ##") {
-			directive := strings.TrimSpace(strings.TrimPrefix(trimmed, "// ##"))
-			if strings.HasPrefix(directive, "Family:") {
-				name := strings.TrimSpace(strings.TrimPrefix(directive, "Family:"))
-				if name == "" {
-					return nil, fmt.Errorf("ports registry: empty family name")
-				}
-				if familySeen[name] {
-					return nil, fmt.Errorf("ports registry: duplicate family %q", name)
-				}
-				familySeen[name] = true
-				reg.Families = append(reg.Families, portsRegistryFamily{Name: name})
-				curFamily = &reg.Families[len(reg.Families)-1]
-				inSupporting = false
-				continue
-			}
-			if directive == "Supporting" {
-				if seenSupporting {
-					return nil, fmt.Errorf("ports registry: duplicate Supporting marker")
-				}
-				seenSupporting = true
-				inSupporting = true
-				curFamily = nil
-				continue
-			}
-			return nil, fmt.Errorf("ports registry: malformed directive %q", directive)
+		if done {
+			break
 		}
-
-		if strings.HasPrefix(trimmed, "//   - ") {
-			name := strings.TrimSpace(strings.TrimPrefix(trimmed, "//   - "))
-			if name == "" {
-				return nil, fmt.Errorf("ports registry: empty name bullet")
-			}
-			if !inSupporting && curFamily == nil {
-				return nil, fmt.Errorf("ports registry: name bullet %q before any family or Supporting marker", name)
-			}
-			if nameSeen[name] {
-				return nil, fmt.Errorf("ports registry: duplicate symbol %q", name)
-			}
-			nameSeen[name] = true
-			if inSupporting {
-				reg.Supporting = append(reg.Supporting, name)
-			} else {
-				curFamily.Members = append(curFamily.Members, name)
-			}
-			continue
-		}
-
-		// First non-blank line matching none of the block kinds terminates
-		// the block; it and everything after is prose.
-		break
 	}
 
-	return reg, nil
+	return p.reg, nil
+}
+
+// portsRegistryParser holds the mutable parse state for parsePortsRegistry.
+// Grouping the state in a struct lets the per-line helpers stay small and the
+// main loop remain a thin dispatcher.
+type portsRegistryParser struct {
+	reg            *portsRegistry
+	familySeen     map[string]bool
+	nameSeen       map[string]bool
+	inSupporting   bool
+	seenSupporting bool
+	curFamily      *portsRegistryFamily
+}
+
+// processLine applies one trimmed block line to the parser state. It returns
+// done=true when the line terminates the block (prose), letting the caller
+// stop scanning without conflating "skip" with "stop".
+func (p *portsRegistryParser) processLine(trimmed string) (done bool, err error) {
+	switch {
+	case trimmed == "" || trimmed == "//":
+		return false, nil // blank separator (gofmt inserts these)
+	case strings.HasPrefix(trimmed, "// ##"):
+		if err := p.handleDirective(strings.TrimSpace(strings.TrimPrefix(trimmed, "// ##"))); err != nil {
+			return false, err
+		}
+		return false, nil
+	case strings.HasPrefix(trimmed, "//   - "):
+		if err := p.handleBullet(trimmed); err != nil {
+			return false, err
+		}
+		return false, nil
+	default:
+		return true, nil // prose terminates the block
+	}
+}
+
+// handleDirective applies a `// ##` directive (already stripped of its prefix):
+// a `Family:` marker opens a family (rejecting duplicates and empty names), the
+// `Supporting` marker opens the non-interface bucket (at most once), and
+// anything else is a malformed directive.
+func (p *portsRegistryParser) handleDirective(directive string) error {
+	name, isFamily, err := parseFamilyMarker(directive)
+	if err != nil {
+		return err
+	}
+	if isFamily {
+		if p.familySeen[name] {
+			return fmt.Errorf("ports registry: duplicate family %q", name)
+		}
+		p.familySeen[name] = true
+		p.reg.Families = append(p.reg.Families, portsRegistryFamily{Name: name})
+		p.curFamily = &p.reg.Families[len(p.reg.Families)-1]
+		p.inSupporting = false
+		return nil
+	}
+	if parseSupportingMarker(directive) {
+		if p.seenSupporting {
+			return fmt.Errorf("ports registry: duplicate Supporting marker")
+		}
+		p.seenSupporting = true
+		p.inSupporting = true
+		p.curFamily = nil
+		return nil
+	}
+	return fmt.Errorf("ports registry: malformed directive %q", directive)
+}
+
+// handleBullet applies a `//   - <Name>` bullet: it must follow a family or
+// Supporting marker, the name must be non-empty and unique across the whole
+// registry, and it is appended to the open bucket.
+func (p *portsRegistryParser) handleBullet(trimmed string) error {
+	name, err := parseNameBullet(trimmed)
+	if err != nil {
+		return err
+	}
+	if !p.inSupporting && p.curFamily == nil {
+		return fmt.Errorf("ports registry: name bullet %q before any family or Supporting marker", name)
+	}
+	if p.nameSeen[name] {
+		return fmt.Errorf("ports registry: duplicate symbol %q", name)
+	}
+	p.nameSeen[name] = true
+	if p.inSupporting {
+		p.reg.Supporting = append(p.reg.Supporting, name)
+	} else {
+		p.curFamily.Members = append(p.curFamily.Members, name)
+	}
+	return nil
+}
+
+// parseFamilyMarker recognizes a `Family:` directive and returns its (non-empty)
+// name. isFamily is false when directive is not a Family marker; an empty
+// family name is an error.
+func parseFamilyMarker(directive string) (name string, isFamily bool, err error) {
+	if !strings.HasPrefix(directive, "Family:") {
+		return "", false, nil
+	}
+	name = strings.TrimSpace(strings.TrimPrefix(directive, "Family:"))
+	if name == "" {
+		return "", true, fmt.Errorf("ports registry: empty family name")
+	}
+	return name, true, nil
+}
+
+// parseSupportingMarker reports whether directive is the `Supporting` marker.
+func parseSupportingMarker(directive string) bool {
+	return directive == "Supporting"
+}
+
+// parseNameBullet strips the `//   - ` prefix from a bullet line and rejects
+// an empty member name.
+func parseNameBullet(trimmed string) (string, error) {
+	name := strings.TrimSpace(strings.TrimPrefix(trimmed, "//   - "))
+	if name == "" {
+		return "", fmt.Errorf("ports registry: empty name bullet")
+	}
+	return name, nil
 }
 
 // verifyPortsRegistryBijection checks the parsed registry against the live
@@ -177,9 +242,23 @@ func verifyPortsRegistryBijection(reg *portsRegistry, decls []*symMeta) []string
 		}
 	}
 
-	var violations []string
 	bucketOf := make(map[string]string)
+	var violations []string
+	violations = append(violations, bijectionFamilyViolations(reg, declByName, bucketOf)...)
+	violations = append(violations, bijectionSupportingViolations(reg, declByName, bucketOf)...)
+	violations = append(violations, bijectionOmissionViolations(decls, bucketOf)...)
 
+	sort.Strings(violations)
+	return violations
+}
+
+// bijectionFamilyViolations reports the duplicate, phantom, and
+// misclassification violations for every family member, recording each name's
+// bucket in bucketOf as it goes. A cross-bucket duplicate is reported and
+// skipped (its first-bucket membership wins and its misclassification is not
+// double-reported).
+func bijectionFamilyViolations(reg *portsRegistry, declByName map[string]*symMeta, bucketOf map[string]string) []string {
+	var violations []string
 	for i := range reg.Families {
 		fam := &reg.Families[i]
 		bucket := fmt.Sprintf("family %q", fam.Name)
@@ -199,7 +278,14 @@ func verifyPortsRegistryBijection(reg *portsRegistry, decls []*symMeta) []string
 			}
 		}
 	}
+	return violations
+}
 
+// bijectionSupportingViolations reports the duplicate, phantom, and
+// misclassification violations for every Supporting entry, recording each
+// name's bucket in bucketOf as it goes.
+func bijectionSupportingViolations(reg *portsRegistry, declByName map[string]*symMeta, bucketOf map[string]string) []string {
+	var violations []string
 	for _, name := range reg.Supporting {
 		if prev, dup := bucketOf[name]; dup {
 			violations = append(violations, fmt.Sprintf("duplicate: live export %q listed in both %s and Supporting", name, prev))
@@ -215,7 +301,13 @@ func verifyPortsRegistryBijection(reg *portsRegistry, decls []*symMeta) []string
 			violations = append(violations, fmt.Sprintf("misclassification: Supporting entry %q is an interface, not a non-interface export", name))
 		}
 	}
+	return violations
+}
 
+// bijectionOmissionViolations reports every live declaration present in no
+// bucket.
+func bijectionOmissionViolations(decls []*symMeta, bucketOf map[string]string) []string {
+	var violations []string
 	for _, d := range decls {
 		if d == nil {
 			continue
@@ -224,8 +316,6 @@ func verifyPortsRegistryBijection(reg *portsRegistry, decls []*symMeta) []string
 			violations = append(violations, fmt.Sprintf("omission: live export %q is not present in the registry", d.name))
 		}
 	}
-
-	sort.Strings(violations)
 	return violations
 }
 
@@ -319,33 +409,13 @@ func visitPortsTypeReferences(t types.Type, fn func(name string)) {
 	}
 	switch tt := t.(type) {
 	case *types.Named:
-		if isPortsDeclaredType(tt) {
-			fn(tt.Obj().Name())
-			return
-		}
-		return // terminate at a non-ports named type
+		visitNamedRef(tt, fn)
 	case *types.Struct:
-		for i := 0; i < tt.NumFields(); i++ {
-			visitPortsTypeReferences(tt.Field(i).Type(), fn)
-		}
+		visitStructRef(tt, fn)
 	case *types.Signature:
-		if params := tt.Params(); params != nil {
-			for i := 0; i < params.Len(); i++ {
-				visitPortsTypeReferences(params.At(i).Type(), fn)
-			}
-		}
-		if results := tt.Results(); results != nil {
-			for i := 0; i < results.Len(); i++ {
-				visitPortsTypeReferences(results.At(i).Type(), fn)
-			}
-		}
+		visitSignatureRef(tt, fn)
 	case *types.Interface:
-		for i := 0; i < tt.NumMethods(); i++ {
-			visitPortsTypeReferences(tt.Method(i).Type(), fn)
-		}
-		for i := 0; i < tt.NumEmbeddeds(); i++ {
-			visitPortsTypeReferences(tt.EmbeddedType(i), fn)
-		}
+		visitInterfaceRef(tt, fn)
 	case *types.Map:
 		visitPortsTypeReferences(tt.Key(), fn)
 		visitPortsTypeReferences(tt.Elem(), fn)
@@ -353,6 +423,46 @@ func visitPortsTypeReferences(t types.Type, fn func(name string)) {
 		visitPortsTypeReferences(tt.Elem(), fn)
 	case *types.Array:
 		visitPortsTypeReferences(tt.Elem(), fn)
+	}
+}
+
+// visitNamedRef reports a ports-declared named type and terminates: a
+// non-ports named type is a boundary the walker does not cross.
+func visitNamedRef(named *types.Named, fn func(string)) {
+	if isPortsDeclaredType(named) {
+		fn(named.Obj().Name())
+	}
+}
+
+// visitStructRef recurses into every struct field type.
+func visitStructRef(s *types.Struct, fn func(string)) {
+	for i := 0; i < s.NumFields(); i++ {
+		visitPortsTypeReferences(s.Field(i).Type(), fn)
+	}
+}
+
+// visitSignatureRef recurses into a signature's parameter and result types.
+func visitSignatureRef(sig *types.Signature, fn func(string)) {
+	if params := sig.Params(); params != nil {
+		for i := 0; i < params.Len(); i++ {
+			visitPortsTypeReferences(params.At(i).Type(), fn)
+		}
+	}
+	if results := sig.Results(); results != nil {
+		for i := 0; i < results.Len(); i++ {
+			visitPortsTypeReferences(results.At(i).Type(), fn)
+		}
+	}
+}
+
+// visitInterfaceRef recurses into an interface's method signatures and
+// embedded types.
+func visitInterfaceRef(iface *types.Interface, fn func(string)) {
+	for i := 0; i < iface.NumMethods(); i++ {
+		visitPortsTypeReferences(iface.Method(i).Type(), fn)
+	}
+	for i := 0; i < iface.NumEmbeddeds(); i++ {
+		visitPortsTypeReferences(iface.EmbeddedType(i), fn)
 	}
 }
 
@@ -410,44 +520,82 @@ func evaluateSupportingClauses(interfaces map[string]*types.Interface, nonInterf
 // pureAdmissionClause evaluates clauses (b), (c), and (d) for a single
 // non-interface symMeta and returns the admitting clause label ("" if none).
 func pureAdmissionClause(m *symMeta, interfaces map[string]*types.Interface) string {
+	if clause, ok := admitByClauseB(m); ok {
+		return clause
+	}
+	if clause, ok := admitByClauseC(m); ok {
+		return clause
+	}
+	if clause, ok := admitByClauseD(m, interfaces); ok {
+		return clause
+	}
+	return ""
+}
+
+// admitByClauseB evaluates clause (b): a Constant or Variable is admitted
+// unconditionally.
+func admitByClauseB(m *symMeta) (string, bool) {
 	switch m.symType {
 	case "Constant", "Variable":
-		return "b"
+		return "b", true
+	default:
+		return "", false
+	}
+}
+
+// admitByClauseC evaluates clause (c): a Function whose signature references a
+// ports type, or a Type declaration whose underlying signature references a
+// ports type.
+func admitByClauseC(m *symMeta) (string, bool) {
+	switch m.symType {
 	case "Function":
 		fn, ok := m.obj.(*types.Func)
 		if ok && referencesPortsType(fn.Type()) {
-			return "c"
+			return "c", true
 		}
-		return ""
 	case "Type":
 		tn, ok := m.obj.(*types.TypeName)
 		if !ok {
-			return ""
+			return "", false
 		}
 		named, ok := tn.Type().(*types.Named)
 		if !ok {
-			return ""
+			return "", false
 		}
-		if _, isIface := named.Underlying().(*types.Interface); isIface {
-			return "" // interfaces are not non-interface exports
-		}
-		// (c) func-type declaration whose signature references a ports type.
 		if sig, ok := named.Underlying().(*types.Signature); ok && referencesPortsType(sig) {
-			return "c"
+			return "c", true
 		}
-		// (d) named type whose method set implements a ports interface.
-		for _, iface := range interfaces {
-			if iface == nil {
-				continue
-			}
-			if types.Implements(named, iface) || types.Implements(types.NewPointer(named), iface) {
-				return "d"
-			}
-		}
-		return ""
-	default:
-		return ""
 	}
+	return "", false
+}
+
+// admitByClauseD evaluates clause (d): a Type declaration whose method set (or
+// pointer method set) implements a ports interface. Interfaces themselves are
+// never non-interface exports and are excluded.
+func admitByClauseD(m *symMeta, interfaces map[string]*types.Interface) (string, bool) {
+	if m.symType != "Type" {
+		return "", false
+	}
+	tn, ok := m.obj.(*types.TypeName)
+	if !ok {
+		return "", false
+	}
+	named, ok := tn.Type().(*types.Named)
+	if !ok {
+		return "", false
+	}
+	if _, isIface := named.Underlying().(*types.Interface); isIface {
+		return "", false // interfaces are not non-interface exports
+	}
+	for _, iface := range interfaces {
+		if iface == nil {
+			continue
+		}
+		if types.Implements(named, iface) || types.Implements(types.NewPointer(named), iface) {
+			return "d", true
+		}
+	}
+	return "", false
 }
 
 // clauseAFixpoint computes the clause (a) admission fixpoint. The seed shapes
@@ -472,19 +620,7 @@ func clauseAFixpoint(interfaces map[string]*types.Interface, typeEntryByName map
 	}
 
 	for {
-		added := make([]string, 0)
-		for _, shape := range shapes {
-			for name := range collectReferencedPortsTypeNames(shape) {
-				if _, ok := typeEntryByName[name]; !ok {
-					continue
-				}
-				if _, already := admitted[name]; already {
-					continue
-				}
-				admitted[name] = "a"
-				added = append(added, name)
-			}
-		}
+		added := admitViaClauseA(shapes, typeEntryByName, admitted)
 		if len(added) == 0 {
 			return
 		}
@@ -494,6 +630,26 @@ func clauseAFixpoint(interfaces map[string]*types.Interface, typeEntryByName map
 			}
 		}
 	}
+}
+
+// admitViaClauseA walks every seed shape and admits any referenced
+// ports-declared non-interface Type entry not already admitted, returning the
+// newly admitted names so the fixpoint loop can add their shapes as seeds.
+func admitViaClauseA(shapes []types.Type, typeEntryByName map[string]*symMeta, admitted map[string]string) []string {
+	var added []string
+	for _, shape := range shapes {
+		for name := range collectReferencedPortsTypeNames(shape) {
+			if _, ok := typeEntryByName[name]; !ok {
+				continue
+			}
+			if _, already := admitted[name]; already {
+				continue
+			}
+			admitted[name] = "a"
+			added = append(added, name)
+		}
+	}
+	return added
 }
 
 // verifyPortsSupportingAdmission evaluates the 5-clause admission rule for
@@ -513,6 +669,27 @@ func (a *defaultDeadCodeAnalyzer) verifyPortsSupportingAdmission(
 		state = &scanState{}
 	}
 
+	interfaces, nonInterfaces, nonInterfacesByName := partitionPortsDecls(decls)
+	admitted := evaluateSupportingClauses(interfaces, nonInterfaces)
+	a.applyCrossLayerClause(nonInterfaces, admitted, state, a.buildFileToPkgMap(state.pkgs), hb)
+
+	var violations []string
+	for _, name := range reg.Supporting {
+		if _, ok := nonInterfacesByName[name]; !ok {
+			continue // phantom or misclassified entry — the bijection's job
+		}
+		if _, ok := admitted[name]; !ok {
+			violations = append(violations, fmt.Sprintf("supporting entry %q not admitted by any clause", name))
+		}
+	}
+	sort.Strings(violations)
+	return violations
+}
+
+// partitionPortsDecls splits the ports exports into the interfaces map (name →
+// *types.Interface) and the non-interface slice (plus its name index), so the
+// admission evaluator works on typed collections instead of re-filtering.
+func partitionPortsDecls(decls []*symMeta) (map[string]*types.Interface, []*symMeta, map[string]*symMeta) {
 	interfaces := make(map[string]*types.Interface)
 	nonInterfacesByName := make(map[string]*symMeta)
 	var nonInterfaces []*symMeta
@@ -531,11 +708,13 @@ func (a *defaultDeadCodeAnalyzer) verifyPortsSupportingAdmission(
 		nonInterfaces = append(nonInterfaces, d)
 		nonInterfacesByName[d.name] = d
 	}
+	return interfaces, nonInterfaces, nonInterfacesByName
+}
 
-	admitted := evaluateSupportingClauses(interfaces, nonInterfaces)
-
-	// Clause (e): cross-layer reference via usage sites (di-included).
-	fileToPkg := a.buildFileToPkgMap(state.pkgs)
+// applyCrossLayerClause evaluates clause (e) for every non-interface export
+// still unadmitted after the pure clauses: a usage site spanning more than one
+// distinct layer admits it as "e".
+func (a *defaultDeadCodeAnalyzer) applyCrossLayerClause(nonInterfaces []*symMeta, admitted map[string]string, state *scanState, fileToPkg map[string]string, hb chan<- struct{}) {
 	for i, m := range nonInterfaces {
 		if _, ok := admitted[m.name]; ok {
 			continue
@@ -545,18 +724,6 @@ func (a *defaultDeadCodeAnalyzer) verifyPortsSupportingAdmission(
 			admitted[m.name] = "e"
 		}
 	}
-
-	var violations []string
-	for _, name := range reg.Supporting {
-		if _, ok := nonInterfacesByName[name]; !ok {
-			continue // phantom or misclassified entry — the bijection's job
-		}
-		if _, ok := admitted[name]; !ok {
-			violations = append(violations, fmt.Sprintf("supporting entry %q not admitted by any clause", name))
-		}
-	}
-	sort.Strings(violations)
-	return violations
 }
 
 // supportingCrossLayerReference evaluates clause (e): the export's usage
