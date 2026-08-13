@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -44,6 +44,8 @@ type VertexAuth struct {
 	tokenCmdFunc func() ([]byte, error)
 	// CacheDir allows overriding the default cache location. Primarily for testing.
 	CacheDir string
+	// fs is the injected filesystem port used to persist the token cache.
+	fs persistence.FileSystem
 }
 
 // NewVertexAuth returns a VertexAuth wired with the production gcloud executor
@@ -54,6 +56,7 @@ func NewVertexAuth() *VertexAuth {
 		tokenCmdFunc: func() ([]byte, error) {
 			return execCommand("gcloud", "auth", "print-access-token").Output()
 		},
+		fs: defaultFS,
 	}
 }
 
@@ -119,7 +122,7 @@ func (a *VertexAuth) writeCacheFile(ctx context.Context, token string) {
 		log.Printf("failed to create auth cache directory: %v", err)
 		return
 	}
-	if err := persistence.AtomicWrite(ctx, &persistence.OSFileSystem{}, cacheFile, []byte(token), 0600); err != nil {
+	if err := a.fs.AtomicWrite(ctx, cacheFile, []byte(token), 0600); err != nil {
 		log.Printf("failed to write auth cache: %v", err)
 	}
 }
