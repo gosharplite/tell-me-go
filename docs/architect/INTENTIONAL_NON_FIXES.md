@@ -411,7 +411,7 @@ catalog a new gap no one reviewed. Policy:
   Same acceptance class as `agenttest/helpers.go` interface-satisfying
   stubs and `mockFileSystem.Chmod`.
 - **See**: `internal/infrastructure/auth/auth.go` (package-level coverage note
-  at top of file), lines 184, 199, 213, 316
+  at top of file), lines 177, 192, 206, 309
 
 ### domain/config/watcher_noop.go — SetPaths and Refresh no-op stubs at 0%
 
@@ -1090,7 +1090,7 @@ to reason about.
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Sequential integration test verifying Kimi-specific video upload pipeline with multiple API response shapes (success, auth failure, server error, retry). Each case mutates shared mock state. Splitting would duplicate the expensive mock server setup. Same acceptance class as `TestHistoryNavigation_CompleteWorkflow`. Re-anchored 2026-08 (#1350 item 4): line drifted 379→378 as the llm→auth inversion swapped the auth import for ports.
-- **See**: `internal/infrastructure/llm/openai/files_test.go:378`
+- **See**: `internal/infrastructure/llm/openai/files_test.go:379`
 
 ### internal/infrastructure/llm/openai/client_vision_test.go — TestHydrateMediaAssets (CC=13)
 
@@ -1236,4 +1236,4 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift))*
+*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment)*
