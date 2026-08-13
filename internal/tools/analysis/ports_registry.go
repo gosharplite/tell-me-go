@@ -15,13 +15,13 @@ import (
 
 // defaultPortsRegistryPath is the location of the ports registry comment
 // block relative to the module root (read by loadPortsRegistry).
-var defaultPortsRegistryPath = filepath.Join("internal", "domain", "ports", "doc.go")
+var defaultPortsRegistryPath = filepath.Join("internal", "domain", "ports", "doc.go") //nolint:unused // consumed only via loadPortsRegistry by the arch-tagged gate test
 
 // loadPortsRegistry reads and parses the `// # Registry` block of
 // internal/domain/ports/doc.go, anchored at the module root via
 // findModuleRoot. A missing or unparseable registry is an error (the gate
 // cannot run without the architect's curated roster).
-func loadPortsRegistry() (*portsRegistry, error) {
+func loadPortsRegistry() (*portsRegistry, error) { //nolint:unused // sole caller real_ports_registry_test.go is behind //go:build arch, invisible to non-arch lint
 	root, err := findModuleRoot()
 	if err != nil {
 		return nil, fmt.Errorf("ports registry: %w", err)
