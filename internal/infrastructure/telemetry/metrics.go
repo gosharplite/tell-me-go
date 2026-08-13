@@ -13,13 +13,13 @@ import (
 	"path/filepath"
 	"time"
 
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 )
 
 type metricsManager struct {
@@ -119,7 +119,7 @@ func resolveUsageForSummary(ctx context.Context, sm domain_security.Manager, tra
 		return usage, totalCost, nil
 	}
 
-	pd := config.DefaultPricing()
+	pd := domain_config.DefaultPricing()
 	for k, v := range overrides {
 		pd.Models[k] = v
 	}

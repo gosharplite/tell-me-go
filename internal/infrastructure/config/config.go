@@ -16,7 +16,6 @@ import (
 
 	"github.com/go-viper/mapstructure/v2"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
-	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/spf13/viper"
 )
 
@@ -232,11 +231,6 @@ func syncLegacyFields(cfg *domain_config.Config) {
 	if cfg.ThinkingLevel == "" {
 		cfg.ThinkingLevel = active.ThinkingLevel
 	}
-}
-
-// DefaultPricing returns the hardcoded fallback pricing data.
-func DefaultPricing() pricing.PricingData {
-	return domain_config.DefaultPricing()
 }
 
 // JSONSessionLoader implements domain_config.SessionLoader.
