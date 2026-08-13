@@ -61,7 +61,7 @@ The composition-root exclusion is a property of the ADR-056 Decision 1 exit quer
 
 ### 7. Terminal-state contract
 
-PR-B (#1344) either ratifies the deferral (data appendix to this ADR) or upgrades to accept via **ADR-065** — a new ADR, never an amendment. Permanent deferral is a valid terminal state.
+PR-B (#1344) either ratifies the deferral (data appendix to this ADR) or upgrades to accept via a **new ADR** (next available number — note: ADR-065 was later assigned to the auth-seam contract-leaf rule, #1358) — never an amendment. Permanent deferral is a valid terminal state.
 
 ### 8. Evidence hygiene
 
