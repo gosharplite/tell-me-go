@@ -69,12 +69,18 @@ func TestVerifyTransitiveClosureGate(t *testing.T) {
 	}
 
 	classifications := classifyAllConsumers(graph, wl, modulePath)
-	report := formatTransitiveGateReport(classifications, wl)
+	infra := classifyInfraLateralEdges(pkgs, wl, modulePath)
+	report := formatTransitiveGateReport(classifications, infra, wl)
 	fmt.Print(report)
 
 	var decisionRequired int
 	for _, c := range classifications {
 		if c.Status == statusDecisionRequired {
+			decisionRequired++
+		}
+	}
+	for _, e := range infra {
+		if e.Status == statusDecisionRequired {
 			decisionRequired++
 		}
 	}
