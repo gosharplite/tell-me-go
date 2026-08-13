@@ -69,6 +69,8 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-061** | Per-Turn Turn Lifecycle (Constructor-Is-The-Reset) | 2026-08 | Accepted | [2026-08-per-turn-turn-lifecycle.md](2026-08-per-turn-turn-lifecycle.md) |
 | **ADR-062** | Relocate internal/infrastructure/encoding → internal/pkg/encoding; General Tools→Infrastructure Import Gate and layerShared Rule | 2026-08 | Accepted | [2026-08-encoding-relocation-and-tools-infrastructure-gate.md](2026-08-encoding-relocation-and-tools-infrastructure-gate.md) |
 | **ADR-063** | SOP Documentation-Governance — Maintainer Note-Only Veto and One-Time Prose Correction | 2026-08 | Accepted | [2026-08-sop-documentation-governance.md](2026-08-sop-documentation-governance.md) |
+| **ADR-064** | Domain/Ports Shared-Kernel Registry Gate and Split Deferral (D1=DEFER) | 2026-08 | Accepted | [2026-08-ports-shared-kernel-registry-gate.md](2026-08-ports-shared-kernel-registry-gate.md) |
+| **ADR-065** | Infra-Only Multi-Package Seam Realigns to Concept-Side Contract Leaf | 2026-08 | Accepted | [2026-08-infra-seam-contract-leaf-rule.md](2026-08-infra-seam-contract-leaf-rule.md) |
 
 ## How to Create a New ADR
 

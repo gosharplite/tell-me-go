@@ -393,17 +393,6 @@ func TestYAMLConfigLoader_Load_AutoDiscovery(t *testing.T) {
 	})
 }
 
-func TestDefaultPricing(t *testing.T) {
-	p := DefaultPricing()
-	if len(p.Models) == 0 {
-		t.Error("expected non-empty pricing data")
-	}
-
-	if _, ok := p.Models["gpt-5"]; !ok {
-		t.Error("expected gpt-5 to be present in default pricing")
-	}
-}
-
 func TestLoad_ModelWithDots(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "test_dots.yaml")

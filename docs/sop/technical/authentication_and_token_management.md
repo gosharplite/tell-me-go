@@ -35,8 +35,8 @@ To define how `tell-me-go` authenticates exclusively with Google Vertex AI using
 ---
 
 ### Package Structure
-- **`internal/auth`**: Dedicated package for token discovery (e.g., via `gcloud`).
-- **`internal/api`**: Configures the GenAI SDK client with the injected authentication headers.
+- **`internal/infrastructure/auth`**: Dedicated package for token discovery (e.g., via `gcloud`) and concrete authenticator implementations.
+- **`internal/infrastructure/auth/contract`**: The `Authenticator` interface and the `AuthHeaders` carrier type. The interface no longer lives in `auth`; consumers (`internal/infrastructure/llm` and its provider subpackages) import this leaf aliased as `authcontract`.
 
 ---
 
@@ -45,7 +45,8 @@ To define how `tell-me-go` authenticates exclusively with Google Vertex AI using
 #### Authenticator Interface:
 ```go
 type Authenticator interface {
-    Apply(req *Request) error
+    Invalidate()
+    Apply(ctx context.Context, headers AuthHeaders) error
 }
 ```
 

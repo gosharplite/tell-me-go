@@ -144,5 +144,26 @@ allowed: llm, security, tools
 ## consumer: internal/ui/tui/progress
 allowed: config, events, llm, persistence, pricing, security, services, telemetry, tools
 # P1+P2+P5: progress deps
+## consumer: internal/pkg/metricsfmt
+allowed: events, llm, telemetry, tools
+# events=prod-direct; llm=test-direct (P4, white-box test builds llm.Metrics); telemetry=P1 (events→telemetry); tools=P2 (events→llm→tools)
+
 ## consumer: internal/domain/ports
 allowed: <derived>
+
+## infra-root: di
+allowed: exec, factory, history, llm, logging, persistence, registry, security, skills, telemetry, toolchain
+# composition root: composes leaf adapters (ADR-055/060/062 injection)
+
+## infra-root: factory
+allowed: config, llm, skills, telemetry
+# composition root: constructs chatter/health-manager
+
+## infra-sanctioned: llm → auth
+# llm/factory.go constructs auth (issue #1350 item 4, ADR-055 confinement)
+
+## infra-sanctioned: auth → persistence
+# auth/default_fs.go (issue #1350 item 3)
+
+## infra-sanctioned: history → persistence
+# history/default_asset_store.go (issue #1350 item 5)

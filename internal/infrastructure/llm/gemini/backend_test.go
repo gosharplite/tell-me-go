@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	authcontract "github.com/gosharplite/tell-me-go/internal/infrastructure/auth/contract"
 	"google.golang.org/genai"
 )
 
@@ -22,7 +22,7 @@ type failingAuthenticator struct {
 
 func (f *failingAuthenticator) Invalidate() {}
 
-func (f *failingAuthenticator) Apply(_ context.Context, _ *auth.Request) error {
+func (f *failingAuthenticator) Apply(_ context.Context, _ authcontract.AuthHeaders) error {
 	return f.err
 }
 

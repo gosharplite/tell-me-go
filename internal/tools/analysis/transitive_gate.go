@@ -84,6 +84,9 @@ type transitiveWhitelist struct {
 	Decisions []string
 	// Consumers maps module-relative consumer paths to their entries.
 	Consumers map[string]whitelistEntry
+	// Infra records the infra-family lateral-edge whitelist (ADR-056,
+	// issue #1350 item 6).
+	Infra infraFamilyWhitelist
 }
 
 // entry returns the whitelist entry for consumer. Nil-safe.
@@ -106,6 +109,37 @@ type consumerClassification struct {
 	Excess      []string
 	Status      consumerStatus
 	Detail      string
+}
+
+// infraEdge is a directed infra-family lateral edge (source family → target
+// family), both first segments under internal/infrastructure/.
+type infraEdge struct{ Source, Target string }
+
+// infraFamilyWhitelist is the family-level lateral-edge whitelist parsed
+// from `## infra-root:` / `## infra-sanctioned:` directives.
+type infraFamilyWhitelist struct {
+	// Roots maps a composition-root family to its allowed lateral target
+	// families.
+	Roots map[string][]string
+	// Sanctioned is the ordered list of residual adapter-construction edges.
+	Sanctioned []infraEdge
+}
+
+// isSanctioned reports whether the src→tgt ordered pair is a sanctioned
+// residual adapter-construction edge.
+func (i *infraFamilyWhitelist) isSanctioned(src, tgt string) bool {
+	for _, e := range i.Sanctioned {
+		if e.Source == src && e.Target == tgt {
+			return true
+		}
+	}
+	return false
+}
+
+// infraLateralClassification is one infra-family lateral edge's gate verdict.
+type infraLateralClassification struct {
+	Source, Target, Detail string
+	Status                 consumerStatus
 }
 
 // consumerPath dedupes a package path to its base consumer path: the
@@ -196,6 +230,25 @@ func buildInternalImportGraph(pkgs []*packages.Package, modulePath string) map[s
 // "" when the path is not a domain-family package.
 func familyOf(rel string) string {
 	const prefix = "internal/domain/"
+	if !strings.HasPrefix(rel, prefix) {
+		return ""
+	}
+	rest := strings.TrimPrefix(rel, prefix)
+	if rest == "" {
+		return ""
+	}
+	if i := strings.IndexByte(rest, '/'); i != -1 {
+		rest = rest[:i]
+	}
+	return rest
+}
+
+// infraFamilyOf returns the infrastructure family of a module-relative path:
+// the first segment after "internal/infrastructure/" (llm/anthropic → llm,
+// persistence/persistencetest → persistence), or "" when not an infra-family
+// package.
+func infraFamilyOf(rel string) string {
+	const prefix = "internal/infrastructure/"
 	if !strings.HasPrefix(rel, prefix) {
 		return ""
 	}
@@ -339,6 +392,48 @@ func parseFamilyList(list string) []string {
 	return fams
 }
 
+// whitelistScanState tracks the open-block state across the whitelist scan.
+// The zero value is the correct initial state.
+type whitelistScanState struct {
+	inConsumer   bool
+	curConsumer  string
+	inInfraRoot  bool
+	curInfraRoot string
+}
+
+// scanLine handles one whitelist line, updating the open-block state and
+// dispatching to the directive-specific parser.
+func (s *whitelistScanState) scanLine(line string, wl *transitiveWhitelist) error {
+	var err error
+	switch {
+	case strings.HasPrefix(line, "## decision:"):
+		s.inConsumer = false
+		s.inInfraRoot = false
+		err = parseDecisionNote(line, wl)
+	case strings.HasPrefix(line, "## consumer:"):
+		s.inInfraRoot = false
+		s.curConsumer, err = parseConsumerHeading(line, wl)
+		s.inConsumer = true
+	case strings.HasPrefix(line, "## infra-root:"):
+		s.inConsumer = false
+		s.curInfraRoot, err = parseInfraRootHeading(line, wl)
+		s.inInfraRoot = true
+	case strings.HasPrefix(line, "## infra-sanctioned:"):
+		s.inConsumer = false
+		s.inInfraRoot = false
+		err = parseInfraSanctioned(line, wl)
+	case strings.HasPrefix(line, "allowed:"):
+		if s.inInfraRoot {
+			err = applyInfraRootAllowed(line, wl, s.curInfraRoot)
+		} else {
+			err = applyAllowedDirective(line, wl, s.curConsumer, s.inConsumer)
+		}
+	default:
+		err = handleWhitelistBodyLine(line, wl, s.inConsumer, s.inInfraRoot)
+	}
+	return err
+}
+
 // parseTransitiveWhitelist parses the architect-curated whitelist markdown.
 // The pinned format:
 //
@@ -361,8 +456,7 @@ func parseFamilyList(list string) []string {
 // inside a consumer block.
 func parseTransitiveWhitelist(data string) (*transitiveWhitelist, error) {
 	wl := &transitiveWhitelist{Consumers: make(map[string]whitelistEntry)}
-	inConsumer := false
-	curConsumer := ""
+	s := &whitelistScanState{}
 
 	scanner := bufio.NewScanner(strings.NewReader(data))
 	for scanner.Scan() {
@@ -370,22 +464,7 @@ func parseTransitiveWhitelist(data string) (*transitiveWhitelist, error) {
 		if line == "" {
 			continue
 		}
-		var err error
-		switch {
-		case strings.HasPrefix(line, "## decision:"):
-			inConsumer = false
-			err = parseDecisionNote(line, wl)
-		case strings.HasPrefix(line, "## consumer:"):
-			var consumer string
-			consumer, err = parseConsumerHeading(line, wl)
-			curConsumer = consumer
-			inConsumer = true
-		case strings.HasPrefix(line, "allowed:"):
-			err = applyAllowedDirective(line, wl, curConsumer, inConsumer)
-		default:
-			err = handleWhitelistBodyLine(line, wl, inConsumer)
-		}
-		if err != nil {
+		if err := s.scanLine(line, wl); err != nil {
 			return nil, err
 		}
 	}
@@ -422,6 +501,68 @@ func parseConsumerHeading(line string, wl *transitiveWhitelist) (string, error) 
 	}
 	wl.Consumers[consumer] = whitelistEntry{Consumer: consumer}
 	return consumer, nil
+}
+
+// parseInfraRootHeading handles a `## infra-root:` directive: the family must
+// match familyNameRE, must not be a duplicate, and is registered with a nil
+// allowed list (lazy-init the Roots map) before the family is returned to the
+// scanner loop.
+func parseInfraRootHeading(line string, wl *transitiveWhitelist) (string, error) {
+	family := strings.TrimSpace(strings.TrimPrefix(line, "## infra-root:"))
+	if !familyNameRE.MatchString(family) {
+		return "", fmt.Errorf("transitive whitelist: invalid infra-root family %q", family)
+	}
+	if wl.Infra.Roots == nil {
+		wl.Infra.Roots = make(map[string][]string)
+	}
+	if _, dup := wl.Infra.Roots[family]; dup {
+		return "", fmt.Errorf("transitive whitelist: duplicate infra-root %q", family)
+	}
+	wl.Infra.Roots[family] = nil
+	return family, nil
+}
+
+// applyInfraRootAllowed handles an `allowed:` directive inside an
+// `## infra-root:` block: exactly one allowed list per root, parsed as a
+// family list.
+func applyInfraRootAllowed(line string, wl *transitiveWhitelist, cur string) error {
+	if wl.Infra.Roots[cur] != nil {
+		return fmt.Errorf("transitive whitelist: duplicate allowed: for infra-root %q", cur)
+	}
+	fams, err := parseAllowedFamilies(strings.TrimSpace(strings.TrimPrefix(line, "allowed:")), cur)
+	if err != nil {
+		return err
+	}
+	wl.Infra.Roots[cur] = fams
+	return nil
+}
+
+// parseInfraSanctioned handles a `## infra-sanctioned:` directive: a
+// "src → tgt" ordered residual adapter-construction edge. Both families must
+// match familyNameRE, the pair must not be intra-family, and duplicates are
+// rejected.
+func parseInfraSanctioned(line string, wl *transitiveWhitelist) error {
+	rest := strings.TrimSpace(strings.TrimPrefix(line, "## infra-sanctioned:"))
+	parts := strings.Split(rest, "→")
+	if len(parts) != 2 {
+		return fmt.Errorf("transitive whitelist: infra-sanctioned must be \"src → tgt\": %q", rest)
+	}
+	src := strings.TrimSpace(parts[0])
+	tgt := strings.TrimSpace(parts[1])
+	if src == "" || tgt == "" {
+		return fmt.Errorf("transitive whitelist: infra-sanctioned must be \"src → tgt\": %q", rest)
+	}
+	if !familyNameRE.MatchString(src) || !familyNameRE.MatchString(tgt) {
+		return fmt.Errorf("transitive whitelist: invalid infra-sanctioned family in %q", rest)
+	}
+	if src == tgt {
+		return fmt.Errorf("transitive whitelist: intra-family infra-sanctioned edge %q", src)
+	}
+	if wl.Infra.isSanctioned(src, tgt) {
+		return fmt.Errorf("transitive whitelist: duplicate infra-sanctioned edge %q → %q", src, tgt)
+	}
+	wl.Infra.Sanctioned = append(wl.Infra.Sanctioned, infraEdge{Source: src, Target: tgt})
+	return nil
 }
 
 // applyAllowedDirective handles an `allowed:` directive: it must appear inside
@@ -479,25 +620,34 @@ func parseAllowedFamilies(list, curConsumer string) ([]string, error) {
 }
 
 // handleWhitelistBodyLine handles a non-directive body line: headings and
-// comments are skipped; prose inside an open consumer block is an error;
-// prose under the header or a decision note is ignored.
-func handleWhitelistBodyLine(line string, wl *transitiveWhitelist, inConsumer bool) error {
+// comments are skipped; prose inside an open consumer or infra-root block is
+// an error; prose under the header or a decision note is ignored.
+func handleWhitelistBodyLine(line string, wl *transitiveWhitelist, inConsumer, inInfraRoot bool) error {
 	if strings.HasPrefix(line, "#") {
 		return nil // headings and comments — not directives
 	}
 	if inConsumer {
 		return fmt.Errorf("transitive whitelist: unexpected content in consumer block: %q", line)
 	}
+	if inInfraRoot {
+		return fmt.Errorf("transitive whitelist: unexpected content in infra-root block: %q", line)
+	}
 	// Prose under the header or a decision note — ignored.
 	return nil
 }
 
 // validateWhitelistEntries enforces the trailing parse invariant: every
-// non-derived consumer block must have an allowed: list.
+// non-derived consumer block and every infra-root block must have an allowed:
+// list.
 func validateWhitelistEntries(wl *transitiveWhitelist) error {
 	for consumer, e := range wl.Consumers {
 		if !e.Derived && e.Allowed == nil {
 			return fmt.Errorf("transitive whitelist: consumer %q has no allowed: list", consumer)
+		}
+	}
+	for family, allowed := range wl.Infra.Roots {
+		if allowed == nil {
+			return fmt.Errorf("transitive whitelist: infra-root %q has no allowed: list", family)
 		}
 	}
 	return nil
@@ -624,6 +774,116 @@ func classifyAllConsumers(graph map[string][]string, wl *transitiveWhitelist, mo
 	return out
 }
 
+// isTestVariant reports whether pkg is a synthesized test variant.
+func isTestVariant(pkg *packages.Package) bool {
+	if pkg == nil {
+		return false
+	}
+	if getBasePkgPath(pkg.ID) != pkg.ID {
+		return true // "X [X.test]" in-package variant
+	}
+	return consumerPath(pkg.PkgPath) != pkg.PkgPath // "_test" or ".test" suffix
+}
+
+// enumerateInfraLateralEdges returns the sorted, deduped production infra→infra
+// edges whose source and target families differ (intra-family excluded).
+func enumerateInfraLateralEdges(pkgs []*packages.Package, modulePath string) []infraEdge {
+	seen := make(map[infraEdge]bool)
+	var edges []infraEdge
+	for _, pkg := range pkgs {
+		if isTestVariant(pkg) {
+			continue
+		}
+		base := consumerPath(pkg.PkgPath)
+		if !isTrackedPackagePath(base, modulePath) {
+			continue
+		}
+		src := infraFamilyOf(relPath(base, modulePath))
+		if src == "" {
+			continue
+		}
+		for _, e := range collectInfraEdges(pkg.Imports, base, src, modulePath) {
+			if !seen[e] {
+				seen[e] = true
+				edges = append(edges, e)
+			}
+		}
+	}
+	sort.Slice(edges, func(i, j int) bool { return infraEdgeLess(edges[i], edges[j]) })
+	return edges
+}
+
+// collectInfraEdges returns the infra→infra lateral edges a single package
+// (base, of infra family src) directly imports: intra-family and non-infra
+// targets are excluded. Cross-package duplicates are deduped by the caller.
+func collectInfraEdges(imports map[string]*packages.Package, base, src, modulePath string) []infraEdge {
+	var out []infraEdge
+	for imp := range imports {
+		imp = consumerPath(imp)
+		if !strings.HasPrefix(imp, modulePath) || imp == base {
+			continue
+		}
+		tgt := infraFamilyOf(relPath(imp, modulePath))
+		if tgt == "" || tgt == src {
+			continue
+		}
+		out = append(out, infraEdge{Source: src, Target: tgt})
+	}
+	return out
+}
+
+// infraEdgeLess orders infraEdge pairs by (Source, Target) for deterministic
+// enumeration output.
+func infraEdgeLess(a, b infraEdge) bool {
+	if a.Source != b.Source {
+		return a.Source < b.Source
+	}
+	return a.Target < b.Target
+}
+
+// sliceContains: linear membership.
+func sliceContains(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+func classifyInfraLateralEdge(src, tgt string, wl *transitiveWhitelist) infraLateralClassification {
+	c := infraLateralClassification{Source: src, Target: tgt}
+	if wl != nil {
+		if allowed, ok := wl.Infra.Roots[src]; ok {
+			if sliceContains(allowed, tgt) {
+				c.Status = statusApprovedConstant
+				c.Detail = "composition root: composes " + tgt
+				return c
+			}
+			c.Status = statusDecisionRequired
+			c.Detail = fmt.Sprintf("composition root edge beyond allowed set: %s", tgt)
+			return c
+		}
+		if wl.Infra.isSanctioned(src, tgt) {
+			c.Status = statusApprovedConstant
+			c.Detail = "sanctioned adapter construction"
+			return c
+		}
+	}
+	c.Status = statusDecisionRequired
+	c.Detail = "lateral adapter-to-adapter edge"
+	return c
+}
+
+func classifyInfraLateralEdges(pkgs []*packages.Package, wl *transitiveWhitelist, modulePath string) []infraLateralClassification { //nolint:unused // sole caller real_architecture_test.go is behind //go:build arch, invisible to non-arch lint
+	edges := enumerateInfraLateralEdges(pkgs, modulePath)
+	out := make([]infraLateralClassification, 0, len(edges))
+	for _, e := range edges {
+		out = append(out, classifyInfraLateralEdge(e.Source, e.Target, wl))
+	}
+	return out
+}
+
 // joinList renders a family slice as a comma-separated list, or "—" when empty.
 func joinList(fams []string) string {
 	if len(fams) == 0 {
@@ -647,8 +907,9 @@ func expectedColumn(c consumerClassification) string {
 // formatTransitiveGateReport renders the v1 gate report: a "decision
 // required" section (consumer, whitelist-or-expected, closure, excess
 // families — every payer row is pending split-vs-accept) and an "approved
-// constant" section (count + list). Payer rows carry no invented rationales.
-func formatTransitiveGateReport(classifications []consumerClassification, wl *transitiveWhitelist) string {
+// constant" section (count + list), followed by the infra-family lateral-edge
+// sections. Payer rows carry no invented rationales.
+func formatTransitiveGateReport(classifications []consumerClassification, infra []infraLateralClassification, wl *transitiveWhitelist) string {
 	var sb strings.Builder
 
 	var decisions []string
@@ -691,5 +952,30 @@ func formatTransitiveGateReport(classifications []consumerClassification, wl *tr
 		_, _ = fmt.Fprintf(&sb, "  %s — %s\n", c.Consumer, c.Detail)
 	}
 
+	formatInfraLateralSection(infra, &sb)
+
 	return sb.String()
+}
+
+// formatInfraLateralSection renders the infra-family lateral-edge section of
+// the gate report (decision-required table + approved list) into sb.
+func formatInfraLateralSection(infra []infraLateralClassification, sb *strings.Builder) {
+	var infraDR, infraAppr []infraLateralClassification
+	for _, e := range infra {
+		if e.Status == statusDecisionRequired {
+			infraDR = append(infraDR, e)
+		} else {
+			infraAppr = append(infraAppr, e)
+		}
+	}
+	_, _ = fmt.Fprintf(sb, "\nInfrastructure lateral edges: %d | decision required: %d | approved: %d\n", len(infra), len(infraDR), len(infraAppr))
+	_, _ = fmt.Fprintf(sb, "\n— INFRA LATERAL — DECISION REQUIRED (%d) —\n", len(infraDR))
+	sb.WriteString("| source family | target family | detail |\n| --- | --- | --- |\n")
+	for _, e := range infraDR {
+		_, _ = fmt.Fprintf(sb, "| %s | %s | %s |\n", e.Source, e.Target, e.Detail)
+	}
+	_, _ = fmt.Fprintf(sb, "\n— INFRA LATERAL — APPROVED (%d) —\n", len(infraAppr))
+	for _, e := range infraAppr {
+		_, _ = fmt.Fprintf(sb, "  %s → %s — %s\n", e.Source, e.Target, e.Detail)
+	}
 }

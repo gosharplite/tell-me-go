@@ -17,7 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	authcontract "github.com/gosharplite/tell-me-go/internal/infrastructure/auth/contract"
 	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
 
@@ -58,7 +58,7 @@ const defaultMaxTokens = 16384
 type client struct {
 	httpClient     *http.Client
 	transport      http.RoundTripper
-	authenticator  auth.Authenticator
+	authenticator  authcontract.Authenticator
 	baseURL        string
 	model          string
 	headers        map[string]string
@@ -133,7 +133,7 @@ func WithLogger(l ports.Logger) anthropicOption {
 }
 
 // NewClient creates a new Anthropic client.
-func NewClient(baseURL, model string, authenticator auth.Authenticator, opts ...anthropicOption) *client {
+func NewClient(baseURL, model string, authenticator authcontract.Authenticator, opts ...anthropicOption) *client {
 	if baseURL == "" {
 		baseURL = "https://api.anthropic.com/v1"
 	}
@@ -417,11 +417,11 @@ func (c *client) buildHTTPRequest(ctx context.Context, body []byte) (*http.Reque
 	}
 
 	// Apply authentication
-	authReq := &auth.Request{Headers: make(map[string]string)}
-	if err := c.authenticator.Apply(ctx, authReq); err != nil {
+	authHeaders := authcontract.AuthHeaders{}
+	if err := c.authenticator.Apply(ctx, authHeaders); err != nil {
 		return nil, err
 	}
-	for k, v := range authReq.Headers {
+	for k, v := range authHeaders {
 		req.Header.Set(k, v)
 	}
 

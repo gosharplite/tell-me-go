@@ -15,15 +15,15 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 const maxConsecutiveWarnBeforeError = 5
 
 type asyncTurnsLogger struct {
-	file                infra_persistence.File
+	file                persistence.File
 	ch                  chan string
 	wg                  sync.WaitGroup
 	logger              *slog.Logger
@@ -34,7 +34,7 @@ type asyncTurnsLogger struct {
 }
 
 // NewAsyncTurnsLogger creates a new ports.TurnsLogger that writes to a file asynchronously.
-func NewAsyncTurnsLogger(ctx context.Context, fs infra_persistence.FileSystem, filePath string, logger *slog.Logger) (ports.TurnsLogger, error) {
+func NewAsyncTurnsLogger(ctx context.Context, fs persistence.FileSystem, filePath string, logger *slog.Logger) (ports.TurnsLogger, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}

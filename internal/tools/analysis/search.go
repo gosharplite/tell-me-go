@@ -13,7 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
+	"github.com/gosharplite/tell-me-go/internal/pkg/concurrentsearch"
 )
 
 type searchManager struct {
@@ -28,7 +28,7 @@ func (m *searchManager) executeSearch(ctx context.Context, path string, hb chan<
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	resChan, errChan := workspace.ConcurrentSearch(ctx, m.SP, m.FS, path, hb, matchFunc, m.Policy)
+	resChan, errChan := concurrentsearch.ConcurrentSearch(ctx, m.SP, m.FS, path, hb, matchFunc, m.Policy)
 
 	var results []string
 	truncated := false

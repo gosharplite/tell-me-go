@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	authcontract "github.com/gosharplite/tell-me-go/internal/infrastructure/auth/contract"
 	"google.golang.org/genai"
 )
 
@@ -156,19 +156,17 @@ func findInParts(parts []string, key string) string {
 }
 
 func (c *Client) prepareAuthHeader(ctx context.Context) (http.Header, error) {
-	authReq := &auth.Request{
-		Headers: make(map[string]string),
-	}
+	authHeaders := authcontract.AuthHeaders{}
 	c.mu.RLock()
 	authenticator := c.authenticator
 	c.mu.RUnlock()
 
-	if err := authenticator.Apply(ctx, authReq); err != nil {
+	if err := authenticator.Apply(ctx, authHeaders); err != nil {
 		return nil, err
 	}
 
 	headers := make(http.Header)
-	for k, v := range authReq.Headers {
+	for k, v := range authHeaders {
 		headers.Set(k, v)
 	}
 	return headers, nil

@@ -14,7 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	authcontract "github.com/gosharplite/tell-me-go/internal/infrastructure/auth/contract"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
 
@@ -22,14 +22,14 @@ import (
 type llmProviderHealthChecker struct {
 	providerName  string
 	family        config.APIFamily // wire-protocol family for dispatch
-	authenticator auth.Authenticator
+	authenticator authcontract.Authenticator
 	baseURL       string
 	httpClient    *http.Client
 	gateway       llm.LLMGateway
 }
 
 // NewLLMProviderHealthChecker creates a new llmProviderHealthChecker.
-func NewLLMProviderHealthChecker(family config.APIFamily, providerName string, authenticator auth.Authenticator, baseURL string, gateway llm.LLMGateway) *llmProviderHealthChecker {
+func NewLLMProviderHealthChecker(family config.APIFamily, providerName string, authenticator authcontract.Authenticator, baseURL string, gateway llm.LLMGateway) *llmProviderHealthChecker {
 	if baseURL == "" {
 		//exhaustive:enforce
 		switch family {
@@ -77,13 +77,13 @@ func (c *llmProviderHealthChecker) Check(ctx context.Context) (*ports.ComponentR
 	}
 
 	// Step 1: Configuration validation
-	authReq := &auth.Request{Headers: make(map[string]string)}
-	if configReport := c.checkConfiguration(ctx, report, authReq); configReport != nil {
+	authHeaders := authcontract.AuthHeaders{}
+	if configReport := c.checkConfiguration(ctx, report, authHeaders); configReport != nil {
 		return configReport, nil
 	}
 
 	// Step 2: Build request
-	req, err := c.buildRequest(ctx, authReq)
+	req, err := c.buildRequest(ctx, authHeaders)
 	if err != nil {
 		report.Status = ports.StatusUnhealthy
 		report.Message = fmt.Sprintf("failed to create health check request: %v", err)
@@ -99,20 +99,20 @@ func (c *llmProviderHealthChecker) Check(ctx context.Context) (*ports.ComponentR
 }
 
 // checkConfiguration validates authenticator and API key
-func (c *llmProviderHealthChecker) checkConfiguration(ctx context.Context, report *ports.ComponentReport, authReq *auth.Request) *ports.ComponentReport {
+func (c *llmProviderHealthChecker) checkConfiguration(ctx context.Context, report *ports.ComponentReport, authHeaders authcontract.AuthHeaders) *ports.ComponentReport {
 	if c.authenticator == nil {
 		report.Status = ports.StatusUnhealthy
 		report.Message = "LLM API key is missing (no authenticator)"
 		return report
 	}
 
-	if err := c.authenticator.Apply(ctx, authReq); err != nil {
+	if err := c.authenticator.Apply(ctx, authHeaders); err != nil {
 		report.Status = ports.StatusUnhealthy
 		report.Message = "LLM API key is missing or invalid"
 		report.Error = err
 		return report
 	}
-	if len(authReq.Headers) == 0 {
+	if len(authHeaders) == 0 {
 		report.Status = ports.StatusUnhealthy
 		report.Message = "LLM API key is missing"
 		return report
@@ -122,7 +122,7 @@ func (c *llmProviderHealthChecker) checkConfiguration(ctx context.Context, repor
 }
 
 // buildRequest creates the HTTP request for health check
-func (c *llmProviderHealthChecker) buildRequest(ctx context.Context, authReq *auth.Request) (*http.Request, error) {
+func (c *llmProviderHealthChecker) buildRequest(ctx context.Context, authHeaders authcontract.AuthHeaders) (*http.Request, error) {
 	method, url, err := c.getPingEndpoint()
 	if err != nil {
 		return nil, err
@@ -133,7 +133,7 @@ func (c *llmProviderHealthChecker) buildRequest(ctx context.Context, authReq *au
 	}
 
 	// Apply authentication headers
-	for k, v := range authReq.Headers {
+	for k, v := range authHeaders {
 		req.Header.Set(k, v)
 	}
 

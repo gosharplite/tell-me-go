@@ -21,21 +21,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	authcontract "github.com/gosharplite/tell-me-go/internal/infrastructure/auth/contract"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
-
-// Authenticator defines the interface for injecting credentials into API requests.
-type Authenticator interface {
-	Invalidate()
-	Apply(ctx context.Context, req *Request) error
-}
-
-// Request is a wrapper for the headers needed to apply authentication.
-type Request struct {
-	Headers map[string]string
-}
 
 // VertexAuth handles authentication for Vertex AI using GCP tokens.
 type VertexAuth struct {
@@ -44,6 +34,8 @@ type VertexAuth struct {
 	tokenCmdFunc func() ([]byte, error)
 	// CacheDir allows overriding the default cache location. Primarily for testing.
 	CacheDir string
+	// fs is the injected filesystem port used to persist the token cache.
+	fs persistence.FileSystem
 }
 
 // NewVertexAuth returns a VertexAuth wired with the production gcloud executor
@@ -54,6 +46,7 @@ func NewVertexAuth() *VertexAuth {
 		tokenCmdFunc: func() ([]byte, error) {
 			return execCommand("gcloud", "auth", "print-access-token").Output()
 		},
+		fs: defaultFS,
 	}
 }
 
@@ -119,7 +112,7 @@ func (a *VertexAuth) writeCacheFile(ctx context.Context, token string) {
 		log.Printf("failed to create auth cache directory: %v", err)
 		return
 	}
-	if err := persistence.AtomicWrite(ctx, &persistence.OSFileSystem{}, cacheFile, []byte(token), 0600); err != nil {
+	if err := a.fs.AtomicWrite(ctx, cacheFile, []byte(token), 0600); err != nil {
 		log.Printf("failed to write auth cache: %v", err)
 	}
 }
@@ -165,13 +158,13 @@ func (a *VertexAuth) Invalidate() {
 }
 
 // Apply injects the Bearer token into the request headers.
-func (a *VertexAuth) Apply(ctx context.Context, req *Request) error {
+func (a *VertexAuth) Apply(ctx context.Context, headers authcontract.AuthHeaders) error {
 	token, err := a.getToken(ctx)
 	if err != nil {
 		return err
 	}
 	if token != "" {
-		req.Headers["Authorization"] = "Bearer " + token
+		headers["Authorization"] = "Bearer " + token
 	}
 	return nil
 }
@@ -183,10 +176,10 @@ type APIKeyAuth struct {
 
 func (a *APIKeyAuth) Invalidate() {
 }
-func (a *APIKeyAuth) Apply(ctx context.Context, req *Request) error {
+func (a *APIKeyAuth) Apply(ctx context.Context, headers authcontract.AuthHeaders) error {
 	if a.APIKey != "" {
 		// Default to Gemini-style header; this will be specialized per provider in Phase 2
-		req.Headers["x-goog-api-key"] = a.APIKey
+		headers["x-goog-api-key"] = a.APIKey
 	}
 	return nil
 }
@@ -198,9 +191,9 @@ type BearerAuth struct {
 
 func (a *BearerAuth) Invalidate() {
 }
-func (a *BearerAuth) Apply(ctx context.Context, req *Request) error {
+func (a *BearerAuth) Apply(ctx context.Context, headers authcontract.AuthHeaders) error {
 	if a.Token != "" {
-		req.Headers["Authorization"] = "Bearer " + a.Token
+		headers["Authorization"] = "Bearer " + a.Token
 	}
 	return nil
 }
@@ -212,9 +205,9 @@ type AnthropicAuth struct {
 
 func (a *AnthropicAuth) Invalidate() {
 }
-func (a *AnthropicAuth) Apply(ctx context.Context, req *Request) error {
+func (a *AnthropicAuth) Apply(ctx context.Context, headers authcontract.AuthHeaders) error {
 	if a.APIKey != "" {
-		req.Headers["x-api-key"] = a.APIKey
+		headers["x-api-key"] = a.APIKey
 	}
 	return nil
 }
@@ -299,13 +292,13 @@ func (a *ServiceAccountAuth) Invalidate() {
 	a.token = ""
 }
 
-func (a *ServiceAccountAuth) Apply(ctx context.Context, req *Request) error {
+func (a *ServiceAccountAuth) Apply(ctx context.Context, headers authcontract.AuthHeaders) error {
 	token, err := a.getToken(ctx)
 	if err != nil {
 		return err
 	}
 	if token != "" {
-		req.Headers["Authorization"] = "Bearer " + token
+		headers["Authorization"] = "Bearer " + token
 	}
 	return nil
 }
@@ -315,6 +308,6 @@ type noOpAuth struct{}
 
 func (a *noOpAuth) Invalidate() {
 }
-func (a *noOpAuth) Apply(ctx context.Context, req *Request) error {
+func (a *noOpAuth) Apply(ctx context.Context, headers authcontract.AuthHeaders) error {
 	return nil
 }

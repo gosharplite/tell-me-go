@@ -19,6 +19,7 @@ import (
 	domain_persistence "github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
+	"github.com/gosharplite/tell-me-go/internal/pkg/concurrentsearch"
 )
 
 type benchmarkSearchSecurityManager struct {
@@ -38,7 +39,7 @@ func BenchmarkConcurrentSearch_FullProject(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctx, cancel := context.WithCancel(ctx)
-		resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", nil, func(_, line string) (string, bool) {
+		resChan, errChan := concurrentsearch.ConcurrentSearch(ctx, sp, fs, ".", nil, func(_, line string) (string, bool) {
 			return "", strings.Contains(line, "func ")
 		}, infra_persistence.NewWorkspacePolicy())
 
@@ -67,7 +68,7 @@ func BenchmarkConcurrentSearch_EarlyStop(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctx, cancel := context.WithCancel(ctx)
-		resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", nil, func(_, line string) (string, bool) {
+		resChan, errChan := concurrentsearch.ConcurrentSearch(ctx, sp, fs, ".", nil, func(_, line string) (string, bool) {
 			return "", strings.Contains(line, "func ")
 		}, infra_persistence.NewWorkspacePolicy())
 
@@ -122,7 +123,7 @@ func BenchmarkConcurrentSearch_SyntheticScale(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctx, cancel := context.WithCancel(ctx)
-		resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", nil, matcher, policy)
+		resChan, errChan := concurrentsearch.ConcurrentSearch(ctx, sp, fs, ".", nil, matcher, policy)
 
 		var count int
 		for range resChan {
@@ -197,7 +198,7 @@ func BenchmarkConcurrentSearch_IOScale(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctx, cancel := context.WithCancel(ctx)
-		resChan, errChan := ConcurrentSearch(ctx, sp, fs, tmpDir, nil, matcher, policy)
+		resChan, errChan := concurrentsearch.ConcurrentSearch(ctx, sp, fs, tmpDir, nil, matcher, policy)
 
 		var count int
 		for range resChan {
@@ -251,7 +252,7 @@ func BenchmarkConcurrentSearch_Stress_100KFiles(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctx, cancel := context.WithCancel(ctx)
-		resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", nil, matcher, policy)
+		resChan, errChan := concurrentsearch.ConcurrentSearch(ctx, sp, fs, ".", nil, matcher, policy)
 
 		var count int
 		for range resChan {

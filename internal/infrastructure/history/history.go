@@ -35,6 +35,19 @@ func NewManager(fs persistence.FileSystem, filePath string, archivePath string) 
 	}
 }
 
+// NewManagerWithAssetStore creates a new history manager with an injected
+// asset store (the domain persistence.AssetStore port). The DI root uses this
+// to inject the concrete infrastructure AssetStore built against the resolved
+// AssetsPath, inverting the adapter-to-adapter edge (issue #1350, item 5).
+func NewManagerWithAssetStore(fs persistence.FileSystem, assetStore persistence.AssetStore, filePath string, archivePath string) *Manager {
+	return &Manager{
+		store:    newJSONLStoreWithAssetStore(fs, assetStore, filePath, archivePath),
+		logger:   &ports.NoOpLogger{},
+		FilePath: filePath,
+		Contents: []*llm.Content{},
+	}
+}
+
 // WithLogger sets the logger for the Manager.
 func (m *Manager) WithLogger(l ports.Logger) *Manager {
 	if l != nil {

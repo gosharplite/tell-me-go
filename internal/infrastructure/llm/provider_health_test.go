@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	authcontract "github.com/gosharplite/tell-me-go/internal/infrastructure/auth/contract"
 )
 
 // errorAuthenticator overrides Apply to return an error for testing.
@@ -22,7 +23,7 @@ type errorAuthenticator struct {
 	auth.BearerAuth
 }
 
-func (e *errorAuthenticator) Apply(ctx context.Context, req *auth.Request) error {
+func (e *errorAuthenticator) Apply(ctx context.Context, headers authcontract.AuthHeaders) error {
 	return fmt.Errorf("mock-apply-error")
 }
 
@@ -389,7 +390,7 @@ func TestLLMProviderHealthChecker_ComprehensiveEdgeCases(t *testing.T) {
 		useServer       bool
 		serverHandler   func(w http.ResponseWriter, r *http.Request)
 		cancelCtx       bool
-		authenticator   auth.Authenticator
+		authenticator   authcontract.Authenticator
 		wantStatus      ports.HealthStatus
 		wantMsgContains string
 	}{

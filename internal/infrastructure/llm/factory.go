@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	authcontract "github.com/gosharplite/tell-me-go/internal/infrastructure/auth/contract"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/anthropic"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/gemini"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/openai"
@@ -39,7 +40,7 @@ var deprecatedDeepSeekModels = map[string]string{
 // buildBaseClient constructs a provider-specific LLM client based on the
 // provider type. Unknown or empty types fall back to Gemini. The caller
 // must provide a pre-created authenticator.
-func buildBaseClient(p config.LLMProvider, authenticator auth.Authenticator, persona string, useSearch bool, timeout time.Duration, maxBudget int, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error) {
+func buildBaseClient(p config.LLMProvider, authenticator authcontract.Authenticator, persona string, useSearch bool, timeout time.Duration, maxBudget int, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error) {
 	var baseClient llm.LLMClient
 	var err error
 
@@ -200,7 +201,7 @@ func newFailoverChain(cfg *config.Config, pData pricing.PricingData, bus events.
 	return newFailoverGateway(clients), nil
 }
 
-func createAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
+func createAuthenticator(p *config.LLMProvider) (authcontract.Authenticator, error) {
 	// Preserve the existing logic for Service Account JSON
 	if p.APIKey != "" && strings.HasSuffix(strings.ToLower(p.APIKey), ".json") {
 		if _, err := os.Stat(p.APIKey); err == nil {
@@ -227,7 +228,7 @@ func createAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
 // (openai, deepseek, kimi). For kimi, there is no Vertex fallback and an
 // API key is always required — this label-specific override must be checked
 // before the VertexAuth path.
-func openAIFamilyAuth(p *config.LLMProvider) (auth.Authenticator, error) {
+func openAIFamilyAuth(p *config.LLMProvider) (authcontract.Authenticator, error) {
 	if p.APIKey == "" {
 		if p.Type == "kimi" {
 			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
@@ -241,14 +242,14 @@ func openAIFamilyAuth(p *config.LLMProvider) (auth.Authenticator, error) {
 }
 
 // anthropicFamilyAuth returns the authenticator for Anthropic providers.
-func anthropicFamilyAuth(p *config.LLMProvider) (auth.Authenticator, error) {
+func anthropicFamilyAuth(p *config.LLMProvider) (authcontract.Authenticator, error) {
 	if p.APIKey == "" {
 		return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
 	}
 	return &auth.AnthropicAuth{APIKey: p.APIKey}, nil
 }
 
-func resolveGoogleAuth(p *config.LLMProvider) (auth.Authenticator, error) {
+func resolveGoogleAuth(p *config.LLMProvider) (authcontract.Authenticator, error) {
 	if p.APIKey != "" {
 		return &auth.APIKeyAuth{APIKey: p.APIKey}, nil
 	}
@@ -278,7 +279,7 @@ func resolveTimeout(cfg *config.Config) time.Duration {
 //
 // Returns an error if no credentials are available and the provider
 // does not support credential-less authentication.
-func CreateAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
+func CreateAuthenticator(p *config.LLMProvider) (authcontract.Authenticator, error) {
 	return createAuthenticator(p)
 }
 
