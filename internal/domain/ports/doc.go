@@ -75,9 +75,6 @@
 //   - SuggestionProvider
 //   - PromptTracker
 //
-// ## Family: Authentication
-//   - Authenticator
-//
 // ## Supporting
 //   - ChatterFactory
 //   - CaptureOptions
@@ -110,7 +107,6 @@
 //   - WithRaw
 //   - WithTUIPrompt
 //   - NewSession
-//   - Request
 //
 // All interfaces in this package are designed for dependency injection.
 // Implementations live in internal/infrastructure/ and internal/ui/.

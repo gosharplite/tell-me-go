@@ -70,7 +70,7 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"TestHistoryManager_SetPinned_WithFunctionCall":   {Line: 392, Complexity: 21, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestStartSpinnerLifecycle":                       {Line: 176, Complexity: 17, FilePath: "internal/ui/renderer_spinner_test.go"},
 		"TestGetModelTurn":                                {Line: 1446, Complexity: 16, FilePath: "internal/infrastructure/history/history_test.go"},
-		"TestPrepareMediaAssets_KimiURL_UploadsVideo":     {Line: 378, Complexity: 16, FilePath: "internal/infrastructure/llm/openai/files_test.go"},
+		"TestPrepareMediaAssets_KimiURL_UploadsVideo":     {Line: 379, Complexity: 16, FilePath: "internal/infrastructure/llm/openai/files_test.go"},
 		"(*rootBrowserModel).handleActionKeys":            {Line: 294, Complexity: 15, FilePath: "internal/ui/tui/browser.go"},
 		"TestHistoryNavigation_CompleteWorkflow":          {Line: 161, Complexity: 15, FilePath: "tests/e2e/history_flags_test.go"},
 		"(*indexer).snapshot":                             {Line: 112, Complexity: 14, FilePath: "internal/tools/analysis/index_snapshot_test.go"},
