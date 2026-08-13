@@ -144,5 +144,9 @@ allowed: llm, security, tools
 ## consumer: internal/ui/tui/progress
 allowed: config, events, llm, persistence, pricing, security, services, telemetry, tools
 # P1+P2+P5: progress deps
+## consumer: internal/pkg/metricsfmt
+allowed: events, llm, telemetry, tools
+# events=prod-direct; llm=test-direct (P4, white-box test builds llm.Metrics); telemetry=P1 (events→telemetry); tools=P2 (events→llm→tools)
+
 ## consumer: internal/domain/ports
 allowed: <derived>

@@ -276,7 +276,7 @@ catalog a new gap no one reviewed. Policy:
   in `teardownSession` — the TUI summary/subscription path added with the TUI
   auto-close summary feature — the same acceptance class (TUI integration
   requiring a ProgressRenderer + full TUI harness).
-- **See**: `internal/agent/session/session_manager.go:136-143,202-209,333-336`
+- **See**: `internal/agent/session/session_manager.go:137-144,203-210,334-337`
 
 ### agent/session/ui/dispatcher.go — ToolOutputStreamEvent case in handleSystemMessage
 
@@ -869,7 +869,7 @@ catalog a new gap no one reviewed. Policy:
   `internal/agent/session/ui/dispatcher.go`) would trade one well-understood
   Go pattern for another with no reduction in cognitive complexity. The code
   is already clean and well-structured.
-- **See**: `internal/ui/tui/progress/model.go:338`
+- **See**: `internal/ui/tui/progress/model.go:339`
 
 ### agent/session/ui/dispatcher.go — handleToolEvents (CC=10)
 
@@ -958,7 +958,7 @@ to reason about.
   function with no cognitive benefit. Same acceptance class as `handleDomainEvent`
   (type-switch dispatch pattern where CC is structural, not from branching
   business logic).
-- **See**: `internal/ui/tui/progress/model.go:251`
+- **See**: `internal/ui/tui/progress/model.go:252`
 
 ### ui/tui/progress/renderer.go — (*renderer).makeSubscriber (CC=11)
 
