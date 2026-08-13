@@ -32,7 +32,7 @@ ifeq ($(OS),Windows_NT)
     endif
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-tools-toolchain-import verify-tools-infrastructure-import verify-no-test-sleep verify-architecture verify-exit-query verify-transitive-gate verify-nonfix-catalog verify-adr-index verify-no-context-window-cache lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-tools-toolchain-import verify-tools-infrastructure-import verify-no-test-sleep verify-architecture verify-exit-query verify-transitive-gate verify-nonfix-catalog verify-ports-registry verify-adr-index verify-no-context-window-cache lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -43,6 +43,7 @@ help:
 	@echo "  make verify-transitive-gate - Verify the ADR-056 transitive closure gate (STRICT; part of make check/check-full)"
 	@echo "  make verify-exit-query - ADR-056 Decision 1 exit query (report-only; ports realignment lens)"
 	@echo "  make verify-nonfix-catalog - Verify the complexity-pin catalog partition (issue #1297)"
+	@echo "  make verify-ports-registry - Verify the ports registry bijection, N<=12, stay-key liveness, and Supporting admission (issue #1343)"
 	@echo "  make verify-no-test-sleep - Verify no time.Sleep for synchronization in tests"
 	@echo "  make verify-tools-adapter-import - Verify tools adapter imports are confined to default_fs.go (ADR-055)"
 	@echo "  make verify-tools-toolchain-import - Verify no infrastructure/toolchain imports in tools production files (issue #1325)"
@@ -686,6 +687,17 @@ else
 	@go test -tags=arch -run TestVerifyNonFixCatalog ./internal/tools/analysis
 endif
 
+# Verify the ports registry (issue #1343, ADR-064): runs the live
+# arch-tagged gate against internal/domain/ports/doc.go, enforcing the
+# registry bijection, the N ≤ 12 family bound, the ADR-056 stay-key liveness,
+# and the 5-clause Supporting admission rule. Zero violations = pass.
+verify-ports-registry:
+ifeq ($(IS_POSIX),true)
+	@go test -tags=arch -run TestVerifyPortsRegistry ./internal/tools/analysis
+else
+	@go test -tags=arch -run TestVerifyPortsRegistry ./internal/tools/analysis
+endif
+
 # AI-SAFE RACE TEST: 
 # Running 'go test -race ./...' globally can time out in constrained environments.
 # This target iterates through packages sequentially for stability.
@@ -856,6 +868,7 @@ check: fmt tidy build
 	@$(MAKE) verify-exit-query
 	@echo "=== verify-nonfix-catalog ==="
 	@$(MAKE) verify-nonfix-catalog
+	@$(MAKE) verify-ports-registry
 	@echo "=== verify-mock-pattern ==="
 	@$(MAKE) verify-mock-pattern
 	@echo "=== verify-session-provider-mock ==="
@@ -900,6 +913,7 @@ check-full: fmt tidy build
 	@$(MAKE) verify-exit-query
 	@echo "=== verify-nonfix-catalog ==="
 	@$(MAKE) verify-nonfix-catalog
+	@$(MAKE) verify-ports-registry
 	@echo "=== verify-mock-pattern ==="
 	@$(MAKE) verify-mock-pattern
 	@echo "=== verify-session-provider-mock ==="
