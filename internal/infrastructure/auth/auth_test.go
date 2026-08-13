@@ -22,13 +22,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"golang.org/x/oauth2"
 )
 
 func TestVertexAuth(t *testing.T) {
 	ctx := context.Background()
 	auth := &VertexAuth{Token: "test-token"}
-	req := &Request{
+	req := &ports.Request{
 		Headers: make(map[string]string),
 	}
 	if err := auth.Apply(ctx, req); err != nil {
@@ -183,7 +184,7 @@ func TestServiceAccountAuth(t *testing.T) {
 	t.Run("Apply cached token", func(t *testing.T) {
 		auth.token = "sa-token"
 		auth.expiry = time.Now().Add(10 * time.Minute)
-		req := &Request{Headers: make(map[string]string)}
+		req := &ports.Request{Headers: make(map[string]string)}
 		if err := auth.Apply(ctx, req); err != nil {
 			t.Fatalf("Apply failed: %v", err)
 		}
@@ -213,7 +214,7 @@ func TestVertexAuth_Concurrency(t *testing.T) {
 	errChan := make(chan error, n)
 	for i := 0; i < n; i++ {
 		go func() {
-			req := &Request{Headers: make(map[string]string)}
+			req := &ports.Request{Headers: make(map[string]string)}
 			err := auth.Apply(ctx, req)
 			if err == nil {
 				if req.Headers["Authorization"] != "Bearer concurrent-token" {
@@ -262,7 +263,7 @@ func testSA_SuccessfulExchange(t *testing.T) {
 		},
 	}
 
-	req := &Request{Headers: make(map[string]string)}
+	req := &ports.Request{Headers: make(map[string]string)}
 	if err := auth.Apply(ctx, req); err != nil {
 		t.Fatalf("Apply failed: %v", err)
 	}
@@ -418,7 +419,7 @@ func TestOtherAuthenticators(t *testing.T) {
 
 	t.Run("APIKeyAuth", func(t *testing.T) {
 		auth := &APIKeyAuth{APIKey: "test-api-key"}
-		req := &Request{Headers: make(map[string]string)}
+		req := &ports.Request{Headers: make(map[string]string)}
 		_ = auth.Apply(ctx, req)
 		if req.Headers["x-goog-api-key"] != "test-api-key" {
 			t.Errorf("got %s, want test-api-key", req.Headers["x-goog-api-key"])
@@ -428,7 +429,7 @@ func TestOtherAuthenticators(t *testing.T) {
 
 	t.Run("BearerAuth", func(t *testing.T) {
 		auth := &BearerAuth{Token: "test-bearer"}
-		req := &Request{Headers: make(map[string]string)}
+		req := &ports.Request{Headers: make(map[string]string)}
 		_ = auth.Apply(ctx, req)
 		if req.Headers["Authorization"] != "Bearer test-bearer" {
 			t.Errorf("got %s, want Bearer test-bearer", req.Headers["Authorization"])
@@ -438,7 +439,7 @@ func TestOtherAuthenticators(t *testing.T) {
 
 	t.Run("AnthropicAuth", func(t *testing.T) {
 		auth := &AnthropicAuth{APIKey: "test-anthropic"}
-		req := &Request{Headers: make(map[string]string)}
+		req := &ports.Request{Headers: make(map[string]string)}
 		_ = auth.Apply(ctx, req)
 		if req.Headers["x-api-key"] != "test-anthropic" {
 			t.Errorf("got %s, want test-anthropic", req.Headers["x-api-key"])
@@ -454,7 +455,7 @@ func TestNoOpAuth(t *testing.T) {
 	a.Invalidate()
 
 	// Should return nil error
-	req := &Request{Headers: make(map[string]string)}
+	req := &ports.Request{Headers: make(map[string]string)}
 	err := a.Apply(context.Background(), req)
 	if err != nil {
 		t.Errorf("Apply() expected nil error, got %v", err)
@@ -533,7 +534,7 @@ func TestVertexAuth_Apply_Error(t *testing.T) {
 		},
 	}
 
-	req := &Request{Headers: make(map[string]string)}
+	req := &ports.Request{Headers: make(map[string]string)}
 	err := auth.Apply(ctx, req)
 
 	if err == nil || !strings.Contains(err.Error(), "mock gcloud error") {
@@ -549,7 +550,7 @@ func TestServiceAccountAuth_Apply_Error(t *testing.T) {
 		},
 	}
 
-	req := &Request{Headers: make(map[string]string)}
+	req := &ports.Request{Headers: make(map[string]string)}
 	err := auth.Apply(ctx, req)
 
 	if err == nil || !strings.Contains(err.Error(), "mock oauth2 error") {
@@ -590,7 +591,7 @@ func TestEmptyCredentials_NoHeaderAdded(t *testing.T) {
 	t.Run("APIKeyAuth empty key", func(t *testing.T) {
 		t.Parallel()
 		auth := &APIKeyAuth{APIKey: ""}
-		req := &Request{Headers: make(map[string]string)}
+		req := &ports.Request{Headers: make(map[string]string)}
 		err := auth.Apply(ctx, req)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
@@ -603,7 +604,7 @@ func TestEmptyCredentials_NoHeaderAdded(t *testing.T) {
 	t.Run("BearerAuth empty token", func(t *testing.T) {
 		t.Parallel()
 		auth := &BearerAuth{Token: ""}
-		req := &Request{Headers: make(map[string]string)}
+		req := &ports.Request{Headers: make(map[string]string)}
 		err := auth.Apply(ctx, req)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
@@ -616,7 +617,7 @@ func TestEmptyCredentials_NoHeaderAdded(t *testing.T) {
 	t.Run("AnthropicAuth empty key", func(t *testing.T) {
 		t.Parallel()
 		auth := &AnthropicAuth{APIKey: ""}
-		req := &Request{Headers: make(map[string]string)}
+		req := &ports.Request{Headers: make(map[string]string)}
 		err := auth.Apply(ctx, req)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)

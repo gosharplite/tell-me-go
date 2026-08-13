@@ -22,20 +22,10 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
-
-// Authenticator defines the interface for injecting credentials into API requests.
-type Authenticator interface {
-	Invalidate()
-	Apply(ctx context.Context, req *Request) error
-}
-
-// Request is a wrapper for the headers needed to apply authentication.
-type Request struct {
-	Headers map[string]string
-}
 
 // VertexAuth handles authentication for Vertex AI using GCP tokens.
 type VertexAuth struct {
@@ -168,7 +158,7 @@ func (a *VertexAuth) Invalidate() {
 }
 
 // Apply injects the Bearer token into the request headers.
-func (a *VertexAuth) Apply(ctx context.Context, req *Request) error {
+func (a *VertexAuth) Apply(ctx context.Context, req *ports.Request) error {
 	token, err := a.getToken(ctx)
 	if err != nil {
 		return err
@@ -186,7 +176,7 @@ type APIKeyAuth struct {
 
 func (a *APIKeyAuth) Invalidate() {
 }
-func (a *APIKeyAuth) Apply(ctx context.Context, req *Request) error {
+func (a *APIKeyAuth) Apply(ctx context.Context, req *ports.Request) error {
 	if a.APIKey != "" {
 		// Default to Gemini-style header; this will be specialized per provider in Phase 2
 		req.Headers["x-goog-api-key"] = a.APIKey
@@ -201,7 +191,7 @@ type BearerAuth struct {
 
 func (a *BearerAuth) Invalidate() {
 }
-func (a *BearerAuth) Apply(ctx context.Context, req *Request) error {
+func (a *BearerAuth) Apply(ctx context.Context, req *ports.Request) error {
 	if a.Token != "" {
 		req.Headers["Authorization"] = "Bearer " + a.Token
 	}
@@ -215,7 +205,7 @@ type AnthropicAuth struct {
 
 func (a *AnthropicAuth) Invalidate() {
 }
-func (a *AnthropicAuth) Apply(ctx context.Context, req *Request) error {
+func (a *AnthropicAuth) Apply(ctx context.Context, req *ports.Request) error {
 	if a.APIKey != "" {
 		req.Headers["x-api-key"] = a.APIKey
 	}
@@ -302,7 +292,7 @@ func (a *ServiceAccountAuth) Invalidate() {
 	a.token = ""
 }
 
-func (a *ServiceAccountAuth) Apply(ctx context.Context, req *Request) error {
+func (a *ServiceAccountAuth) Apply(ctx context.Context, req *ports.Request) error {
 	token, err := a.getToken(ctx)
 	if err != nil {
 		return err
@@ -318,6 +308,6 @@ type noOpAuth struct{}
 
 func (a *noOpAuth) Invalidate() {
 }
-func (a *noOpAuth) Apply(ctx context.Context, req *Request) error {
+func (a *noOpAuth) Apply(ctx context.Context, req *ports.Request) error {
 	return nil
 }

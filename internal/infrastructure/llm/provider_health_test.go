@@ -22,7 +22,7 @@ type errorAuthenticator struct {
 	auth.BearerAuth
 }
 
-func (e *errorAuthenticator) Apply(ctx context.Context, req *auth.Request) error {
+func (e *errorAuthenticator) Apply(ctx context.Context, req *ports.Request) error {
 	return fmt.Errorf("mock-apply-error")
 }
 
@@ -389,7 +389,7 @@ func TestLLMProviderHealthChecker_ComprehensiveEdgeCases(t *testing.T) {
 		useServer       bool
 		serverHandler   func(w http.ResponseWriter, r *http.Request)
 		cancelCtx       bool
-		authenticator   auth.Authenticator
+		authenticator   ports.Authenticator
 		wantStatus      ports.HealthStatus
 		wantMsgContains string
 	}{
