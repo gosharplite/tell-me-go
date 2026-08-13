@@ -140,3 +140,7 @@ The context-pipeline family leaves `internal/domain/ports`:
 ### SessionConfig realignment completed (2026-08)
 
 **SessionConfig realignment completed** — interface moved to `internal/agent/session` per ADR-003 Rule #1; `ports.SessionConfig` deleted; move is edge-neutral for the transitive gate (no whitelist change).
+
+### Authenticator realignment completed (2026-08, #1358)
+
+**Authenticator realignment completed** — interface + `Request`→`AuthHeaders` carrier moved from `internal/domain/ports` to `internal/infrastructure/auth/contract` per ADR-065 (infra-only multi-package seam rule); `ports.Authenticator`/`ports.Request` deleted; edge-neutral for the transitive gate (reuses the sanctioned `llm → auth` edge). See ADR-065.
