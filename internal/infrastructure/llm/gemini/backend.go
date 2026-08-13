@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"google.golang.org/genai"
 )
 
@@ -156,7 +156,7 @@ func findInParts(parts []string, key string) string {
 }
 
 func (c *Client) prepareAuthHeader(ctx context.Context) (http.Header, error) {
-	authReq := &auth.Request{
+	authReq := &ports.Request{
 		Headers: make(map[string]string),
 	}
 	c.mu.RLock()

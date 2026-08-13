@@ -15,14 +15,13 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 )
 
 // client implements the llm.LLMClient interface for OpenAI-compatible APIs.
 type client struct {
 	httpClient         *http.Client
 	transport          http.RoundTripper
-	authenticator      auth.Authenticator
+	authenticator      ports.Authenticator
 	baseURL            string
 	model              string
 	capabilities       llm.Capabilities
@@ -130,7 +129,7 @@ func WithLogger(l ports.Logger) Option {
 }
 
 // NewClient creates a new OpenAI-compatible client.
-func NewClient(baseURL, model string, authenticator auth.Authenticator, opts ...Option) *client {
+func NewClient(baseURL, model string, authenticator ports.Authenticator, opts ...Option) *client {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
@@ -911,7 +910,7 @@ func (c *client) newAuthenticatedRequest(ctx context.Context, method, url string
 		req.Header.Set(k, v)
 	}
 	// Authenticator headers (e.g. Authorization, x-api-key)
-	authReq := &auth.Request{Headers: make(map[string]string)}
+	authReq := &ports.Request{Headers: make(map[string]string)}
 	if err := c.authenticator.Apply(ctx, authReq); err != nil {
 		return nil, err
 	}

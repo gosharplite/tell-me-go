@@ -24,7 +24,7 @@ import (
 	"google.golang.org/genai"
 )
 
-// stubAuthenticator is a local test double for auth.Authenticator.
+// stubAuthenticator is a local test double for ports.Authenticator.
 // It proves that consumer packages can now implement the interface
 // without importing any auth concrete type (ADR-033).
 type stubAuthenticator struct {
@@ -33,7 +33,7 @@ type stubAuthenticator struct {
 
 func (s *stubAuthenticator) Invalidate() {}
 
-func (s *stubAuthenticator) Apply(_ context.Context, req *auth.Request) error {
+func (s *stubAuthenticator) Apply(_ context.Context, req *ports.Request) error {
 	if s.token != "" {
 		req.Headers["Authorization"] = "Bearer " + s.token
 	}
@@ -1322,7 +1322,7 @@ func TestGemini_ResetConnections_ThreadSafety(t *testing.T) {
 
 // TestNewClient_WithLocalStubAuthenticator verifies that a consumer-defined
 // test double (not importing any auth concrete type) satisfies
-// auth.Authenticator and correctly injects credentials.
+// ports.Authenticator and correctly injects credentials.
 func TestNewClient_WithLocalStubAuthenticator(t *testing.T) {
 	stub := &stubAuthenticator{token: "local-stub-token"}
 

@@ -20,6 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	domainLLM "github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/stretchr/testify/assert"
@@ -177,7 +178,7 @@ func TestCreateAuthenticator_Public(t *testing.T) {
 	}
 }
 
-func assertCreateAuthenticatorResult(t *testing.T, a auth.Authenticator, err error, wantErr, wantAuthNil bool, wantType string) {
+func assertCreateAuthenticatorResult(t *testing.T, a ports.Authenticator, err error, wantErr, wantAuthNil bool, wantType string) {
 	t.Helper()
 	if (err != nil) != wantErr {
 		t.Errorf("CreateAuthenticator() error = %v, wantErr %v", err, wantErr)
@@ -190,7 +191,7 @@ func assertCreateAuthenticatorResult(t *testing.T, a auth.Authenticator, err err
 	}
 }
 
-func assertAuthType(t *testing.T, a auth.Authenticator, wantType string) {
+func assertAuthType(t *testing.T, a ports.Authenticator, wantType string) {
 	t.Helper()
 	switch wantType {
 	case "bearer":
@@ -208,7 +209,7 @@ func assertAuthType(t *testing.T, a auth.Authenticator, wantType string) {
 // the missing-keys-and-fallbacks test table. It checks the error contract
 // and, on success, verifies the correct authenticator type was selected
 // (VertexAuth for Vertex URLs, APIKeyAuth for unknown providers with keys).
-func assertMissingKeysResult(t *testing.T, a auth.Authenticator, err error, wantErr bool, provider, apiKey, url string) {
+func assertMissingKeysResult(t *testing.T, a ports.Authenticator, err error, wantErr bool, provider, apiKey, url string) {
 	t.Helper()
 	if (err != nil) != wantErr {
 		t.Errorf("createAuthenticator() error = %v, wantErr %v", err, wantErr)

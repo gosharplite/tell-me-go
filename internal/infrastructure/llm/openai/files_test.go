@@ -14,7 +14,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 )
 
 func TestUploadFile(t *testing.T) {
@@ -225,10 +224,10 @@ func TestExtractDocument(t *testing.T) {
 	}
 }
 
-// fakeAuthenticator implements auth.Authenticator for tests.
+// fakeAuthenticator implements ports.Authenticator for tests.
 type fakeAuthenticator struct{}
 
-func (f *fakeAuthenticator) Apply(ctx context.Context, req *auth.Request) error {
+func (f *fakeAuthenticator) Apply(ctx context.Context, req *ports.Request) error {
 	req.Headers["Authorization"] = "Bearer test-token"
 	return nil
 }
