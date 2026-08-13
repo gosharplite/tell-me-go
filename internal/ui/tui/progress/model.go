@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/pkg/metricsfmt"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
@@ -409,14 +410,14 @@ func (m *model) handleTurnStatus(e events.TurnStatusEvent) tea.Cmd {
 	if e.Status.IsPostCall && e.Status.Metrics != nil {
 		s := e.Status
 		m.postCallStatus = &s
-		m.postCallMetricsLine = ports.FormatMetricsLine(s)
+		m.postCallMetricsLine = metricsfmt.FormatMetricsLine(s)
 	}
 	if e.Status.IsFinal {
 		turnCost := 0.0
 		if e.Status.Metrics != nil {
 			turnCost = e.Status.Metrics.Cost
 		}
-		m.finalCostLine = ports.FormatFinalLine(e.Status, turnCost)
+		m.finalCostLine = metricsfmt.FormatFinalLine(e.Status, turnCost)
 	}
 	if m.spinner.active() {
 		m.spinner.clear()
