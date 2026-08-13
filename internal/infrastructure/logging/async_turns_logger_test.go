@@ -37,7 +37,7 @@ func (m *mockClock) NewTicker(d time.Duration) clock.Ticker { return nil }
 func (m *mockClock) Jitter(base float64) float64            { return base }
 
 func TestAsyncTurnsLogger_Log(t *testing.T) {
-	fs := &infra_persistence.OSFileSystem{}
+	fs := infra_persistence.NewDomainFS(&infra_persistence.OSFileSystem{})
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "turns.log")
 	ctx := context.Background()
@@ -81,14 +81,14 @@ func TestAsyncTurnsLogger_Log(t *testing.T) {
 }
 
 func TestAsyncTurnsLogger_New_Error(t *testing.T) {
-	fs := &infra_persistence.OSFileSystem{}
+	fs := infra_persistence.NewDomainFS(&infra_persistence.OSFileSystem{})
 	ctx := context.Background()
 	_, err := NewAsyncTurnsLogger(ctx, fs, "/non/existent/path/to/logfile.log", slog.Default())
 	assert.Error(t, err)
 }
 
 func TestAsyncTurnsLogger_NilLogger(t *testing.T) {
-	fs := &infra_persistence.OSFileSystem{}
+	fs := infra_persistence.NewDomainFS(&infra_persistence.OSFileSystem{})
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "nil_logger.log")
 	ctx := context.Background()
@@ -111,7 +111,7 @@ func TestAsyncTurnsLogger_NilLogger(t *testing.T) {
 }
 
 func TestAsyncTurnsLogger_ListenAfterClose(t *testing.T) {
-	fs := &infra_persistence.OSFileSystem{}
+	fs := infra_persistence.NewDomainFS(&infra_persistence.OSFileSystem{})
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "listen_after_close.log")
 	ctx := context.Background()
@@ -128,7 +128,7 @@ func TestAsyncTurnsLogger_ListenAfterClose(t *testing.T) {
 }
 
 func TestAsyncTurnsLogger_ChannelCloseDuringListen(t *testing.T) {
-	fs := &infra_persistence.OSFileSystem{}
+	fs := infra_persistence.NewDomainFS(&infra_persistence.OSFileSystem{})
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "channel_close.log")
 	ctx := context.Background()
@@ -158,7 +158,7 @@ func TestAsyncTurnsLogger_ChannelCloseDuringListen(t *testing.T) {
 }
 
 func TestAsyncTurnsLogger_EmptyMessageGuard(t *testing.T) {
-	fs := &infra_persistence.OSFileSystem{}
+	fs := infra_persistence.NewDomainFS(&infra_persistence.OSFileSystem{})
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "empty_msg.log")
 	ctx := context.Background()
@@ -191,7 +191,7 @@ func TestAsyncTurnsLogger_EmptyMessageGuard(t *testing.T) {
 }
 
 func TestAsyncTurnsLogger_HandleEventAfterClose(t *testing.T) {
-	fs := &infra_persistence.OSFileSystem{}
+	fs := infra_persistence.NewDomainFS(&infra_persistence.OSFileSystem{})
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "after_close.log")
 	ctx := context.Background()
@@ -206,7 +206,7 @@ func TestAsyncTurnsLogger_HandleEventAfterClose(t *testing.T) {
 }
 
 func TestAsyncTurnsLogger_Concurrency(t *testing.T) {
-	fs := &infra_persistence.OSFileSystem{}
+	fs := infra_persistence.NewDomainFS(&infra_persistence.OSFileSystem{})
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "concurrency.log")
 	ctx := context.Background()
@@ -284,7 +284,7 @@ func (fs *errorSyncFS) OpenFile(ctx context.Context, _ string, _ int, _ os.FileM
 }
 
 func TestAsyncTurnsLogger_SyncError(t *testing.T) {
-	fs := &errorSyncFS{}
+	fs := infra_persistence.NewDomainFS(&errorSyncFS{})
 	handler := &slogHandler{}
 	logger := slog.New(handler)
 	ctx := context.Background()
@@ -324,7 +324,7 @@ func TestAsyncTurnsLogger_SyncError(t *testing.T) {
 }
 
 func TestAsyncTurnsLogger_Close_Twice(t *testing.T) {
-	fs := &infra_persistence.OSFileSystem{}
+	fs := infra_persistence.NewDomainFS(&infra_persistence.OSFileSystem{})
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "close_twice.log")
 	ctx := context.Background()
@@ -384,7 +384,7 @@ func (fs *blockingFS) OpenFile(ctx context.Context, name string, flag int, perm 
 func TestAsyncTurnsLogger_BufferFull(t *testing.T) {
 	block := make(chan struct{})
 	file := &blockingFile{block: block}
-	fs := &blockingFS{file: file}
+	fs := infra_persistence.NewDomainFS(&blockingFS{file: file})
 
 	handler := &slogHandler{}
 	logger := slog.New(handler)
@@ -459,7 +459,7 @@ func (fs *errorWriteFS) OpenFile(ctx context.Context, _ string, _ int, _ os.File
 }
 
 func TestAsyncTurnsLogger_WriteError(t *testing.T) {
-	fs := &errorWriteFS{}
+	fs := infra_persistence.NewDomainFS(&errorWriteFS{})
 	handler := &slogHandler{}
 	logger := slog.New(handler)
 	ctx := context.Background()
@@ -527,7 +527,7 @@ func (fs *spyFS) OpenFile(ctx context.Context, name string, flag int, perm os.Fi
 
 func TestAsyncTurnsLogger_CallsSync(t *testing.T) {
 	file := &spyFile{}
-	fs := &spyFS{file: file}
+	fs := infra_persistence.NewDomainFS(&spyFS{file: file})
 	ctx := context.Background()
 
 	tl, err := NewAsyncTurnsLogger(ctx, fs, "dummy", slog.Default())
