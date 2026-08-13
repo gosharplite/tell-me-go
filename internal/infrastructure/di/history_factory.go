@@ -40,7 +40,9 @@ func (f *defaultHistoryFactory) BuildHistoryManager(ctx stdctx.Context, cfg *con
 		return nil, fmt.Errorf("%w: failed to ensure session directories for %s: %w", errInfraInit, cfg.Mode, err)
 	}
 
-	hManager := history.NewManager(infra_persistence.NewDomainFS(f.FileSystem), paths.HistoryPath, paths.HistoryArchivePath).WithLogger(f.Logger)
+	domainFS := infra_persistence.NewDomainFS(f.FileSystem)
+	assetStore := infra_persistence.NewAssetStore(domainFS, paths.AssetsPath)
+	hManager := history.NewManagerWithAssetStore(domainFS, assetStore, paths.HistoryPath, paths.HistoryArchivePath).WithLogger(f.Logger)
 	if err := hManager.Load(ctx); err != nil {
 		if !errors.Is(err, ports.ErrHistoryNotFound) {
 			return nil, fmt.Errorf("%w: failed to load history from %s: %w", errInfraInit, paths.HistoryPath, err)

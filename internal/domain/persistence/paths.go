@@ -10,6 +10,7 @@ type Paths struct {
 	ModeDir            string
 	HistoryPath        string
 	HistoryArchivePath string
+	AssetsPath         string
 	LogPath            string
 	TracePath          string
 	CommandsLogPath    string
@@ -29,6 +30,7 @@ func ResolvePaths(homeDir string, mode string) *Paths {
 		ModeDir:            modeDir,
 		HistoryPath:        filepath.Join(modeDir, "history.jsonl"),
 		HistoryArchivePath: filepath.Join(modeDir, "history.archive.jsonl"),
+		AssetsPath:         filepath.Join(modeDir, "assets"),
 		LogPath:            filepath.Join(modeDir, "tokens.log"),
 		TracePath:          filepath.Join(modeDir, "tokens.trace.jsonl"),
 		CommandsLogPath:    filepath.Join(modeDir, "commands.log"),

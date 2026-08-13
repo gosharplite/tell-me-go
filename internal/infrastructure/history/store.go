@@ -15,7 +15,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 // store defines the interface for history persistence.
@@ -42,17 +41,23 @@ type historyPatch struct {
 type jsonlStore struct {
 	filePath    string
 	archivePath string
-	assetStore  *infrapersistence.AssetStore
+	assetStore  persistence.AssetStore
+	assetDir    string
 	fs          persistence.FileSystem
 }
 
 // newJSONLStore creates a new jsonlStore.
 func newJSONLStore(fs persistence.FileSystem, filePath string, archivePath string) *jsonlStore {
 	assetDir := filepath.Join(filepath.Dir(filePath), "assets")
+	return newJSONLStoreWithAssetStore(fs, defaultAssetStore(fs, assetDir), filePath, archivePath)
+}
+
+func newJSONLStoreWithAssetStore(fs persistence.FileSystem, assetStore persistence.AssetStore, filePath string, archivePath string) *jsonlStore {
 	return &jsonlStore{
 		filePath:    filePath,
 		archivePath: archivePath,
-		assetStore:  infrapersistence.NewAssetStore(fs, assetDir),
+		assetDir:    filepath.Join(filepath.Dir(filePath), "assets"),
+		assetStore:  assetStore,
 		fs:          fs,
 	}
 }
@@ -60,7 +65,7 @@ func newJSONLStore(fs persistence.FileSystem, filePath string, archivePath strin
 // withFileSystem sets the filesystem implementation.
 func (s *jsonlStore) withFileSystem(fs persistence.FileSystem) *jsonlStore {
 	s.fs = fs
-	s.assetStore = infrapersistence.NewAssetStore(fs, s.assetStore.GetBaseDir())
+	s.assetStore = defaultAssetStore(fs, s.assetDir)
 	return s
 }
 
