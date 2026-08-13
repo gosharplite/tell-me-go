@@ -9,8 +9,8 @@ import (
 	"os"
 	"strings"
 
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 )
 
 // applyPricingOverrides applies configured pricing overrides to the pricing data.
@@ -39,7 +39,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	pd := config.DefaultPricing()
+	pd := domain_config.DefaultPricing()
 	pd = m.applyPricingOverrides(pd)
 
 	// 1. Parse usage from log
