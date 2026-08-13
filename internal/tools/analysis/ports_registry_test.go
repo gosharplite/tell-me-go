@@ -5,11 +5,14 @@ package analysis
 
 import (
 	"fmt"
+	"go/token"
+	"go/types"
 	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/tools/go/packages"
 )
 
 // portsTestPkgPath is the module-real ports package path used for all
@@ -362,4 +365,303 @@ func TestVerifyPortsRegistryStayKeyLiveness(t *testing.T) {
 	violations := verifyPortsRegistryStayKeyLiveness(decls)
 	require.Len(t, violations, 1)
 	assert.Contains(t, violations[0], dropped)
+}
+
+// portsTestPackage returns a fresh ports package whose path matches
+// isPortsPackagePath, so synthetic named types are treated as ports-declared.
+func portsTestPackage() *types.Package {
+	return types.NewPackage(portsTestPkgPath, "ports")
+}
+
+// portsTypeEntry builds a non-interface Type symMeta with a real object.
+func portsTypeEntry(name string, obj types.Object) *symMeta {
+	return &symMeta{
+		id:      portsTestPkgPath + "." + name,
+		pkgPath: portsTestPkgPath,
+		name:    name,
+		symType: "Type",
+		obj:     obj,
+	}
+}
+
+// portsFuncEntry builds a non-interface Function symMeta with a real object.
+func portsFuncEntry(name string, obj types.Object) *symMeta {
+	return &symMeta{
+		id:      portsTestPkgPath + "." + name,
+		pkgPath: portsTestPkgPath,
+		name:    name,
+		symType: "Function",
+		obj:     obj,
+	}
+}
+
+func TestIsPortsDeclaredType(t *testing.T) {
+	t.Parallel()
+
+	pkg := portsTestPackage()
+	structType := types.NewStruct(nil, nil)
+	portsNamed := types.NewNamed(types.NewTypeName(token.NoPos, pkg, "Widget", structType), structType, nil)
+
+	otherNamed := types.NewNamed(
+		types.NewTypeName(token.NoPos, types.NewPackage("example.com/other", "other"), "Thing", structType),
+		structType,
+		nil,
+	)
+
+	assert.True(t, isPortsDeclaredType(portsNamed))
+	assert.True(t, isPortsDeclaredType(types.NewPointer(portsNamed))) // pointer deref
+	assert.False(t, isPortsDeclaredType(otherNamed))
+	assert.False(t, isPortsDeclaredType(types.Typ[types.String])) // non-named
+	assert.False(t, isPortsDeclaredType(nil))
+}
+
+func TestReferencesPortsType(t *testing.T) {
+	t.Parallel()
+
+	pkg := portsTestPackage()
+	portsStruct := types.NewStruct(nil, nil)
+	portsNamed := types.NewNamed(types.NewTypeName(token.NoPos, pkg, "Widget", portsStruct), portsStruct, nil)
+
+	t.Run("struct field of ports type", func(t *testing.T) {
+		t.Parallel()
+		container := types.NewStruct([]*types.Var{
+			types.NewVar(token.NoPos, pkg, "W", portsNamed),
+		}, nil)
+		assert.True(t, referencesPortsType(container))
+	})
+
+	t.Run("signature param and result of ports type", func(t *testing.T) {
+		t.Parallel()
+		sig := types.NewSignatureType(nil, nil, nil,
+			types.NewTuple(types.NewVar(token.NoPos, pkg, "w", portsNamed)),
+			types.NewTuple(types.NewVar(token.NoPos, pkg, "", portsNamed)),
+			false)
+		assert.True(t, referencesPortsType(sig))
+	})
+
+	t.Run("pointer to ports type", func(t *testing.T) {
+		t.Parallel()
+		assert.True(t, referencesPortsType(types.NewPointer(portsNamed)))
+	})
+
+	t.Run("map key and slice elem", func(t *testing.T) {
+		t.Parallel()
+		assert.True(t, referencesPortsType(types.NewMap(portsNamed, types.Typ[types.Int])))
+		assert.True(t, referencesPortsType(types.NewSlice(portsNamed)))
+	})
+
+	t.Run("all stdlib", func(t *testing.T) {
+		t.Parallel()
+		sig := types.NewSignatureType(nil, nil, nil,
+			types.NewTuple(types.NewVar(token.NoPos, nil, "s", types.Typ[types.String])),
+			types.NewTuple(types.NewVar(token.NoPos, nil, "", types.Typ[types.Int])),
+			false)
+		assert.False(t, referencesPortsType(sig))
+	})
+
+	t.Run("terminates at non-ports named type", func(t *testing.T) {
+		t.Parallel()
+		// outerNamed wraps a struct containing a ports field, but outerNamed
+		// is a non-ports type: the walker must terminate and report false.
+		innerStruct := types.NewStruct([]*types.Var{
+			types.NewVar(token.NoPos, pkg, "W", portsNamed),
+		}, nil)
+		outerNamed := types.NewNamed(
+			types.NewTypeName(token.NoPos, types.NewPackage("example.com/other", "other"), "Outer", innerStruct),
+			innerStruct,
+			nil,
+		)
+		container := types.NewStruct([]*types.Var{
+			types.NewVar(token.NoPos, nil, "O", outerNamed),
+		}, nil)
+		assert.False(t, referencesPortsType(container))
+	})
+}
+
+func TestEvaluateSupportingClauses_ClauseB(t *testing.T) {
+	t.Parallel()
+
+	nonInterfaces := []*symMeta{
+		portsNonInterface("Const1", "Constant"),
+		portsNonInterface("Var1", "Variable"),
+		portsFuncEntry("FormatLine", types.NewFunc(token.NoPos, nil, "FormatLine",
+			types.NewSignatureType(nil, nil, nil,
+				types.NewTuple(types.NewVar(token.NoPos, nil, "s", types.Typ[types.String])),
+				nil, false))),
+	}
+
+	admitted := evaluateSupportingClauses(nil, nonInterfaces)
+
+	assert.Equal(t, "b", admitted["Const1"])
+	assert.Equal(t, "b", admitted["Var1"])
+	_, ok := admitted["FormatLine"]
+	assert.False(t, ok, "Function with stdlib-only signature must not be admitted by (b)")
+}
+
+func TestEvaluateSupportingClauses_ClauseC(t *testing.T) {
+	t.Parallel()
+
+	pkg := portsTestPackage()
+	portsStruct := types.NewStruct(nil, nil)
+	portsNamed := types.NewNamed(types.NewTypeName(token.NoPos, pkg, "Widget", portsStruct), portsStruct, nil)
+
+	portsParamFn := types.NewFunc(token.NoPos, pkg, "FormatLine",
+		types.NewSignatureType(nil, nil, nil,
+			types.NewTuple(types.NewVar(token.NoPos, pkg, "w", portsNamed)),
+			nil, false))
+
+	stdlibFn := types.NewFunc(token.NoPos, pkg, "FormatFinalLine",
+		types.NewSignatureType(nil, nil, nil,
+			types.NewTuple(types.NewVar(token.NoPos, nil, "s", types.Typ[types.String])),
+			types.NewTuple(types.NewVar(token.NoPos, nil, "", types.Typ[types.Int])),
+			false))
+
+	admitted := evaluateSupportingClauses(nil, []*symMeta{
+		portsFuncEntry("FormatLine", portsParamFn),
+		portsFuncEntry("FormatFinalLine", stdlibFn),
+	})
+
+	assert.Equal(t, "c", admitted["FormatLine"])
+	_, ok := admitted["FormatFinalLine"]
+	assert.False(t, ok, "all-stdlib signature must not be admitted by (c)")
+}
+
+func TestEvaluateSupportingClauses_ClauseD(t *testing.T) {
+	t.Parallel()
+
+	pkg := portsTestPackage()
+
+	renderIface := types.NewInterfaceType([]*types.Func{
+		types.NewFunc(token.NoPos, pkg, "Render",
+			types.NewSignatureType(nil, nil, nil, nil, nil, false)),
+	}, nil)
+
+	structType := types.NewStruct(nil, nil)
+	implNamed := types.NewNamed(types.NewTypeName(token.NoPos, pkg, "RendererImpl", nil), structType, nil)
+	recv := types.NewVar(token.NoPos, pkg, "r", implNamed)
+	implNamed.AddMethod(types.NewFunc(token.NoPos, pkg, "Render",
+		types.NewSignatureType(recv, nil, nil, nil, nil, false)))
+
+	admitted := evaluateSupportingClauses(
+		map[string]*types.Interface{"Renderer": renderIface},
+		[]*symMeta{portsTypeEntry("RendererImpl", implNamed.Obj())},
+	)
+
+	assert.Equal(t, "d", admitted["RendererImpl"])
+}
+
+func TestEvaluateSupportingClauses_ClauseA(t *testing.T) {
+	t.Parallel()
+
+	pkg := portsTestPackage()
+
+	// Widget is referenced only by Helper's field.
+	widgetStruct := types.NewStruct(nil, nil)
+	widgetNamed := types.NewNamed(types.NewTypeName(token.NoPos, pkg, "Widget", nil), widgetStruct, nil)
+
+	// Helper is referenced by the ports interface's method param.
+	helperStruct := types.NewStruct([]*types.Var{
+		types.NewVar(token.NoPos, pkg, "W", widgetNamed),
+	}, nil)
+	helperNamed := types.NewNamed(types.NewTypeName(token.NoPos, pkg, "Helper", nil), helperStruct, nil)
+
+	renderIface := types.NewInterfaceType([]*types.Func{
+		types.NewFunc(token.NoPos, pkg, "Render",
+			types.NewSignatureType(nil, nil, nil,
+				types.NewTuple(types.NewVar(token.NoPos, pkg, "h", helperNamed)),
+				nil, false)),
+	}, nil)
+
+	admitted := evaluateSupportingClauses(
+		map[string]*types.Interface{"Renderer": renderIface},
+		[]*symMeta{
+			portsTypeEntry("Helper", helperNamed.Obj()),
+			portsTypeEntry("Widget", widgetNamed.Obj()),
+		},
+	)
+
+	// Helper is a param of the ports interface → admitted by (a) seed.
+	assert.Equal(t, "a", admitted["Helper"])
+	// Widget is a field of the already-admitted Helper → admitted by (a) interleaving.
+	assert.Equal(t, "a", admitted["Widget"])
+}
+
+func TestVerifyPortsSupportingAdmission_ExpelPath(t *testing.T) {
+	t.Parallel()
+
+	stdlibFn := types.NewFunc(token.NoPos, nil, "FormatFinalLine",
+		types.NewSignatureType(nil, nil, nil,
+			types.NewTuple(types.NewVar(token.NoPos, nil, "s", types.Typ[types.String])),
+			types.NewTuple(types.NewVar(token.NoPos, nil, "", types.Typ[types.Int])),
+			false))
+
+	decls := []*symMeta{
+		{
+			id:      portsTestPkgPath + ".FormatFinalLine",
+			pkgPath: portsTestPkgPath,
+			name:    "FormatFinalLine",
+			symType: "Function",
+			obj:     stdlibFn,
+		},
+	}
+
+	reg := &portsRegistry{Supporting: []string{"FormatFinalLine"}}
+	state := &scanState{pkgs: []*packages.Package{}}
+	analyzer := &defaultDeadCodeAnalyzer{idx: &mockSymbolIndex{}}
+
+	violations := analyzer.verifyPortsSupportingAdmission(reg, decls, state, nil)
+
+	require.Len(t, violations, 1)
+	assert.Contains(t, violations[0], "supporting entry")
+	assert.Contains(t, violations[0], "FormatFinalLine")
+	assert.Contains(t, violations[0], "not admitted by any clause")
+}
+
+func TestVerifyPortsSupportingAdmission_Admitted(t *testing.T) {
+	t.Parallel()
+
+	decls := []*symMeta{
+		{
+			id:      portsTestPkgPath + ".LineSep",
+			pkgPath: portsTestPkgPath,
+			name:    "LineSep",
+			symType: "Constant",
+		},
+	}
+
+	reg := &portsRegistry{Supporting: []string{"LineSep"}}
+	state := &scanState{pkgs: []*packages.Package{}}
+	analyzer := &defaultDeadCodeAnalyzer{idx: &mockSymbolIndex{}}
+
+	assert.Empty(t, analyzer.verifyPortsSupportingAdmission(reg, decls, state, nil))
+}
+
+func TestEvaluateSupportingClauses_ClauseA_FuncType(t *testing.T) {
+	t.Parallel()
+
+	pkg := portsTestPackage()
+
+	// Widget is referenced only by a Supporting func type's param.
+	widgetStruct := types.NewStruct(nil, nil)
+	widgetNamed := types.NewNamed(types.NewTypeName(token.NoPos, pkg, "Widget", nil), widgetStruct, nil)
+
+	// RenderFn is a func-type declaration (Type entry) whose signature
+	// references the ports-declared Widget type.
+	renderFnSig := types.NewSignatureType(nil, nil, nil,
+		types.NewTuple(types.NewVar(token.NoPos, pkg, "w", widgetNamed)),
+		nil, false)
+	renderFnNamed := types.NewNamed(types.NewTypeName(token.NoPos, pkg, "RenderFn", nil), renderFnSig, nil)
+
+	admitted := evaluateSupportingClauses(
+		nil,
+		[]*symMeta{
+			portsTypeEntry("RenderFn", renderFnNamed.Obj()),
+			portsTypeEntry("Widget", widgetNamed.Obj()),
+		},
+	)
+
+	// RenderFn is admitted by (c): its signature references a ports type.
+	assert.Equal(t, "c", admitted["RenderFn"])
+	// Widget is a param of the admitted RenderFn → admitted by (a).
+	assert.Equal(t, "a", admitted["Widget"])
 }

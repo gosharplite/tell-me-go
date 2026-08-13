@@ -4,7 +4,9 @@
 package analysis
 
 import (
+	"context"
 	"fmt"
+	"go/types"
 	"sort"
 	"strings"
 )
@@ -240,4 +242,317 @@ func verifyPortsRegistryStayKeyLiveness(decls []*symMeta) []string {
 		}
 	}
 	return violations
+}
+
+// isPortsDeclaredType reports whether t (after unwrapping pointers and
+// aliases) is a named type declared in internal/domain/ports.
+func isPortsDeclaredType(t types.Type) bool {
+	named, ok := unwrapPortsType(t).(*types.Named)
+	if !ok {
+		return false
+	}
+	obj := named.Obj()
+	if obj == nil || obj.Pkg() == nil {
+		return false
+	}
+	return isPortsPackagePath(obj.Pkg().Path())
+}
+
+// unwrapPortsType unwraps pointers and aliases until it reaches a
+// non-pointer, non-alias type (or nil).
+func unwrapPortsType(t types.Type) types.Type {
+	for t != nil {
+		u := types.Unalias(t)
+		if ptr, ok := u.(*types.Pointer); ok {
+			t = ptr.Elem()
+			continue
+		}
+		return u
+	}
+	return nil
+}
+
+// referencesPortsType reports whether t references any ports-declared type:
+// dereference pointers/aliases; a ports named type → true; recurse into
+// struct fields, signature params/results, map keys/values, and slice/array
+// elems, but TERMINATE at a non-ports named type (do not recurse into its
+// internals — ports-only scope). Used by clauses (a) and (c).
+func referencesPortsType(t types.Type) bool {
+	found := false
+	visitPortsTypeReferences(t, func(string) {
+		found = true
+	})
+	return found
+}
+
+// visitPortsTypeReferences walks t and invokes fn for the name of every
+// ports-declared named type it references (ports-only scope). It dereferences
+// pointers/aliases, reports ports named types, recurses into struct fields,
+// signature params/results, interface methods/embeddeds, map keys/values, and
+// slice/array elems, and TERMINATES at non-ports named types.
+func visitPortsTypeReferences(t types.Type, fn func(name string)) {
+	t = unwrapPortsType(t)
+	if t == nil {
+		return
+	}
+	switch tt := t.(type) {
+	case *types.Named:
+		if isPortsDeclaredType(tt) {
+			fn(tt.Obj().Name())
+			return
+		}
+		return // terminate at a non-ports named type
+	case *types.Struct:
+		for i := 0; i < tt.NumFields(); i++ {
+			visitPortsTypeReferences(tt.Field(i).Type(), fn)
+		}
+	case *types.Signature:
+		if params := tt.Params(); params != nil {
+			for i := 0; i < params.Len(); i++ {
+				visitPortsTypeReferences(params.At(i).Type(), fn)
+			}
+		}
+		if results := tt.Results(); results != nil {
+			for i := 0; i < results.Len(); i++ {
+				visitPortsTypeReferences(results.At(i).Type(), fn)
+			}
+		}
+	case *types.Interface:
+		for i := 0; i < tt.NumMethods(); i++ {
+			visitPortsTypeReferences(tt.Method(i).Type(), fn)
+		}
+		for i := 0; i < tt.NumEmbeddeds(); i++ {
+			visitPortsTypeReferences(tt.EmbeddedType(i), fn)
+		}
+	case *types.Map:
+		visitPortsTypeReferences(tt.Key(), fn)
+		visitPortsTypeReferences(tt.Elem(), fn)
+	case *types.Slice:
+		visitPortsTypeReferences(tt.Elem(), fn)
+	case *types.Array:
+		visitPortsTypeReferences(tt.Elem(), fn)
+	}
+}
+
+// collectReferencedPortsTypeNames returns the set of ports-declared named type
+// names referenced within t (ports-only scope).
+func collectReferencedPortsTypeNames(t types.Type) map[string]bool {
+	names := make(map[string]bool)
+	visitPortsTypeReferences(t, func(name string) {
+		names[name] = true
+	})
+	return names
+}
+
+// supportingShape returns the walkable shape of a Supporting type: the
+// underlying struct or signature (or other non-named underlying), so the
+// walker recurses into fields/params/results rather than reporting the named
+// type itself.
+func supportingShape(t types.Type) types.Type {
+	t = types.Unalias(t)
+	if named, ok := t.(*types.Named); ok {
+		return named.Underlying()
+	}
+	return t
+}
+
+// evaluateSupportingClauses evaluates the pure admission clauses (b, c, d, a)
+// for every non-interface export in nonInterfaces and returns a map from
+// symbol name to the admitting clause ("b", "c", "d", or "a"). Symbols not
+// admitted by a pure clause are absent; clause "e" requires the live indexer
+// and is handled by verifyPortsSupportingAdmission.
+func evaluateSupportingClauses(interfaces map[string]*types.Interface, nonInterfaces []*symMeta) map[string]string {
+	admitted := make(map[string]string)
+
+	typeEntryByName := make(map[string]*symMeta)
+	for _, m := range nonInterfaces {
+		if m != nil && m.symType == "Type" {
+			typeEntryByName[m.name] = m
+		}
+	}
+
+	// Clauses (b), (c), (d) — per-entry, in order.
+	for _, m := range nonInterfaces {
+		if m == nil {
+			continue
+		}
+		if clause := pureAdmissionClause(m, interfaces); clause != "" {
+			admitted[m.name] = clause
+		}
+	}
+
+	clauseAFixpoint(interfaces, typeEntryByName, admitted)
+	return admitted
+}
+
+// pureAdmissionClause evaluates clauses (b), (c), and (d) for a single
+// non-interface symMeta and returns the admitting clause label ("" if none).
+func pureAdmissionClause(m *symMeta, interfaces map[string]*types.Interface) string {
+	switch m.symType {
+	case "Constant", "Variable":
+		return "b"
+	case "Function":
+		fn, ok := m.obj.(*types.Func)
+		if ok && referencesPortsType(fn.Type()) {
+			return "c"
+		}
+		return ""
+	case "Type":
+		tn, ok := m.obj.(*types.TypeName)
+		if !ok {
+			return ""
+		}
+		named, ok := tn.Type().(*types.Named)
+		if !ok {
+			return ""
+		}
+		if _, isIface := named.Underlying().(*types.Interface); isIface {
+			return "" // interfaces are not non-interface exports
+		}
+		// (c) func-type declaration whose signature references a ports type.
+		if sig, ok := named.Underlying().(*types.Signature); ok && referencesPortsType(sig) {
+			return "c"
+		}
+		// (d) named type whose method set implements a ports interface.
+		for _, iface := range interfaces {
+			if iface == nil {
+				continue
+			}
+			if types.Implements(named, iface) || types.Implements(types.NewPointer(named), iface) {
+				return "d"
+			}
+		}
+		return ""
+	default:
+		return ""
+	}
+}
+
+// clauseAFixpoint computes the clause (a) admission fixpoint. The seed shapes
+// are the ports interfaces plus every non-interface Type entry already
+// admitted by clauses (b)/(c)/(d). Walking each admitted shape's struct
+// fields/signature admits any referenced ports-declared non-interface type,
+// iterating until no new admissions occur (clause-interleaved seed set).
+func clauseAFixpoint(interfaces map[string]*types.Interface, typeEntryByName map[string]*symMeta, admitted map[string]string) {
+	shapes := make([]types.Type, 0, len(interfaces)+len(typeEntryByName))
+	for _, iface := range interfaces {
+		if iface != nil {
+			shapes = append(shapes, iface)
+		}
+	}
+	for name, m := range typeEntryByName {
+		if _, ok := admitted[name]; !ok {
+			continue
+		}
+		if tn, ok := m.obj.(*types.TypeName); ok {
+			shapes = append(shapes, supportingShape(tn.Type()))
+		}
+	}
+
+	for {
+		added := make([]string, 0)
+		for _, shape := range shapes {
+			for name := range collectReferencedPortsTypeNames(shape) {
+				if _, ok := typeEntryByName[name]; !ok {
+					continue
+				}
+				if _, already := admitted[name]; already {
+					continue
+				}
+				admitted[name] = "a"
+				added = append(added, name)
+			}
+		}
+		if len(added) == 0 {
+			return
+		}
+		for _, name := range added {
+			if tn, ok := typeEntryByName[name].obj.(*types.TypeName); ok {
+				shapes = append(shapes, supportingShape(tn.Type()))
+			}
+		}
+	}
+}
+
+// verifyPortsSupportingAdmission evaluates the 5-clause admission rule for
+// every non-interface export and returns violation strings (empty = all
+// admitted). reg provides the Supporting list; decls provides all ports
+// exports (interfaces and non-interfaces) with their types.Object.
+func (a *defaultDeadCodeAnalyzer) verifyPortsSupportingAdmission(
+	reg *portsRegistry,
+	decls []*symMeta,
+	state *scanState,
+	hb chan<- struct{},
+) []string {
+	if reg == nil {
+		reg = &portsRegistry{}
+	}
+	if state == nil {
+		state = &scanState{}
+	}
+
+	interfaces := make(map[string]*types.Interface)
+	nonInterfacesByName := make(map[string]*symMeta)
+	var nonInterfaces []*symMeta
+	for _, d := range decls {
+		if d == nil {
+			continue
+		}
+		if d.isInterfaceType {
+			if tn, ok := d.obj.(*types.TypeName); ok {
+				if iface, ok := tn.Type().Underlying().(*types.Interface); ok {
+					interfaces[d.name] = iface
+				}
+			}
+			continue
+		}
+		nonInterfaces = append(nonInterfaces, d)
+		nonInterfacesByName[d.name] = d
+	}
+
+	admitted := evaluateSupportingClauses(interfaces, nonInterfaces)
+
+	// Clause (e): cross-layer reference via usage sites (di-included).
+	fileToPkg := a.buildFileToPkgMap(state.pkgs)
+	for i, m := range nonInterfaces {
+		if _, ok := admitted[m.name]; ok {
+			continue
+		}
+		sendHeartbeat(i, hb)
+		if a.supportingCrossLayerReference(m, state, fileToPkg, hb) {
+			admitted[m.name] = "e"
+		}
+	}
+
+	var violations []string
+	for _, name := range reg.Supporting {
+		if _, ok := nonInterfacesByName[name]; !ok {
+			continue // phantom or misclassified entry — the bijection's job
+		}
+		if _, ok := admitted[name]; !ok {
+			violations = append(violations, fmt.Sprintf("supporting entry %q not admitted by any clause", name))
+		}
+	}
+	sort.Strings(violations)
+	return violations
+}
+
+// supportingCrossLayerReference evaluates clause (e): the export's usage
+// sites span more than one distinct layer. Composition roots are intentionally
+// NOT excluded (di-included), per ADR-064.
+func (a *defaultDeadCodeAnalyzer) supportingCrossLayerReference(meta *symMeta, state *scanState, fileToPkg map[string]string, hb chan<- struct{}) bool {
+	usages, err := a.idx.GetUsages(context.Background(), meta.id, state.targetPath, hb)
+	if err != nil {
+		return false
+	}
+	layers := make(map[string]bool)
+	for _, loc := range usages {
+		pkg, ok := fileToPkg[loc.Path]
+		if !ok {
+			continue
+		}
+		base := getBasePkgPath(pkg)
+		layers[classifyExitLayer(base, state.targetModule)] = true
+	}
+	return len(layers) > 1
 }
