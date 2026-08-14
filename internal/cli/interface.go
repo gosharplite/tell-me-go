@@ -6,7 +6,6 @@ package cli
 import (
 	"io"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -15,14 +14,14 @@ import (
 // Bootstrapper defines the infrastructure interface for resolving dependencies.
 // This matches the methods provided by the DI container.
 type Bootstrapper interface {
-	agent.SessionLifecycleManager
+	ports.SessionLifecycleManager
 	ports.HistoryManagerProvider
 	ports.SuggestionProvider
 	GetAgentFactory() ports.ChatterFactory
 	GetUIRenderer() ports.UIRenderer
 	GetHistoryRenderer() ports.HistoryRenderer
 	GetHistoryBrowser() ports.HistoryBrowser
-	GetChatService() agent.ChatService
+	GetChatService() ports.ChatService
 	GetSystemMetricsProvider() ports.SystemMetricsProvider
 }
 
@@ -34,7 +33,7 @@ type context struct {
 	Stderr       io.Writer
 	HomeDir      string
 	SM           domain_security.Manager
-	ChatService  agent.ChatService
+	ChatService  ports.ChatService
 	Bootstrapper Bootstrapper
 	Loader       domain_config.ConfigLoader
 	MockPrompt   string

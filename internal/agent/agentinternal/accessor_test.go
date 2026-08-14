@@ -544,7 +544,7 @@ func TestAgentInternal_Actions(t *testing.T) {
 
 func TestMockSessionLifecycleManager_BuildSessionDeps(t *testing.T) {
 	m := new(MockSessionLifecycleManager)
-	m.BuildSessionDepsFunc = func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+	m.BuildSessionDepsFunc = func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 		return nil, nil, nil, nil
 	}
 	_, _, _, err := m.BuildSessionDependencies(context.Background(), nil, "", false, nil)
@@ -563,7 +563,7 @@ func TestMockSessionLifecycleManager_BuildSessionDeps(t *testing.T) {
 func TestMockSessionLifecycleManager_BuildSessionDeps_ReturnsValues(t *testing.T) {
 	m := new(MockSessionLifecycleManager)
 	wantCleanup := func(context.Context) error { return nil }
-	m.BuildSessionDepsFunc = func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+	m.BuildSessionDepsFunc = func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 		return nil, nil, wantCleanup, nil
 	}
 	_, _, cleanup, err := m.BuildSessionDependencies(context.Background(), nil, "", false, nil)
@@ -578,7 +578,7 @@ func TestMockSessionLifecycleManager_BuildSessionDeps_ReturnsValues(t *testing.T
 func TestMockSessionLifecycleManager_BuildSessionDeps_ReturnsError(t *testing.T) {
 	m := new(MockSessionLifecycleManager)
 	wantErr := errors.New("build failed")
-	m.BuildSessionDepsFunc = func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+	m.BuildSessionDepsFunc = func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 		return nil, nil, nil, wantErr
 	}
 	_, _, _, err := m.BuildSessionDependencies(context.Background(), nil, "", false, nil)

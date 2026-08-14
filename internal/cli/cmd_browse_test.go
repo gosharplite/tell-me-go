@@ -415,7 +415,7 @@ func TestBrowseCommand_GetCapturer_OverrideCloseSuccess(t *testing.T) {
 
 // TestBrowseCommand_SetupCapturer_NonCapturerInteractor verifies that
 // when the capturerFactory returns a value implementing UserInteractor
-// but NOT agent.CapturerInteractor, setupCapturer returns an error.
+// but NOT ports.CapturerInteractor, setupCapturer returns an error.
 func TestBrowseCommand_SetupCapturer_NonCapturerInteractor(t *testing.T) {
 	t.Parallel()
 
@@ -432,7 +432,7 @@ func TestBrowseCommand_SetupCapturer_NonCapturerInteractor(t *testing.T) {
 
 	capturer, cleanup, err := c.setupCapturer()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "ui.NewCapturer did not return an agent.CapturerInteractor")
+	require.Contains(t, err.Error(), "ui.NewCapturer did not return an ports.CapturerInteractor")
 	require.Nil(t, capturer)
 	require.Nil(t, cleanup)
 }
@@ -489,7 +489,7 @@ func TestBrowseCommand_RunBrowse_GetCapturerError(t *testing.T) {
 	err := c.runBrowse(stdctx.Background(), "any-config.yaml")
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "ui.NewCapturer did not return an agent.CapturerInteractor")
+	require.Contains(t, err.Error(), "ui.NewCapturer did not return an ports.CapturerInteractor")
 }
 
 // TestBrowseCommand_ConfigFlagPropagation verifies that the --config flag

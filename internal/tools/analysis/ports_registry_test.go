@@ -343,7 +343,7 @@ func TestVerifyPortsRegistryStayKeyLiveness(t *testing.T) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	require.Len(t, keys, 6)
+	require.Len(t, keys, 7)
 
 	allPresent := func() []*symMeta {
 		decls := make([]*symMeta, 0, len(keys))
@@ -353,7 +353,7 @@ func TestVerifyPortsRegistryStayKeyLiveness(t *testing.T) {
 		return decls
 	}
 
-	// All six stay keys present as ports interface decls → pass.
+	// All seven stay keys present as ports interface decls → pass.
 	assert.Empty(t, verifyPortsRegistryStayKeyLiveness(allPresent()))
 
 	// Drop the last key and confirm the violation names it.

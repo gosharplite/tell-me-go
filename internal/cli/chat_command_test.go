@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/cli/clitest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/config/configtest"
@@ -55,7 +54,7 @@ func setupMocks() (*clitest.MockBootstrapper, *configtest.MockConfigLoader, *cli
 	mb.GetSuggestionServiceFunc = func(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error) {
 		return &mockSuggestionService{}, nil
 	}
-	ms.ProcessMessageFunc = func(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
+	ms.ProcessMessageFunc = func(ctx stdctx.Context, cfg *config.Config, cmd ports.ChatCommand, capturer ports.CapturerInteractor) error {
 		ms.ChatCalled = true
 		ms.LastParams = cmd
 		return nil
@@ -229,8 +228,8 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 	mb, ml, mService := setupMocks()
 
 	// Since retry logic is now in ChatService, we can test it by making the mock return an error or just checking if it was called with Retry: true.
-	// For CLI tests, we just want to ensure that --retry flag is correctly parsed into agent.ChatCommand.
-	mService.ProcessMessageFunc = func(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
+	// For CLI tests, we just want to ensure that --retry flag is correctly parsed into ports.ChatCommand.
+	mService.ProcessMessageFunc = func(ctx stdctx.Context, cfg *config.Config, cmd ports.ChatCommand, capturer ports.CapturerInteractor) error {
 		mService.ChatCalled = true
 		mService.LastParams = cmd
 		return nil
@@ -537,7 +536,7 @@ func TestChatCommand_Execute_Errors(t *testing.T) {
 			mb := &clitest.MockBootstrapper{}
 			sm := &mockSM{}
 			ms := &clitest.MockChatService{}
-			ms.ProcessMessageFunc = func(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
+			ms.ProcessMessageFunc = func(ctx stdctx.Context, cfg *config.Config, cmd ports.ChatCommand, capturer ports.CapturerInteractor) error {
 				return nil
 			}
 			tt.setupMocks(ml, mb, ms)
@@ -1000,13 +999,13 @@ func TestChatCommand_GetCapturer_OverrideCloseSuccess(t *testing.T) {
 
 // TestChatCommand_SetupCapturer_NonCapturerInteractor verifies that
 // when the capturerFactory returns a value implementing UserInteractor
-// but NOT agent.CapturerInteractor, setupCapturer returns an error.
+// but NOT ports.CapturerInteractor, setupCapturer returns an error.
 func TestChatCommand_SetupCapturer_NonCapturerInteractor(t *testing.T) {
 	t.Parallel()
 
 	// stubInteractor implements domain_security.UserInteractor but
 	// lacks CapturePrompt, IsTTY, and Close — so it does NOT satisfy
-	// agent.CapturerInteractor, triggering the !ok assertion.
+	// ports.CapturerInteractor, triggering the !ok assertion.
 	nonCapturer := &stubInteractor{id: 1}
 
 	var stderr strings.Builder
@@ -1019,7 +1018,7 @@ func TestChatCommand_SetupCapturer_NonCapturerInteractor(t *testing.T) {
 
 	capturer, cleanup, err := c.setupCapturer()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "ui.NewCapturer did not return an agent.CapturerInteractor")
+	require.Contains(t, err.Error(), "ui.NewCapturer did not return an ports.CapturerInteractor")
 	require.Nil(t, capturer)
 	require.Nil(t, cleanup)
 }
@@ -1046,7 +1045,7 @@ func TestChatCommand_BuildCapturer_NonTUI_SetupCapturerError(t *testing.T) {
 	capturer, cleanup, err := c.buildCapturer(stdctx.Background(), nil, opts)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "ui.NewCapturer did not return an agent.CapturerInteractor")
+	require.Contains(t, err.Error(), "ui.NewCapturer did not return an ports.CapturerInteractor")
 	require.Nil(t, capturer)
 	require.Nil(t, cleanup)
 }
@@ -1079,7 +1078,7 @@ func TestChatCommand_ExecuteChat_SetupSessionError(t *testing.T) {
 	err := c.executeChat(stdctx.Background(), opts, []string{"hello"})
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "ui.NewCapturer did not return an agent.CapturerInteractor")
+	require.Contains(t, err.Error(), "ui.NewCapturer did not return an ports.CapturerInteractor")
 }
 
 // TestChatCommand_NewCapturer_FactoryNilFallback covers the fallback branch
@@ -1114,7 +1113,7 @@ func TestChatCommand_BuildCapturer_TUI_Fallback(t *testing.T) {
 	t.Parallel()
 
 	t.Run("CapturerInteractor_fallback_when_not_BaseCapturer", func(t *testing.T) {
-		// mockCapturerInteractor implements agent.CapturerInteractor
+		// mockCapturerInteractor implements ports.CapturerInteractor
 		// but NOT tui.BaseCapturer — the first assertion fails,
 		// triggering the CapturerInteractor fallback (gap 2).
 		mockCap := &mockCapturerInteractor{}
@@ -1149,7 +1148,7 @@ func TestChatCommand_BuildCapturer_TUI_Fallback(t *testing.T) {
 
 	t.Run("error_when_neither_BaseCapturer_nor_CapturerInteractor", func(t *testing.T) {
 		// stubInteractor implements domain_security.UserInteractor but
-		// NEITHER tui.BaseCapturer NOR agent.CapturerInteractor.
+		// NEITHER tui.BaseCapturer NOR ports.CapturerInteractor.
 		// Both type assertions fail → gap 4.
 		nonCapturer := &stubInteractor{id: 99}
 
@@ -1174,7 +1173,7 @@ func TestChatCommand_BuildCapturer_TUI_Fallback(t *testing.T) {
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(),
-			"ui.NewCapturer did not return a tui.BaseCapturer or agent.CapturerInteractor")
+			"ui.NewCapturer did not return a tui.BaseCapturer or ports.CapturerInteractor")
 		require.Nil(t, capturer)
 		require.Nil(t, cleanup)
 	})

@@ -1195,8 +1195,8 @@ to reason about.
 ### di/container.go — skills repository init error paths
 
 - **Status**: ACCEPTED (2026-08)
-- **Rationale**: The remaining error branch of `infra_skills.NewFileSkillRepository(skillsDir)` (`container.go:197-200`) requires filesystem fault injection (unreadable skills directory). The sibling `infra_skills.NewSkillsShRepository(skillsShDir)` error branch (`container.go:203-206`) is covered since 2026-09 by `TestBuildSharedSkillRepo_FileRepoFallback` — the only path to the `return fileRepo` fall-through at `container.go:213` passes through it, so it is exercised as a side effect (coverage edge-case batch). Both degrade gracefully — `slog.Warn` + continue without skills, and `slog.Debug` + nil repo — and the happy paths are covered by container tests. Same acceptance class as the filesystem fault-injection gaps in the 2026-07 Batch Triage.
-- **See**: `internal/infrastructure/di/container.go:197-200` (file-repo error branch only; skills.sh branch 203-206 covered — see rationale)
+- **Rationale**: The remaining error branch of `infra_skills.NewFileSkillRepository(skillsDir)` (`container.go:194-197`) requires filesystem fault injection (unreadable skills directory). The sibling `infra_skills.NewSkillsShRepository(skillsShDir)` error branch (`container.go:200-203`) is covered since 2026-09 by `TestBuildSharedSkillRepo_FileRepoFallback` — the only path to the `return fileRepo` fall-through at `container.go:211` passes through it, so it is exercised as a side effect (coverage edge-case batch). Both degrade gracefully — `slog.Warn` + continue without skills, and `slog.Debug` + nil repo — and the happy paths are covered by container tests. Same acceptance class as the filesystem fault-injection gaps in the 2026-07 Batch Triage.
+- **See**: `internal/infrastructure/di/container.go:194-197` (file-repo error branch only; skills.sh branch 200-203 covered — see rationale)
 
 ---
 
@@ -1238,11 +1238,11 @@ to reason about.
 
 ## Coverage Gaps (ACCEPTED — 2026-09 factory seams triage)
 
-### factory/chatter.go — skills.sh repository graceful-degradation path
+### app/chatter.go — skills.sh repository graceful-degradation path
 
 - **Status**: ACCEPTED (2026-09)
 - **Rationale**: `NewSkillsShRepository` errors only on `filepath.Walk` traversal failure (an unreadable `.skills/` subdirectory) — filesystem fault injection; the directory-missing case returns an empty repo with no error. Both flagged branches — the `slog.Warn` + nil fallback (`chatter.go:107-111`) and the `skillRepo = fileRepo` else-branch (`chatter.go:119-121`) — are therefore reachable only via that fault. The underlying error is already unit-tested at `TestNewSkillsShRepository_UnreadableSubdirectory`. The whole block is backward-compat for tests: production injects a shared repo from the composition root, so `deps.GetSkillRepository()` is non-nil and this block is skipped. Same acceptance class as `di/container.go — skills repository init error paths`.
-- **See**: `internal/infrastructure/factory/chatter.go:107-121`, `internal/infrastructure/skills/skillssh_repo_test.go:231`
+- **See**: `internal/app/chatter.go:106-121`, `internal/infrastructure/skills/skillssh_repo_test.go:231`
 
 ### llm/factory.go — default case in createAuthenticator
 

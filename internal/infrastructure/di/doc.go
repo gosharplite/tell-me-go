@@ -7,7 +7,7 @@ Package di is the single composition root for the application.
 It is the **only** place where concrete infrastructure implementations
 are bound to domain interfaces. No other package in the codebase performs
 dependency injection or adapter wiring — all wiring flows through
-Bootstrapper and its eight sub-factories.
+Bootstrapper and its seven sub-factories.
 
 # Architecture
 
@@ -47,9 +47,7 @@ unexported sub-factories, each responsible for one concern:
 	uiFactory           — terminal rendering, history browsing TUI
 	                      (→ ports.UIRenderer, ports.HistoryBrowser)
 	chatFactory         — agent session lifecycle, Chatter construction
-	                      (→ ports.ChatterFactory, agent.ChatService)
-	suggestionFactory   — command suggestions from global prompt history
-	                      (→ ports.SuggestionService)
+	                      (→ ports.ChatterFactory, ports.ChatService)
 
 All sub-factories are interface-typed within the di package (private
 interfaces). The concrete default*Factory structs are constructed in
@@ -66,8 +64,7 @@ NewBootstrapper(cfg)
 	├─► historyFactory    ← homeDir, fs
 	├─► healthFactory     ← (stateless; delegates to toolchainFactory at build time)
 	├─► uiFactory         ← sm, stdout, stderr, logger
-	├─► chatFactory       ← bootstrapper itself (as SessionLifecycleManager)
-	└─► suggestionFactory ← homeDir, fs, stderr, logger, workspacePolicy
+	└─► chatFactory       ← bootstrapper itself (as SessionLifecycleManager)
 
 BuildSessionDependencies(ctx, cfg, ...)
 

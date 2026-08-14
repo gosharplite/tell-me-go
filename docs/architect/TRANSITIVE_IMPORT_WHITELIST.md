@@ -87,9 +87,6 @@ allowed: config, events, llm, pricing, telemetry, tools
 ## consumer: internal/infrastructure/di
 allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
 # P1+P3: composition root; telemetry via events
-## consumer: internal/infrastructure/factory
-allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
-# P5+P1: services via tools; telemetry via events
 ## consumer: internal/infrastructure/history
 allowed: llm, persistence, services, tools
 # P2+P3+P5: domain deps
@@ -151,13 +148,13 @@ allowed: events, llm, telemetry, tools
 ## consumer: internal/domain/ports
 allowed: <derived>
 
+## consumer: internal/app
+allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
+# TD-1 (issue #1364): app construction seam (chatter/chat-service/suggestions); full hub surface
+
 ## infra-root: di
 allowed: exec, factory, history, llm, logging, persistence, registry, security, skills, telemetry, toolchain
-# composition root: composes leaf adapters (ADR-055/060/062 injection)
-
-## infra-root: factory
-allowed: config, llm, skills, telemetry
-# composition root: constructs chatter/health-manager
+# infra-lateral composition: di composes infra adapters; no application-layer imports (ADR-066)
 
 ## infra-sanctioned: llm → auth
 # llm/factory.go constructs auth (issue #1350 item 4, ADR-055 confinement)
