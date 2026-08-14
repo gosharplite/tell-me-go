@@ -323,7 +323,7 @@ catalog a new gap no one reviewed. Policy:
   would test the third-party uuid library, not project code. Same acceptance
   class as `RealClock` delegation wrappers in `pkg/clock/clock.go` and
   `mockFileSystem.Chmod`.
-- **See**: `internal/domain/llm/types.go:222-224`
+- **See**: `internal/domain/llm/types.go:234-236`
 
 ### domain/ports/repository.go — Task struct field accessors (GetID, GetStatus, GetCreatedAt)
 
@@ -333,7 +333,7 @@ catalog a new gap no one reviewed. Policy:
   interface constraint. They contain no branches and no business logic.
   Testing them would test Go struct field access. Same acceptance class as
   the interface-satisfying stubs in `agenttest/helpers.go`.
-- **See**: `internal/domain/ports/repository.go:105,108,111`
+- **See**: `internal/domain/ports/repository.go:112,116`
 
 ### agent/orchestrator/engine_phases.go — default case in RecoveryStep switch
 
@@ -767,6 +767,22 @@ catalog a new gap no one reviewed. Policy:
 
 - **See**: `internal/tools/integrations/skillssh/manager_impl.go`,
   `internal/tools/integrations/skillssh/tools.go`
+
+---
+
+## Coverage Gaps (ACCEPTED — 2026-09 catalog hygiene)
+
+### llm/failover.go — FailoverGateway.ExtractDocument delegation wrapper
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: one-line delegation to clients[0].Client.ExtractDocument; testing a pass-through provides no value — same acceptance class as AppendTask / domainFS.Chmod (delegation-wrapper).
+- **See**: `internal/infrastructure/llm/failover.go:131-133`
+
+### llm/provider_health.go — getPingEndpoint panic and buildRequest error branch (structurally unreachable)
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: getPingEndpoint's switch is exhaustive over the 3-value APIFamily (//exhaustive:enforce) — the trailing panic is unreachable; consequently buildRequest's `if err != nil` branch consuming getPingEndpoint's (never-returned) error is equally unreachable. Same acceptance class as llm/factory.go createAuthenticator default-case (structurally-unreachable).
+- **See**: `internal/infrastructure/llm/provider_health.go:238`, and the `if err != nil` branch at `provider_health.go:126-129`
 
 ---
 
@@ -1252,4 +1268,4 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment); 2026-09 factory seams triage: coverage pins for chatter.go skills.sh graceful-degradation path + llm/factory.go createAuthenticator default-case)*
+*Last Updated: 2026-09 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment); 2026-09 factory seams triage: coverage pins for chatter.go skills.sh graceful-degradation path + llm/factory.go createAuthenticator default-case; 2026-09 catalog hygiene: coverage pins for llm/failover.go ExtractDocument delegation wrapper + llm/provider_health.go getPingEndpoint panic and buildRequest error branch (structurally unreachable); re-anchored NewID (222-224 → 234-236) and Task accessors (105,108,111 → 112,116); coverage test for BuildSuggestionService tracker fallback)*
