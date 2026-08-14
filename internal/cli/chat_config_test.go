@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/cli/clitest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/config/configtest"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +46,7 @@ AIMODEL: "test-model"
 		},
 	}
 	mService := &clitest.MockChatService{}
-	mService.ProcessMessageFunc = func(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
+	mService.ProcessMessageFunc = func(ctx stdctx.Context, cfg *config.Config, cmd ports.ChatCommand, capturer ports.CapturerInteractor) error {
 		mService.ChatCalled = true
 		mService.LastParams = cmd
 		return nil
@@ -136,7 +136,7 @@ func TestChatCommand_Execute_CLIOptOverride(t *testing.T) {
 				},
 			}
 			mService := &clitest.MockChatService{}
-			mService.ProcessMessageFunc = func(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
+			mService.ProcessMessageFunc = func(ctx stdctx.Context, cfg *config.Config, cmd ports.ChatCommand, capturer ports.CapturerInteractor) error {
 				mService.ChatCalled = true
 				mService.LastParams = cmd
 				return nil

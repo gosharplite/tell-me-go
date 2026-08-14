@@ -6,14 +6,13 @@ package cli
 import (
 	stdctx "context"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// mockCapturerInteractor implements agent.CapturerInteractor for testing
+// mockCapturerInteractor implements ports.CapturerInteractor for testing
 // without a real TTY. IsTTY returns a configurable value.
-var _ agent.CapturerInteractor = (*mockCapturerInteractor)(nil)
+var _ ports.CapturerInteractor = (*mockCapturerInteractor)(nil)
 
 type mockCapturerInteractor struct {
 	isTTY   bool

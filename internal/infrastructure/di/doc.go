@@ -47,7 +47,7 @@ unexported sub-factories, each responsible for one concern:
 	uiFactory           — terminal rendering, history browsing TUI
 	                      (→ ports.UIRenderer, ports.HistoryBrowser)
 	chatFactory         — agent session lifecycle, Chatter construction
-	                      (→ ports.ChatterFactory, agent.ChatService)
+	                      (→ ports.ChatterFactory, ports.ChatService)
 	suggestionFactory   — command suggestions from global prompt history
 	                      (→ ports.SuggestionService)
 

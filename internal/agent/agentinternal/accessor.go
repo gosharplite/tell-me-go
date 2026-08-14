@@ -189,15 +189,16 @@ func (a *AgentInternal) SetRuntimeConfigForTest(snap RuntimeSnapshot) {
 // Mocks
 // ---------------------------------------------------------------------
 
-// mockSessionLifecycleManager is a hand-rolled mock of agent.SessionLifecycleManager.
+// mockSessionLifecycleManager is a hand-rolled mock of ports.SessionLifecycleManager.
 // It must live in this package (rather than in agenttest) because its
-// BuildSessionDependencies signature references agent.CapturerInteractor,
-// which is a distinct interface declared in internal/agent.
+// BuildSessionDependencies signature carries *domain_config.Config, and
+// agenttest's 8-family transitive whitelist admits no config family —
+// placing the mock in agenttest would fail the STRICT transitive gate.
 type mockSessionLifecycleManager struct {
 	mu sync.Mutex
 
 	// Func fields — set by test author.
-	BuildSessionDepsFunc func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error)
+	BuildSessionDepsFunc func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error)
 	FinalizeSessionFunc  func(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, cfg *domain_config.Config) error
 
 	// Call counters.
@@ -215,7 +216,7 @@ func (m *mockSessionLifecycleManager) Snapshot() map[string]int {
 	}
 }
 
-func (m *mockSessionLifecycleManager) BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+func (m *mockSessionLifecycleManager) BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 	m.mu.Lock()
 	m.calledBuild++
 	fn := m.BuildSessionDepsFunc
@@ -237,5 +238,5 @@ func (m *mockSessionLifecycleManager) FinalizeSession(ctx context.Context, hMana
 	return nil
 }
 
-// MockSessionLifecycleManager is a mock of agent.SessionLifecycleManager.
+// MockSessionLifecycleManager is a mock of ports.SessionLifecycleManager.
 type MockSessionLifecycleManager = mockSessionLifecycleManager

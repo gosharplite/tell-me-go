@@ -53,6 +53,7 @@ var exitStayRationales = map[string]string{
 	"UIRenderer":       "di uiFactory binding — full criterion cross-layer",
 	"SessionFinalizer": "di-implemented sessionDeps — full criterion cross-layer",
 	"HistoryRenderer":  "di + telemetry — recorded stay confirmed (realignment-eligibility, not an exit)",
+	"ChatService":      "di signature — chatFactory/GetChatService — full criterion cross-layer",
 }
 
 // ExitCandidate is one internal/domain/ports interface whose non-composition-root

@@ -330,9 +330,9 @@ func verifyPortsRegistryFamilyBound(reg *portsRegistry) []string {
 
 // verifyPortsRegistryStayKeyLiveness enforces that every ADR-056 stay key in
 // exitStayRationales (Capturer, HistoryBrowser, HistoryEditor, UIRenderer,
-// SessionFinalizer, HistoryRenderer) names a live ports interface declaration
-// in decls. This closes the silent 6→5 deletion gap: a removed stay key must
-// surface as an explicit violation naming the missing key.
+// SessionFinalizer, HistoryRenderer, ChatService) names a live ports interface
+// declaration in decls. This closes the silent 7→6 deletion gap: a removed
+// stay key must surface as an explicit violation naming the missing key.
 func verifyPortsRegistryStayKeyLiveness(decls []*symMeta) []string {
 	interfaceNames := make(map[string]bool)
 	for _, d := range decls {

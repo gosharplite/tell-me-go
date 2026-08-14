@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"path/filepath"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -74,7 +73,7 @@ func NewBootstrapper(cfg BootstrapperConfig) *Bootstrapper {
 }
 
 // BuildSessionDependencies assembles all dependencies required for a chat session.
-func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(stdctx.Context) error, error) {
+func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(stdctx.Context) error, error) {
 	b.logBuildStart(cfg, configPath)
 
 	pricingOverrides := b.getPricingOverrides(cfg)
@@ -169,7 +168,7 @@ func (b *Bootstrapper) wireHealth(cfg *config.Config, sessionProvider ports.Sess
 // wireToolRegistry creates a lazily-initialized tool registry. Tool
 // registration (filesystem scanning, binary discovery, security policy
 // evaluation) is deferred until the first call to GetRegistry.
-func (b *Bootstrapper) wireToolRegistry(paths *persistence.Paths, sessionProvider ports.SessionProvider, health ports.HealthCheckManager, lazyClient *lazyClient, bus events.EventBus, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing, capturer agent.CapturerInteractor, skillRepo domain_skills.SkillRepository) *lazyRegistry {
+func (b *Bootstrapper) wireToolRegistry(paths *persistence.Paths, sessionProvider ports.SessionProvider, health ports.HealthCheckManager, lazyClient *lazyClient, bus events.EventBus, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing, capturer ports.CapturerInteractor, skillRepo domain_skills.SkillRepository) *lazyRegistry {
 	return newLazyRegistry(func() (tools.Registry, error) {
 		return b.toolchainFactory.BuildRegistry(toolchainParams{
 			Paths:            paths,
@@ -297,7 +296,7 @@ func (b *Bootstrapper) GetHistoryRenderer() ports.HistoryRenderer {
 }
 
 // GetChatService returns a chat service instance.
-func (b *Bootstrapper) GetChatService() agent.ChatService {
+func (b *Bootstrapper) GetChatService() ports.ChatService {
 	return b.chatFactory.ChatService()
 }
 

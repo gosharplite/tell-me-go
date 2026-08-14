@@ -26,9 +26,9 @@ import (
 
 // newTestChatService builds a ChatService with default test wiring; callers
 // override individual config fields via the variadic functional overrides.
-func newTestChatService(t *testing.T, overrides ...func(*agent.ChatServiceConfig)) agent.ChatService {
+func newTestChatService(t *testing.T, overrides ...func(*ports.ChatServiceConfig)) ports.ChatService {
 	t.Helper()
-	cfg := agent.ChatServiceConfig{
+	cfg := ports.ChatServiceConfig{
 		HomeDir: "home",
 		Version: "v1",
 		Stdout:  io.Discard,
@@ -54,7 +54,7 @@ func newProcessMessageFixtures(
 	bus *agenttest.StubEventBus,
 	agentMock *agenttest.MockServiceAgent,
 	tl *agenttest.MockTurnsLogger,
-	service agent.ChatService,
+	service ports.ChatService,
 ) {
 	t.Helper()
 
@@ -70,7 +70,7 @@ func newProcessMessageFixtures(
 		return agentMock, nil
 	})
 
-	service = newTestChatService(t, func(c *agent.ChatServiceConfig) {
+	service = newTestChatService(t, func(c *ports.ChatServiceConfig) {
 		c.Stderr = stderr
 		c.SM = sm
 		c.LifecycleManager = sf
@@ -95,7 +95,7 @@ func baseSetup(
 	cleanup func(context.Context) error,
 	cfg *config.Config,
 ) {
-	sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+	sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 		return deps, hm, cleanup, nil
 	}
 
@@ -148,7 +148,7 @@ func TestProcessMessage_Success(t *testing.T) {
 
 	tl.CloseFunc = func() error { return nil }
 
-	cmd := agent.ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"}
+	cmd := ports.ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"}
 	err := service.ProcessMessage(context.Background(), cfg, cmd, capturer)
 
 	assert.NoError(t, err)
@@ -166,11 +166,11 @@ func TestProcessMessage_BuildError(t *testing.T) {
 	sf, _, capturer, _, _, _, _, service := newProcessMessageFixtures(t, io.Discard)
 
 	cfg := &config.Config{Mode: "assistant"}
-	sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+	sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 		return nil, nil, func(context.Context) error { return nil }, errBuild
 	}
 
-	cmd := agent.ChatCommand{ConfigPath: "config.yaml"}
+	cmd := ports.ChatCommand{ConfigPath: "config.yaml"}
 	err := service.ProcessMessage(context.Background(), cfg, cmd, capturer)
 
 	assert.Error(t, err)
@@ -237,7 +237,7 @@ func TestProcessMessage_CleanupErrors(t *testing.T) {
 
 			bus.ShutdownErr = tt.busShutdownErr
 
-			cmd := agent.ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"}
+			cmd := ports.ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"}
 			err := service.ProcessMessage(context.Background(), sharedCfg, cmd, capturer)
 
 			assert.NoError(t, err)
@@ -270,7 +270,7 @@ func TestProcessMessage_RetrySuccess(t *testing.T) {
 	}
 
 	mockHM := &mockHistoryManagerForRetry{msg: "retry this", turns: 2}
-	sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+	sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 		return deps, mockHM, cleanup, nil
 	}
 	sf.FinalizeSessionFunc = func(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, c *config.Config) error {
@@ -300,7 +300,7 @@ func TestProcessMessage_RetrySuccess(t *testing.T) {
 	capturer.ConfirmResult = true
 	capturer.IsTTYVal = true
 
-	cmd := agent.ChatCommand{ConfigPath: "config.yaml", Retry: true}
+	cmd := ports.ChatCommand{ConfigPath: "config.yaml", Retry: true}
 	err := service.ProcessMessage(context.Background(), cfg, cmd, capturer)
 
 	assert.NoError(t, err)
@@ -327,7 +327,7 @@ func TestProcessMessage_RetryAborted(t *testing.T) {
 
 	cleanup := func(context.Context) error { return nil }
 	mockHM := &mockHistoryManagerForRetry{msg: "retry this", turns: 2}
-	sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+	sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 		return deps, mockHM, cleanup, nil
 	}
 
@@ -335,7 +335,7 @@ func TestProcessMessage_RetryAborted(t *testing.T) {
 
 	capturer.ConfirmResult = false
 
-	cmd := agent.ChatCommand{ConfigPath: "config.yaml", Retry: true}
+	cmd := ports.ChatCommand{ConfigPath: "config.yaml", Retry: true}
 	err := service.ProcessMessage(context.Background(), cfg, cmd, capturer)
 
 	assert.NoError(t, err)
@@ -389,7 +389,7 @@ func TestProcessMessage_RetryErrors(t *testing.T) {
 				err:   tt.hmErr,
 			}
 
-			sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+			sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 				return deps, mockHM, cleanup, nil
 			}
 
@@ -398,7 +398,7 @@ func TestProcessMessage_RetryErrors(t *testing.T) {
 			capturer.ConfirmResult = false
 			capturer.ConfirmErr = tt.confirmErr
 
-			cmd := agent.ChatCommand{ConfigPath: "config.yaml", Retry: true}
+			cmd := ports.ChatCommand{ConfigPath: "config.yaml", Retry: true}
 			err := service.ProcessMessage(context.Background(), cfg, cmd, capturer)
 
 			assert.Error(t, err)
@@ -448,7 +448,7 @@ func TestProcessMessage_FinalizeErrors(t *testing.T) {
 			cleanup := func(context.Context) error { return nil }
 			mockHM := &mockHistoryManagerForRetry{}
 
-			sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+			sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 				return deps, mockHM, cleanup, nil
 			}
 			sf.FinalizeSessionFunc = func(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, c *config.Config) error {
@@ -475,7 +475,7 @@ func TestProcessMessage_FinalizeErrors(t *testing.T) {
 
 			capturer.IsTTYVal = true
 
-			cmd := agent.ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"}
+			cmd := ports.ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"}
 			err := service.ProcessMessage(context.Background(), cfg, cmd, capturer)
 
 			assert.Error(t, err)
@@ -499,7 +499,7 @@ func TestGetLastUserMessage(t *testing.T) {
 
 	mockHM := &mockHistoryManagerForRetry{msg: "last message", turns: 1}
 
-	service := newTestChatService(t, func(c *agent.ChatServiceConfig) {
+	service := newTestChatService(t, func(c *ports.ChatServiceConfig) {
 		c.SM = sm
 	})
 
@@ -668,7 +668,7 @@ func TestStreamTurnsLog(t *testing.T) {
 				tt.setupMock(mFS)
 			}
 
-			service := newTestChatService(t, func(c *agent.ChatServiceConfig) {
+			service := newTestChatService(t, func(c *ports.ChatServiceConfig) {
 				c.HomeDir = homeDir
 				c.LogOpener = mFS
 			})
@@ -759,7 +759,7 @@ func TestRunDiagnostics(t *testing.T) {
 			expectCheckAll: true,
 			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cleanup := func(context.Context) error { return nil }
-				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 					return deps, nil, cleanup, nil
 				}
 
@@ -781,7 +781,7 @@ func TestRunDiagnostics(t *testing.T) {
 			expectCheckAll: true,
 			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cleanup := func(context.Context) error { return nil }
-				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 					return deps, nil, cleanup, nil
 				}
 
@@ -804,7 +804,7 @@ func TestRunDiagnostics(t *testing.T) {
 			expectCheckAll: true,
 			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cleanup := func(context.Context) error { return nil }
-				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 					return deps, nil, cleanup, nil
 				}
 
@@ -835,7 +835,7 @@ func TestRunDiagnostics(t *testing.T) {
 		{
 			name: "build deps error",
 			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
-				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 					return nil, nil, nil, errBuild
 				}
 			},
@@ -846,7 +846,7 @@ func TestRunDiagnostics(t *testing.T) {
 			name: "nil health manager",
 			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cleanup := func(context.Context) error { return nil }
-				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 					return deps, nil, cleanup, nil
 				}
 
@@ -860,7 +860,7 @@ func TestRunDiagnostics(t *testing.T) {
 			expectCheckAll: true,
 			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cleanup := func(context.Context) error { return nil }
-				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 					return deps, nil, cleanup, nil
 				}
 
@@ -880,7 +880,7 @@ func TestRunDiagnostics(t *testing.T) {
 			expectCheckAll: true,
 			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cleanup := func(context.Context) error { return nil }
-				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 					return deps, nil, cleanup, nil
 				}
 
@@ -914,7 +914,7 @@ func TestRunDiagnostics(t *testing.T) {
 			}
 
 			var stdout bytes.Buffer
-			service := newTestChatService(t, func(c *agent.ChatServiceConfig) {
+			service := newTestChatService(t, func(c *ports.ChatServiceConfig) {
 				c.Stdout = &stdout
 				c.LifecycleManager = sf
 				c.UIRenderer = uir
@@ -990,7 +990,7 @@ func TestBrowseHistory(t *testing.T) {
 				return tt.browseErr
 			}
 
-			service := newTestChatService(t, func(c *agent.ChatServiceConfig) {
+			service := newTestChatService(t, func(c *ports.ChatServiceConfig) {
 				c.HistoryBrowser = browser
 			})
 
@@ -1095,7 +1095,7 @@ func TestChatService_StreamTurnsLog_EmptyMode(t *testing.T) {
 		return nil, os.ErrNotExist
 	}
 
-	service := newTestChatService(t, func(c *agent.ChatServiceConfig) {
+	service := newTestChatService(t, func(c *ports.ChatServiceConfig) {
 		c.HomeDir = "/nonexistent"
 		c.LogOpener = mFS
 	})
@@ -1122,7 +1122,7 @@ func TestChatService_StreamTurnsLog_EmptyPath(t *testing.T) {
 
 	// LogOpener must not be called — the guard should short-circuit before Open.
 	// Passing nil for LogOpener proves this: if Open is reached, the test panics.
-	service := newTestChatService(t, func(c *agent.ChatServiceConfig) {
+	service := newTestChatService(t, func(c *ports.ChatServiceConfig) {
 		c.HomeDir = "/test"
 		c.ResolvePaths = emptyPathResolver
 	})
@@ -1143,7 +1143,7 @@ func TestChatService_ResolvePathsDefault(t *testing.T) {
 		gotName = name
 		return nil, os.ErrNotExist // graceful: proves Open was reached with the resolved path
 	}
-	service := newTestChatService(t, func(c *agent.ChatServiceConfig) { c.LogOpener = mFS })
+	service := newTestChatService(t, func(c *ports.ChatServiceConfig) { c.LogOpener = mFS })
 	var out bytes.Buffer
 	err := service.StreamTurnsLog(ctx, &config.Config{Mode: "assistant"}, &out)
 	assert.NoError(t, err)
@@ -1155,7 +1155,7 @@ func TestChatService_ResolvePathsDefault(t *testing.T) {
 func TestUpdateLastTurn(t *testing.T) {
 	ctx := context.Background()
 
-	service := newTestChatService(t, func(c *agent.ChatServiceConfig) {
+	service := newTestChatService(t, func(c *ports.ChatServiceConfig) {
 		c.SM = &agenttest.MockServiceSecurityManager{}
 	})
 
