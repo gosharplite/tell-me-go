@@ -71,6 +71,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-063** | SOP Documentation-Governance — Maintainer Note-Only Veto and One-Time Prose Correction | 2026-08 | Accepted | [2026-08-sop-documentation-governance.md](2026-08-sop-documentation-governance.md) |
 | **ADR-064** | Domain/Ports Shared-Kernel Registry Gate and Split Deferral (D1=DEFER) | 2026-08 | Accepted | [2026-08-ports-shared-kernel-registry-gate.md](2026-08-ports-shared-kernel-registry-gate.md) |
 | **ADR-065** | Infra-Only Multi-Package Seam Realigns to Concept-Side Contract Leaf | 2026-08 | Accepted | [2026-08-infra-seam-contract-leaf-rule.md](2026-08-infra-seam-contract-leaf-rule.md) |
+| **ADR-066** | Infrastructure→Application Dependency Inversion — Port Relocation and internal/app Construction Seam (TD-1, M-scope) | 2026-08 | Accepted | [2026-08-infrastructure-application-dependency-inversion.md](2026-08-infrastructure-application-dependency-inversion.md) |
 
 ## How to Create a New ADR
 
