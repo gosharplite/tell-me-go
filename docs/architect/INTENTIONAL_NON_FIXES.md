@@ -779,8 +779,8 @@ catalog a new gap no one reviewed. Policy:
   across multiple missing-key scenarios (multiple API response shapes).
   CC comes from case enumeration and assertion boilerplate, not branching
   business logic. Same acceptance class as `TestHydrateMediaAssets` (CC=13) —
-  assertion boilerplate across a coverage matrix. Re-anchored 2026-08 (#1350 item 4): line drifted 211→212 as the llm→auth inversion added a ports import to factory_test.go.
-- **See**: `internal/infrastructure/llm/factory_test.go:212`
+  assertion boilerplate across a coverage matrix. Re-anchored 2026-08 (#1350 item 4): line drifted 211→212 as the llm→auth inversion added a ports import to factory_test.go. Re-anchored 2026-09: line drifted 212→214 as two kimi rows were added to `TestCreateAuthenticator_Strategies` (2026-09 factory seams triage).
+- **See**: `internal/infrastructure/llm/factory_test.go:214`
 
 ### internal/agent/orchestrator/engine_phases_test.go — TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=13)
 
@@ -1236,4 +1236,20 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment)*
+## Coverage Gaps (ACCEPTED — 2026-09 factory seams triage)
+
+### factory/chatter.go — skills.sh repository graceful-degradation path
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: `NewSkillsShRepository` errors only on `filepath.Walk` traversal failure (an unreadable `.skills/` subdirectory) — filesystem fault injection; the directory-missing case returns an empty repo with no error. Both flagged branches — the `slog.Warn` + nil fallback (`chatter.go:107-111`) and the `skillRepo = fileRepo` else-branch (`chatter.go:119-121`) — are therefore reachable only via that fault. The underlying error is already unit-tested at `TestNewSkillsShRepository_UnreadableSubdirectory`. The whole block is backward-compat for tests: production injects a shared repo from the composition root, so `deps.GetSkillRepository()` is non-nil and this block is skipped. Same acceptance class as `di/container.go — skills repository init error paths`.
+- **See**: `internal/infrastructure/factory/chatter.go:107-121`, `internal/infrastructure/skills/skillssh_repo_test.go:231`
+
+### llm/factory.go — default case in createAuthenticator
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: The `default:` arm of `createAuthenticator`'s `Family()` switch is structurally unreachable — `Family()` returns exactly one of `APIOpenAI`, `APIAnthropic`, or `APIGemini` (totality enforced by `//exhaustive:enforce`), and all three are handled explicitly. The guard exists only to fail loudly on programmer error. Same acceptance class as `agent/orchestrator/engine_phases.go — default case in RecoveryStep switch`.
+- **See**: `internal/infrastructure/llm/factory.go:220-223`
+
+---
+
+*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment); 2026-09 factory seams triage: coverage pins for chatter.go skills.sh graceful-degradation path + llm/factory.go createAuthenticator default-case)*

@@ -78,7 +78,7 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"TestFixtureIndexer_ConstructAndHarvest":          {Line: 158, Complexity: 13, FilePath: "internal/tools/analysis/index_fixture_test.go"},
 		"TestHydrateMediaAssets":                          {Line: 243, Complexity: 13, FilePath: "internal/infrastructure/llm/openai/client_vision_test.go"},
 		"TestResolveCapabilities":                         {Line: 10, Complexity: 13, FilePath: "internal/domain/llm/capabilities_test.go"},
-		"assertMissingKeysResult":                         {Line: 212, Complexity: 13, FilePath: "internal/infrastructure/llm/factory_test.go"},
+		"assertMissingKeysResult":                         {Line: 214, Complexity: 13, FilePath: "internal/infrastructure/llm/factory_test.go"},
 		"(*RecoveryStep).Process":                         {Line: 129, Complexity: 12, FilePath: "internal/agent/orchestrator/engine_phases.go"},
 		"(*model).handleDomainEvent":                      {Line: 339, Complexity: 12, FilePath: "internal/ui/tui/progress/model.go"},
 		"TestDeadCodeAnalyzer_Precision":                  {Line: 177, Complexity: 12, FilePath: "internal/tools/analysis/precision_test.go"},
