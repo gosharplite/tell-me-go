@@ -86,6 +86,8 @@ func TestCreateAuthenticator_Strategies(t *testing.T) {
 		{"DeepSeek valid Key", config.LLMProvider{Type: "deepseek", APIKey: "secret"}, false, false},
 		{"Anthropic requires Key", config.LLMProvider{Type: "anthropic", APIKey: ""}, true, true},
 		{"Anthropic valid Key", config.LLMProvider{Type: "anthropic", APIKey: "secret"}, false, false},
+		{"Kimi requires Key", config.LLMProvider{Type: "kimi", APIKey: ""}, true, true},
+		{"Kimi valid Key", config.LLMProvider{Type: "kimi", APIKey: "secret"}, false, false},
 		{"Unknown Provider Fallback with Key", config.LLMProvider{Type: "unknown", APIKey: "secret"}, false, false},
 	}
 
