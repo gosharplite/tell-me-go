@@ -26,7 +26,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/factory"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
@@ -613,6 +612,12 @@ type mockTracker struct {
 
 func (m *mockTracker) Warmup() {}
 
+// mockHealthCheckManager satisfies ports.HealthCheckManager by embedding the
+// interface; the getter tests only assert non-nil identity, never behavior.
+type mockHealthCheckManager struct {
+	ports.HealthCheckManager
+}
+
 type mockStatsTracker struct {
 	pricing.CostTracker
 	stats pricing.UsageStats
@@ -699,7 +704,7 @@ func TestSessionDeps_Getters(t *testing.T) {
 			registry: lazyRegistry,
 		},
 		healthProvider: healthProvider{
-			health: factory.NewHealthCheckManager(nil),
+			health: &mockHealthCheckManager{},
 		},
 	}
 

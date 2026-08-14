@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"path/filepath"
 
+	"github.com/gosharplite/tell-me-go/internal/app"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -26,15 +27,14 @@ import (
 
 // Bootstrapper handles the instantiation and wiring of system components.
 type Bootstrapper struct {
-	cfg               BootstrapperConfig
-	sessionFactory    sessionFactory
-	toolchainFactory  toolchainFactory
-	telemetryFactory  telemetryFactory
-	historyFactory    historyFactory
-	healthFactory     healthFactory
-	uiFactory         uiFactory
-	chatFactory       chatFactory
-	suggestionFactory suggestionFactory
+	cfg              BootstrapperConfig
+	sessionFactory   sessionFactory
+	toolchainFactory toolchainFactory
+	telemetryFactory telemetryFactory
+	historyFactory   historyFactory
+	healthFactory    healthFactory
+	uiFactory        uiFactory
+	chatFactory      chatFactory
 }
 
 // NewBootstrapper creates a new Bootstrapper instance.
@@ -68,7 +68,6 @@ func NewBootstrapper(cfg BootstrapperConfig) *Bootstrapper {
 	b.healthFactory = newHealthFactory()
 	b.uiFactory = newUIFactory(cfg.SM, cfg.Stdout, cfg.Stderr, cfg.Logger)
 	b.chatFactory = newChatFactory(cfg.HomeDir, cfg.Version, cfg.Stdout, cfg.Stderr, cfg.SM, cfg.FileSystem, b, b.uiFactory)
-	b.suggestionFactory = newSuggestionFactory(cfg.HomeDir, cfg.FileSystem, cfg.Stderr, cfg.Logger, b.cfg.WorkspacePolicy)
 	return b
 }
 
@@ -277,7 +276,7 @@ func (b *Bootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config
 
 // GetSuggestionService initializes and returns the suggestion service.
 func (b *Bootstrapper) GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error) {
-	return b.suggestionFactory.BuildSuggestionService(ctx, recentHistory)
+	return app.BuildSuggestionService(ctx, b.cfg.FileSystem, b.cfg.HomeDir, b.cfg.Stderr, b.cfg.Logger, b.cfg.WorkspacePolicy, recentHistory)
 }
 
 // GetHistoryBrowser returns a history browser that launches the TUI.

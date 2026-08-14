@@ -6,9 +6,8 @@ package di
 import (
 	"io"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/app"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/factory"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
@@ -42,11 +41,11 @@ func newChatFactory(homeDir, version string, stdout, stderr io.Writer, sm Config
 }
 
 func (f *defaultChatFactory) AgentFactory() ports.ChatterFactory {
-	return factory.NewChatter
+	return app.NewChatter
 }
 
 func (f *defaultChatFactory) ChatService() ports.ChatService {
-	return agent.NewChatService(ports.ChatServiceConfig{
+	return app.NewChatService(ports.ChatServiceConfig{
 		HomeDir:          f.HomeDir,
 		Version:          f.Version,
 		Stdout:           f.Stdout,
