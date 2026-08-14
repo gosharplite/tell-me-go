@@ -8,7 +8,6 @@ import (
 	osexec "os/exec"
 	"path/filepath"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -41,7 +40,7 @@ type toolchainParams struct {
 	Model            string
 	Mode             string
 	PricingOverrides map[string]pricing.ModelPricing
-	Capturer         agent.CapturerInteractor
+	Capturer         ports.CapturerInteractor
 	SkillRepo        domain_skills.SkillRepository
 }
 

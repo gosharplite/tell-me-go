@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -35,7 +35,7 @@ type AppDependencies struct {
 	SM           domain_security.Manager
 	Bootstrapper Bootstrapper
 	ConfigLoader domain_config.ConfigLoader
-	ChatService  agent.ChatService
+	ChatService  ports.ChatService
 	Interactor   *InteractorRef
 }
 
@@ -49,7 +49,7 @@ type App struct {
 	sm           domain_security.Manager
 	bootstrapper Bootstrapper
 	configLoader domain_config.ConfigLoader
-	chatService  agent.ChatService
+	chatService  ports.ChatService
 	interactor   *InteractorRef
 	mockPrompt   string
 	mockAnswer   string

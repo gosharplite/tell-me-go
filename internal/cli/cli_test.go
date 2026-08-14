@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/cli/clitest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -65,7 +64,7 @@ func TestApp_Run_ContextCanceled(t *testing.T) {
 	stderr := &bytes.Buffer{}
 
 	mService := &clitest.MockChatService{
-		ProcessMessageFunc: func(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
+		ProcessMessageFunc: func(ctx stdctx.Context, cfg *config.Config, cmd ports.ChatCommand, capturer ports.CapturerInteractor) error {
 			return stdctx.Canceled
 		},
 	}
@@ -96,7 +95,7 @@ func TestApp_Run_ContextCanceled(t *testing.T) {
 func TestApp_Run_CommandError(t *testing.T) {
 	customErr := errors.New("custom error")
 	mService := &clitest.MockChatService{
-		ProcessMessageFunc: func(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
+		ProcessMessageFunc: func(ctx stdctx.Context, cfg *config.Config, cmd ports.ChatCommand, capturer ports.CapturerInteractor) error {
 			return customErr
 		},
 	}
@@ -174,7 +173,7 @@ func (m *cliMockLoader) Load(path string) (*config.Config, error) {
 
 type simpleMockBootstrapper struct{}
 
-func (m *simpleMockBootstrapper) BuildSessionDependencies(stdctx.Context, *config.Config, string, bool, agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(stdctx.Context) error, error) {
+func (m *simpleMockBootstrapper) BuildSessionDependencies(stdctx.Context, *config.Config, string, bool, ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(stdctx.Context) error, error) {
 	return nil, nil, func(stdctx.Context) error { return nil }, nil
 }
 func (m *simpleMockBootstrapper) FinalizeSession(stdctx.Context, ports.HistoryManager, ports.SessionFinalizer, *config.Config) error {
@@ -195,7 +194,7 @@ func (m *simpleMockBootstrapper) GetAgentFactory() ports.ChatterFactory         
 func (m *simpleMockBootstrapper) GetUIRenderer() ports.UIRenderer                       { return nil }
 func (m *simpleMockBootstrapper) GetHistoryRenderer() ports.HistoryRenderer             { return nil }
 func (m *simpleMockBootstrapper) GetHistoryBrowser() ports.HistoryBrowser               { return nil }
-func (m *simpleMockBootstrapper) GetChatService() agent.ChatService                     { return nil }
+func (m *simpleMockBootstrapper) GetChatService() ports.ChatService                     { return nil }
 func (m *simpleMockBootstrapper) GetSystemMetricsProvider() ports.SystemMetricsProvider { return nil }
 
 // mockSMWithTracking extends mockSM with Close() call tracking for shutdown tests.
@@ -257,7 +256,7 @@ func TestApp_Run_SMCloseOnContextCancel(t *testing.T) {
 	sm := &mockSMWithTracking{}
 
 	mService := &clitest.MockChatService{
-		ProcessMessageFunc: func(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
+		ProcessMessageFunc: func(ctx stdctx.Context, cfg *config.Config, cmd ports.ChatCommand, capturer ports.CapturerInteractor) error {
 			return stdctx.Canceled
 		},
 	}

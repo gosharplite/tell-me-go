@@ -29,7 +29,7 @@ func TestChatService_Initialization_Failures(t *testing.T) {
 		{
 			name: "Build Session Dependencies Failure",
 			setup: func(sf *agentinternal.MockSessionLifecycleManager) {
-				sf.BuildSessionDepsFunc = func(_ context.Context, _ *config.Config, _ string, _ bool, _ agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+				sf.BuildSessionDepsFunc = func(_ context.Context, _ *config.Config, _ string, _ bool, _ ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 					return nil, nil, func(context.Context) error { return nil }, errBuild
 				}
 			},
@@ -44,7 +44,7 @@ func TestChatService_Initialization_Failures(t *testing.T) {
 				tt.setup(mockSF)
 			}
 
-			service := agent.NewChatService(agent.ChatServiceConfig{
+			service := agent.NewChatService(ports.ChatServiceConfig{
 				HomeDir:          "home",
 				Version:          "v1",
 				Stdout:           io.Discard,
@@ -57,7 +57,7 @@ func TestChatService_Initialization_Failures(t *testing.T) {
 
 			// 3. Attempt ProcessMessage
 			cfg := &config.Config{}
-			cmd := agent.ChatCommand{ConfigPath: "config.yaml"}
+			cmd := ports.ChatCommand{ConfigPath: "config.yaml"}
 			err := service.ProcessMessage(context.Background(), cfg, cmd, nil)
 
 			// 4. Assert exact failure

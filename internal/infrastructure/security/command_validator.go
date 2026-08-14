@@ -576,6 +576,18 @@ func (v *commandValidator) validateSinglePath(arg string) (bool, string) {
 		return true, ""
 	}
 
+	// A bare ".." is a traversal token whose resolution depends on the
+	// caller's CWD: filepath.Abs("..") can land inside a registered
+	// boundary purely because of where the process happens to run, so
+	// the resolution-based IsPathSafe check cannot be trusted for it.
+	// Path safety must not grant implicit permission to a CWD-dependent
+	// token — block it unconditionally. "." stays allowed (it resolves
+	// to the caller's own directory), and "..." / "./..." remain allowed
+	// via isSpecialPattern above.
+	if arg == ".." {
+		return false, fmt.Sprintf("path safety check failed for argument '%s': bare '..' traversal token is not auto-approvable", arg)
+	}
+
 	if v.sm != nil {
 		if _, err := v.sm.IsPathSafe(arg); err != nil {
 			if v.looksLikePath(arg) {

@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
@@ -22,7 +21,7 @@ var chatServiceDefaultTests = []chatServiceDefaultTest{
 		name: "ProcessMessage",
 		fn: func(t *testing.T, mcs *MockChatService) {
 			err := mcs.ProcessMessage(
-				context.Background(), nil, agent.ChatCommand{}, nil)
+				context.Background(), nil, ports.ChatCommand{}, nil)
 			if err != nil {
 				t.Errorf("expected nil error, got %v", err)
 			}
@@ -93,7 +92,7 @@ var chatServiceDefaultTests = []chatServiceDefaultTest{
 func testChatServiceSnapshotCallTracking(t *testing.T) {
 	mcs := &MockChatService{}
 	_ = mcs.ProcessMessage(
-		context.Background(), nil, agent.ChatCommand{}, nil)
+		context.Background(), nil, ports.ChatCommand{}, nil)
 	_, _, _ = mcs.GetLastUserMessage(
 		context.Background(), nil)
 	_ = mcs.BrowseHistory(

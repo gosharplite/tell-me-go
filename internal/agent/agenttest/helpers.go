@@ -325,7 +325,7 @@ func (s *StubEventBus) Flush(ctx context.Context) error                   { retu
 func (s *StubEventBus) Listen(ctx context.Context) error                  { <-ctx.Done(); return ctx.Err() }
 func (s *StubEventBus) WaitStarted()                                      {}
 
-// StubCapturer is a stub implementation of agent.CapturerInteractor for testing.
+// StubCapturer is a stub implementation of ports.CapturerInteractor for testing.
 // Set fields to control return values; all other methods are no-ops.
 type StubCapturer struct {
 	IsTTYVal            bool

@@ -7,7 +7,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
@@ -31,7 +30,7 @@ type MockBootstrapper struct {
 	calledMethods                   []string
 
 	// Function fields — set before test to script behaviour.
-	BuildSessionDependenciesFunc  func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error)
+	BuildSessionDependenciesFunc  func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error)
 	FinalizeSessionFunc           func(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, cfg *domain_config.Config) error
 	GetHistoryManagerFunc         func(ctx context.Context, cfg *domain_config.Config) (ports.HistoryManager, error)
 	GetUnifiedHistoryProviderFunc func(ctx context.Context, cfg *domain_config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error)
@@ -40,7 +39,7 @@ type MockBootstrapper struct {
 	GetUIRendererFunc             func() ports.UIRenderer
 	GetHistoryRendererFunc        func() ports.HistoryRenderer
 	GetHistoryBrowserFunc         func() ports.HistoryBrowser
-	GetChatServiceFunc            func() agent.ChatService
+	GetChatServiceFunc            func() ports.ChatService
 	GetSystemMetricsProviderFunc  func() ports.SystemMetricsProvider
 }
 
@@ -82,7 +81,7 @@ func (m *MockBootstrapper) Snapshot() BootstrapperSnapshot {
 // BuildSessionDependencies builds the core session dependencies.
 // When BuildSessionDependenciesFunc is nil the default returns
 // (nil, nil, func(context.Context) error { return nil }, nil).
-func (m *MockBootstrapper) BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+func (m *MockBootstrapper) BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer ports.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 	m.mu.Lock()
 	m.calledBuildSessionDependencies++
 	m.calledMethods = append(m.calledMethods, "BuildSessionDependencies")
@@ -208,7 +207,7 @@ func (m *MockBootstrapper) GetHistoryBrowser() ports.HistoryBrowser {
 
 // GetChatService returns the chat service.
 // When GetChatServiceFunc is nil the default returns nil.
-func (m *MockBootstrapper) GetChatService() agent.ChatService {
+func (m *MockBootstrapper) GetChatService() ports.ChatService {
 	m.mu.Lock()
 	m.calledGetChatService++
 	m.calledMethods = append(m.calledMethods, "GetChatService")

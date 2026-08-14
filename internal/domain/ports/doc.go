@@ -19,7 +19,9 @@
 //   - ChatExecutor
 //   - ChatConfigurator
 //   - ChatEventSource
+//   - ChatService
 //   - SessionFinalizer
+//   - SessionLifecycleManager
 //   - ClientFactory
 //
 // ## Family: Conversation Persistence
@@ -35,6 +37,7 @@
 //
 // ## Family: User Interaction
 //   - Capturer
+//   - CapturerInteractor
 //   - UIRenderer
 //   - ResponseRenderer
 //   - StatusLogger
@@ -61,6 +64,7 @@
 //   - TaskWriter
 //   - KVStore
 //   - ListStore
+//   - LogFileOpener
 //   - Initializer
 //   - ResourceCloser
 //   - FilterableItem
@@ -77,6 +81,8 @@
 //
 // ## Supporting
 //   - ChatterFactory
+//   - ChatCommand
+//   - ChatServiceConfig
 //   - CaptureOptions
 //   - CaptureOption
 //   - ClientFactoryFunc

@@ -78,7 +78,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	}
 
 	loader := &config.YAMLConfigLoader{Finder: config.NewDefaultConfigFinder()}
-	chatService := agent.NewChatService(agent.ChatServiceConfig{
+	chatService := agent.NewChatService(ports.ChatServiceConfig{
 		HomeDir:          tmpDir,
 		Version:          "1.0.0",
 		Stdout:           &stdout,

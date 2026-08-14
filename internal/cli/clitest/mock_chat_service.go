@@ -8,16 +8,15 @@ import (
 	"io"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// Compile-time guard: MockChatService must implement agent.ChatService.
-var _ agent.ChatService = (*MockChatService)(nil)
+// Compile-time guard: MockChatService must implement ports.ChatService.
+var _ ports.ChatService = (*MockChatService)(nil)
 
-// MockChatService is a hand-rolled test double for agent.ChatService.
+// MockChatService is a hand-rolled test double for ports.ChatService.
 // Override function fields to script behaviour. All methods record
 // invocation counts and names accessible via Snapshot().
 type MockChatService struct {
@@ -33,7 +32,7 @@ type MockChatService struct {
 	calledMethods            []string
 
 	// Function fields — set before test to script behaviour.
-	ProcessMessageFunc     func(ctx context.Context, cfg *domain_config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error
+	ProcessMessageFunc     func(ctx context.Context, cfg *domain_config.Config, cmd ports.ChatCommand, capturer ports.CapturerInteractor) error
 	GetLastUserMessageFunc func(ctx context.Context, hManager ports.HistoryManager) (string, int, error)
 	BrowseHistoryFunc      func(ctx context.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error
 	EditLastTurnFunc       func(ctx context.Context, hManager ports.HistoryManager) error
@@ -47,7 +46,7 @@ type MockChatService struct {
 	// by the test with a closure that writes to them. Tests that rely on
 	// the spy counters and Snapshot() do not need these fields.
 	ChatCalled bool
-	LastParams agent.ChatCommand
+	LastParams ports.ChatCommand
 }
 
 // ChatServiceSnapshot holds a race-safe copy of mock call counts and
@@ -82,7 +81,7 @@ func (m *MockChatService) Snapshot() ChatServiceSnapshot {
 
 // ProcessMessage handles the entire business flow of a chat turn.
 // When ProcessMessageFunc is nil the default is success (nil error).
-func (m *MockChatService) ProcessMessage(ctx context.Context, cfg *domain_config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
+func (m *MockChatService) ProcessMessage(ctx context.Context, cfg *domain_config.Config, cmd ports.ChatCommand, capturer ports.CapturerInteractor) error {
 	m.mu.Lock()
 	m.calledProcessMessage++
 	m.calledMethods = append(m.calledMethods, "ProcessMessage")

@@ -21,38 +21,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/ioutils"
 )
 
-// SessionLifecycleManager defines the interface for building and finalizing sessions.
-type SessionLifecycleManager interface {
-	BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error)
-	FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, cfg *domain_config.Config) error
-}
-
-// LogFileOpener defines the minimal interface required to open session log files.
-type LogFileOpener interface {
-	Open(ctx context.Context, name string) (persistence.File, error)
-}
-
-// ChatServiceConfig configures a chatService during construction.
-type ChatServiceConfig struct {
-	HomeDir string
-	Version string
-	Stdout  io.Writer
-	Stderr  io.Writer
-	SM      domain_security.Manager
-
-	LifecycleManager SessionLifecycleManager
-	ChatterFactory   ports.ChatterFactory
-	UIRenderer       ports.UIRenderer
-	HistoryRenderer  ports.HistoryRenderer
-	HistoryBrowser   ports.HistoryBrowser
-	HistoryEditor    ports.HistoryEditor
-	LogOpener        LogFileOpener
-
-	// ResolvePaths resolves session filesystem paths. Defaults to persistence.ResolvePaths.
-	// Injectable for testing the empty-path defensive guard in StreamTurnsLog.
-	ResolvePaths func(homeDir, mode string) *persistence.Paths
-}
-
 type chatService struct {
 	HomeDir string
 	Version string
@@ -60,21 +28,21 @@ type chatService struct {
 	Stderr  io.Writer
 	SM      domain_security.Manager
 
-	LifecycleManager SessionLifecycleManager
+	LifecycleManager ports.SessionLifecycleManager
 	ChatterFactory   ports.ChatterFactory
 	UIRenderer       ports.UIRenderer
 	HistoryRenderer  ports.HistoryRenderer
 	HistoryBrowser   ports.HistoryBrowser
 	HistoryEditor    ports.HistoryEditor
-	LogOpener        LogFileOpener
+	LogOpener        ports.LogFileOpener
 
 	// resolvePaths resolves session filesystem paths. Defaults to persistence.ResolvePaths.
 	// Injectable for testing the empty-path defensive guard in StreamTurnsLog.
 	resolvePaths func(homeDir, mode string) *persistence.Paths
 }
 
-// NewChatService creates a new concrete implementation of ChatService with explicit dependency injection.
-func NewChatService(cfg ChatServiceConfig) ChatService {
+// NewChatService creates a new concrete implementation of ports.ChatService with explicit dependency injection.
+func NewChatService(cfg ports.ChatServiceConfig) ports.ChatService {
 	if cfg.ResolvePaths == nil {
 		cfg.ResolvePaths = persistence.ResolvePaths
 	}
@@ -95,7 +63,7 @@ func NewChatService(cfg ChatServiceConfig) ChatService {
 	}
 }
 
-// GetLastUserMessage implements ChatService.
+// GetLastUserMessage implements ports.ChatService.
 func (s *chatService) GetLastUserMessage(ctx context.Context, hManager ports.HistoryManager) (string, int, error) {
 	msg, turns, err := hManager.GetLastUserMessage(ctx)
 	if err != nil {
@@ -105,7 +73,7 @@ func (s *chatService) GetLastUserMessage(ctx context.Context, hManager ports.His
 }
 
 // handleRetryConfirmation encapsulates the user-facing retry orchestration logic.
-func (s *chatService) handleRetryConfirmation(ctx context.Context, hManager ports.HistoryManager, cmd *ChatCommand, capturer CapturerInteractor) (bool, error) {
+func (s *chatService) handleRetryConfirmation(ctx context.Context, hManager ports.HistoryManager, cmd *ports.ChatCommand, capturer ports.CapturerInteractor) (bool, error) {
 	if !cmd.Retry {
 		return true, nil
 	}
@@ -148,8 +116,8 @@ func (s *chatService) cleanupSession(deps ports.ChatterComposer, cleanup func(co
 	}
 }
 
-// ProcessMessage implements ChatService.
-func (s *chatService) ProcessMessage(ctx context.Context, cfg *domain_config.Config, cmd ChatCommand, capturer CapturerInteractor) error {
+// ProcessMessage implements ports.ChatService.
+func (s *chatService) ProcessMessage(ctx context.Context, cfg *domain_config.Config, cmd ports.ChatCommand, capturer ports.CapturerInteractor) error {
 	// Apply the configured word-wrap width to the markdown renderer before any output.
 	s.UIRenderer.SetWordWrap(cfg.WrapWidth)
 
@@ -289,7 +257,7 @@ func (s *chatService) StreamTurnsLog(ctx context.Context, cfg *domain_config.Con
 	return nil
 }
 
-// RunDiagnostics implements ChatService.
+// RunDiagnostics implements ports.ChatService.
 func (s *chatService) RunDiagnostics(ctx context.Context, cfg *domain_config.Config, configPath string, jsonOutput bool) error {
 	// Apply the configured word-wrap width to the markdown renderer before any output.
 	s.UIRenderer.SetWordWrap(cfg.WrapWidth)

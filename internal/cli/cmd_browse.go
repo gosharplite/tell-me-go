@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
@@ -19,7 +18,7 @@ import (
 
 type browseCommand struct {
 	ctx              *context
-	capturerOverride agent.CapturerInteractor                                                                                                                                                                // test-only injection point
+	capturerOverride ports.CapturerInteractor                                                                                                                                                                // test-only injection point
 	capturerFactory  func(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string, disableEscapeSequences bool) domain_security.UserInteractor // test-only injection; defaults to ui.NewCapturer
 }
 
@@ -38,7 +37,7 @@ func (c *browseCommand) warnf(format string, args ...interface{}) {
 }
 
 // getCapturer returns the override if set (test path), otherwise creates a real capturer.
-func (c *browseCommand) getCapturer() (agent.CapturerInteractor, func(stdctx.Context) error, error) {
+func (c *browseCommand) getCapturer() (ports.CapturerInteractor, func(stdctx.Context) error, error) {
 	if c.capturerOverride != nil {
 		return c.capturerOverride, func(ctx stdctx.Context) error {
 			if err := c.capturerOverride.Close(ctx); err != nil {
@@ -102,11 +101,11 @@ func (c *browseCommand) runBrowse(ctx stdctx.Context, configPath string) error {
 	return c.ctx.ChatService.BrowseHistory(ctx, provider, hManager)
 }
 
-func (c *browseCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Context) error, error) {
+func (c *browseCommand) setupCapturer() (ports.CapturerInteractor, func(stdctx.Context) error, error) {
 	capturerInterface := c.newCapturer(c.ctx.Stdin, c.ctx.Stdout, c.ctx.Stderr, c.ctx.SM, clock.RealClock{}, c.ctx.MockPrompt, c.ctx.MockAnswer, false)
-	capturer, ok := capturerInterface.(agent.CapturerInteractor)
+	capturer, ok := capturerInterface.(ports.CapturerInteractor)
 	if !ok {
-		return nil, nil, fmt.Errorf("ui.NewCapturer did not return an agent.CapturerInteractor")
+		return nil, nil, fmt.Errorf("ui.NewCapturer did not return an ports.CapturerInteractor")
 	}
 	c.ctx.Interactor.set(capturer)
 	return capturer, func(ctx stdctx.Context) error {

@@ -6,15 +6,14 @@ package di
 import (
 	"io"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/app"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/factory"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 type chatFactory interface {
 	AgentFactory() ports.ChatterFactory
-	ChatService() agent.ChatService
+	ChatService() ports.ChatService
 }
 
 type defaultChatFactory struct {
@@ -24,11 +23,11 @@ type defaultChatFactory struct {
 	Stderr           io.Writer
 	SM               ConfigurableSecurityManager
 	FileSystem       infra_persistence.FileSystem
-	LifecycleManager agent.SessionLifecycleManager
+	LifecycleManager ports.SessionLifecycleManager
 	UIFact           uiFactory
 }
 
-func newChatFactory(homeDir, version string, stdout, stderr io.Writer, sm ConfigurableSecurityManager, fs infra_persistence.FileSystem, lifecycleManager agent.SessionLifecycleManager, uiFact uiFactory) chatFactory {
+func newChatFactory(homeDir, version string, stdout, stderr io.Writer, sm ConfigurableSecurityManager, fs infra_persistence.FileSystem, lifecycleManager ports.SessionLifecycleManager, uiFact uiFactory) chatFactory {
 	return &defaultChatFactory{
 		HomeDir:          homeDir,
 		Version:          version,
@@ -42,11 +41,11 @@ func newChatFactory(homeDir, version string, stdout, stderr io.Writer, sm Config
 }
 
 func (f *defaultChatFactory) AgentFactory() ports.ChatterFactory {
-	return factory.NewChatter
+	return app.NewChatter
 }
 
-func (f *defaultChatFactory) ChatService() agent.ChatService {
-	return agent.NewChatService(agent.ChatServiceConfig{
+func (f *defaultChatFactory) ChatService() ports.ChatService {
+	return app.NewChatService(ports.ChatServiceConfig{
 		HomeDir:          f.HomeDir,
 		Version:          f.Version,
 		Stdout:           f.Stdout,

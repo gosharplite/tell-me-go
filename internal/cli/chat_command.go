@@ -10,7 +10,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -29,14 +28,14 @@ type chatCommand struct {
 	Stdout           io.Writer
 	Stderr           io.Writer
 	SM               domain_security.Manager
-	ChatService      agent.ChatService
+	ChatService      ports.ChatService
 	Bootstrapper     Bootstrapper
 	Loader           domain_config.ConfigLoader
 	HomeDir          string
 	MockPrompt       string
 	MockAnswer       string
 	Interactor       *InteractorRef
-	capturerOverride agent.CapturerInteractor                                                                                                                                                                // test-only injection
+	capturerOverride ports.CapturerInteractor                                                                                                                                                                // test-only injection
 	capturerFactory  func(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string, disableEscapeSequences bool) domain_security.UserInteractor // test-only injection; defaults to ui.NewCapturer
 }
 
@@ -209,7 +208,7 @@ func (c *chatCommand) noOtherActionsRequested(opts *cliOptions, args []string) b
 	return len(args) == 0 && opts.lastN == 0 && opts.backN == 0 && !opts.retry
 }
 
-func (c *chatCommand) setupChatSession(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, args []string) (agent.CapturerInteractor, func(stdctx.Context) error, error) {
+func (c *chatCommand) setupChatSession(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, args []string) (ports.CapturerInteractor, func(stdctx.Context) error, error) {
 	// Apply TUI overrides and state detection
 	if opts.tuiPrompt {
 		cfg.UseTUIPrompt = true
@@ -223,7 +222,7 @@ func (c *chatCommand) setupChatSession(ctx stdctx.Context, cfg *domain_config.Co
 
 // getCapturer returns the override if set (test path), otherwise delegates
 // to buildCapturer for the production path.
-func (c *chatCommand) getCapturer(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) (agent.CapturerInteractor, func(stdctx.Context) error, error) {
+func (c *chatCommand) getCapturer(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) (ports.CapturerInteractor, func(stdctx.Context) error, error) {
 	if c.capturerOverride != nil {
 		return c.capturerOverride, func(shutdownCtx stdctx.Context) error {
 			if err := c.capturerOverride.Close(shutdownCtx); err != nil {
@@ -235,12 +234,12 @@ func (c *chatCommand) getCapturer(ctx stdctx.Context, cfg *domain_config.Config,
 	}
 	return c.buildCapturer(ctx, cfg, opts)
 }
-func (c *chatCommand) processChatRequest(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, args []string, capturer agent.CapturerInteractor) error {
+func (c *chatCommand) processChatRequest(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, args []string, capturer ports.CapturerInteractor) error {
 	prompt, err := c.captureInput(ctx, capturer, opts, args)
 	if err != nil {
 		return err
 	}
-	return c.ChatService.ProcessMessage(ctx, cfg, agent.ChatCommand{
+	return c.ChatService.ProcessMessage(ctx, cfg, ports.ChatCommand{
 		ConfigPath:       opts.configPath,
 		NewSession:       opts.newSession,
 		LastN:            opts.lastN,
@@ -253,7 +252,7 @@ func (c *chatCommand) processChatRequest(ctx stdctx.Context, cfg *domain_config.
 		Prompt:           prompt,
 	}, capturer)
 }
-func (c *chatCommand) captureInput(ctx stdctx.Context, capturer agent.CapturerInteractor, opts *cliOptions, args []string) (string, error) {
+func (c *chatCommand) captureInput(ctx stdctx.Context, capturer ports.CapturerInteractor, opts *cliOptions, args []string) (string, error) {
 	if opts.retry {
 		return "", nil
 	}
@@ -274,7 +273,7 @@ func (c *chatCommand) captureInput(ctx stdctx.Context, capturer agent.CapturerIn
 // It seeds the suggestion trie from the last user message (best-effort), initializes
 // the suggestion service, and wraps the base capturer. Falls back to a bare capturer
 // if suggestion initialization fails.
-func (c *chatCommand) buildTUICapturer(ctx stdctx.Context, cfg *domain_config.Config) (agent.CapturerInteractor, func(stdctx.Context) error, error) {
+func (c *chatCommand) buildTUICapturer(ctx stdctx.Context, cfg *domain_config.Config) (ports.CapturerInteractor, func(stdctx.Context) error, error) {
 	// Try to get at least the last user message for the trie
 	hManager, _ := c.Bootstrapper.GetHistoryManager(ctx, cfg)
 	var lastMsg string
@@ -293,16 +292,16 @@ func (c *chatCommand) buildTUICapturer(ctx stdctx.Context, cfg *domain_config.Co
 	baseCapturer, ok := capturerInterface.(tui.BaseCapturer)
 	if !ok {
 		// Coverage gap accepted by architect: structurally unreachable.
-		// tui.BaseCapturer and agent.CapturerInteractor are structurally
+		// tui.BaseCapturer and ports.CapturerInteractor are structurally
 		// identical interfaces (both compose ports.Capturer +
 		// domain_security.UserInteractor). Any type that fails the
 		// BaseCapturer assertion necessarily also fails the
 		// CapturerInteractor assertion — and vice versa. The dual-failure
 		// path is covered by the error return below. See Issue #888.
-		return nil, nil, fmt.Errorf("ui.NewCapturer did not return a tui.BaseCapturer or agent.CapturerInteractor")
+		return nil, nil, fmt.Errorf("ui.NewCapturer did not return a tui.BaseCapturer or ports.CapturerInteractor")
 	}
 
-	var capturer agent.CapturerInteractor
+	var capturer ports.CapturerInteractor
 	var cleanup func(stdctx.Context) error
 
 	if err != nil {
@@ -327,7 +326,7 @@ func (c *chatCommand) buildTUICapturer(ctx stdctx.Context, cfg *domain_config.Co
 	return capturer, cleanup, nil
 }
 
-func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) (agent.CapturerInteractor, func(stdctx.Context) error, error) {
+func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) (ports.CapturerInteractor, func(stdctx.Context) error, error) {
 	if opts.tuiPrompt {
 		return c.buildTUICapturer(ctx, cfg)
 	}
@@ -338,7 +337,7 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Confi
 	return capturer, cleanup, nil
 }
 
-func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Context) error, error) {
+func (c *chatCommand) setupCapturer() (ports.CapturerInteractor, func(stdctx.Context) error, error) {
 	if c.capturerOverride != nil {
 		return c.capturerOverride, func(ctx stdctx.Context) error {
 			if err := c.capturerOverride.Close(ctx); err != nil {
@@ -350,9 +349,9 @@ func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Con
 	}
 
 	capturerInterface := c.newCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
-	capturer, ok := capturerInterface.(agent.CapturerInteractor)
+	capturer, ok := capturerInterface.(ports.CapturerInteractor)
 	if !ok {
-		return nil, nil, fmt.Errorf("ui.NewCapturer did not return an agent.CapturerInteractor")
+		return nil, nil, fmt.Errorf("ui.NewCapturer did not return an ports.CapturerInteractor")
 	}
 	c.Interactor.set(capturer)
 	return capturer, func(ctx stdctx.Context) error {
