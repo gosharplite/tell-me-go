@@ -46,7 +46,7 @@ The YAML configuration loaded at startup. Defines the active `Provider`, the ful
 
 **Relationships**
 
-- `Pricing` — 1:n — owned — Per-model cost rates from the built-in pricing table, overridable per model via the MODELS section.
+- `Pricing` — 1:n — owned — Per-model cost rates from the built-in pricing table, overridable per model via the MODELS section. Realized in code as `Config.Models` (`map[string]ModelConfig`, each entry embedding `pricing.ModelPricing`).
 
 **Attributes**
 
@@ -74,7 +74,7 @@ The YAML configuration loaded at startup. Defines the active `Provider`, the ful
 
 ### `Context`
 
-The in-flight prompt payload assembled by the `Orchestrator` before each `Turn`. Distinct from `History` (persisted) — `Context` is the runtime view: it holds the system prompt, injected `Skill` content, the recent `Turn` history (possibly summarised), and the current user prompt. Its token count is checked against `Pricing.contextWindow` before every `Turn`. In the code, `Context` is implemented as a package of cooperating types (`internal/agent/session/context/`) rather than a single struct. Each type has a single responsibility in the assembly pipeline: HistoryPruner removes old turns, TokenGatekeeper enforces the token budget, `pinningPolicy` protects pinned turns, `emptyTurnFilter` removes empty turns, `finalContextValidator` validates the final state, TransientMerger merges transient content, and Strategy orchestrates the pipeline. This decomposition is intentional — it keeps each concern testable in isolation.
+The in-flight prompt payload assembled by the `Orchestrator` before each `Turn`. Distinct from `History` (persisted) — `Context` is the runtime view: it holds the system prompt, injected `Skill` content, the recent `Turn` history (possibly summarised), and the current user prompt. Its token count is checked against `Pricing.contextWindow` before every `Turn`. In the code, `Context` is implemented as a package of cooperating types (`internal/agent/session/context/`) rather than a single struct. Each type has a single responsibility in the assembly pipeline: HistoryPruner removes old turns, TokenGatekeeper enforces the token budget, `pinningPolicy` protects pinned turns, `emptyTurnFilter` removes empty turns, `finalContextValidator` validates the final state, TransientMerger merges transient content, WarningInjector emits token-pressure warnings, HistoryRepairer repairs malformed sequences, and the sanitizing transformers (contentCleaner, toolResponseCleaner, emptyMessagePruner, thoughtSignaturePropagator) clean the parts. Pruning policies (SlidingWindowPolicy, importanceRankPolicy, compositePruningPolicy) select candidate blocks, and Strategy orchestrates the pipeline. This decomposition is intentional — it keeps each concern testable in isolation.
 
 **Attributes**
 
@@ -82,7 +82,7 @@ The in-flight prompt payload assembled by the `Orchestrator` before each `Turn`.
 | --- | --- | --- |
 | `tokenCount` | integer | _Derived:_ Total tokens in the assembled payload. |
 | `summarisedTurnCount` | integer | _Derived:_ Number of `Turn`s that have been summarised into this `Context`. |
-| `pinnedTurnIndices` | []int | Indices of `Turn`s protected from summarisation. |
+| `pinnedTurnIDs` | []string | Stable UUIDs of `Turn`s protected from summarisation. Pin state is carried on each turn's `Content` (`Pinned`) and managed via `HistoryManager.SetPinned`. |
 
 **Actions**
 
@@ -104,7 +104,7 @@ The persisted record of a `Session`'s `Turn`s, stored as an append-only JSON Lin
 | Name | Type | Description |
 | --- | --- | --- |
 | `turns` | []Turn | Ordered list of persisted `Turn`s stored as individual JSONL lines. |
-| `pinnedTurns` | []int | Indices of `Turn`s protected from summarisation/pruning, stored as `_patch` lines. |
+| `pinnedTurnIDs` | []string | Stable UUIDs of `Turn`s protected from summarisation/pruning, persisted as `_patch` metadata lines. |
 
 **Actions**
 
@@ -126,7 +126,7 @@ The cost structure for a specific model variant. Maps a model identifier to per-
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `modelName` | string | The model identifier this pricing applies to. |
+| `modelName` | string | The model identifier this pricing applies to. Note: In Go, this is the map key in `PricingData.Models`, not a field on the `ModelPricing` struct. |
 | `contextWindow` | integer | Maximum token capacity for this model. |
 | `hitRate` | decimal | USD per million cached input tokens. |
 | `missRate` | decimal | USD per million uncached input tokens. |
@@ -156,7 +156,7 @@ An LLM backend reachable via a specific API. Encapsulates the type (gemini/opena
 | `thinkingLevel` | string | Provider-specific reasoning effort (e.g. "HIGH"). |
 | `thinkingEnabled` | boolean | Tri-state DeepSeek/Kimi thinking-mode toggle: nil = omit the field from the wire (preserve the provider default); true = thinking enabled; false = disabled. Only emitted for providers with the thinking-toggle capability. Distinct from `thinkingBudget` (token budget) and `thinkingLevel` (reasoning effort). |
 | `userID` | string | DeepSeek `user_id` for content safety, KVCache, and scheduling isolation. Emitted only when non-empty for providers with the thinking-toggle capability. |
-| `lastError` | LLMError | The most recent error returned by this `Provider` during the current `Session`, if any. Used by the `Orchestrator` to decide retry vs. failover. Note: Runtime-only — not stored on the `LLMProvider` struct. Tracked by the `Orchestrator`'s retry/failover logic. Resets on restart. |
+| `lastError` | LLMError | The most recent error returned by this `Provider` during the current `Turn`, if any. Used by the `Orchestrator` to decide retry vs. failover. Note: Runtime-only — carried on the `Turn`'s state (`TurnState.LastError`), not keyed per provider and not stored on the `LLMProvider` struct. Resets on restart. |
 
 **Invariants**
 
@@ -196,9 +196,9 @@ A long-running conversation context identified by a unique ID. Owns a sequence o
 | Name | Type | Description |
 | --- | --- | --- |
 | `id` | string | UUID assigned at creation. |
-| `createdAt` | timestamp |  |
-| `turnCount` | integer | _Derived:_ Number of `Turn`s in this `Session`. |
-| `totalCost` | decimal | _Derived:_ Sum of all `Turn` costs in USD. |
+| `startTime` | timestamp | When the `Session` was created (Go field `StartTime`). |
+| `turnCount` | integer | _Derived:_ Number of `Turn`s in this `Session`, derivable from `History.GetTotalEntries()` (2 messages per `Turn`) — not stored. |
+| `totalCost` | decimal | _Derived:_ Sum of all `Turn` costs in USD, accumulated on the session cost tracker; not a field on the Go `Session` struct. |
 
 **Actions**
 
@@ -280,7 +280,7 @@ A single invocation of a `Tool` requested by the LLM during a `Turn`. Carries th
 | --- | --- | --- |
 | `toolName` | string |  |
 | `arguments` | object |  |
-| `result` | string |  |
+| `result` | object | The tool's outcome — a `ToolResult` with `Text`, optional `BinaryData`/`Error`, and `Metadata`. |
 | `duration` | duration |  |
 | `status` | string | success, error, or timeout. |
 
@@ -292,7 +292,7 @@ A single invocation of a `Tool` requested by the LLM during a `Turn`. Carries th
 ### `Turn`
 
 One atomic exchange: a user prompt, zero or more assistant `Thought`s (possibly interleaved with `Tool` executions), and a final response. Every `Turn` belongs to exactly one `Session`. In the code, `Turn` also serves as the `Orchestrator`'s unit of execution — it carries runtime dependencies (gateway, executor, event bus) needed to process the turn. This hybrid nature is intentional: separating "what a Turn is" from "how a Turn runs" would add indirection without clear benefit.
-`Turn` is both a domain entity and an application-layer execution context. The domain fields (`prompt`, `thoughts`, `tokenCount`, `cost`, `responseHash`) are declared below; runtime fields (gateway, executor, registry, token counter, event bus, cost tracker, context manager, clock, logger) are carried on the struct at `internal/agent/orchestrator/engine.go`.
+`Turn` is both a domain entity and an application-layer execution context. The domain fields (`prompt`, `thoughts`, `tokenCount`, `cost`) are declared below; runtime fields (gateway, executor, registry, token counter, event bus, cost tracker, context manager, clock, logger) are carried on the struct at `internal/agent/orchestrator/engine.go`. Hallucination-loop detection hashes the sanitized final response (SHA-256) transiently inside the loop detector — the hash is never stored on the `Turn`.
 
 **Relationships**
 
@@ -302,11 +302,10 @@ One atomic exchange: a user prompt, zero or more assistant `Thought`s (possibly 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `prompt` | string | The user's input text. |
-| `thoughts` | []Thought | The sequence of provider-agnostic reasoning blocks. |
+| `prompt` | string | The user's input text. Carried in `History` as the `Turn`'s user `Content`; not a field on the Go `Turn` struct. |
+| `thoughts` | []Thought | The sequence of provider-agnostic reasoning blocks. Realized as `llm.Content` parts on the `Turn`'s response state (`Text` / `IsThought` / `FunctionCall`); not a `[]Thought` field on the Go `Turn` struct. |
 | `tokenCount` | integer | _Derived:_ Total tokens consumed (input + output + thinking). |
 | `cost` | decimal | _Derived:_ USD cost computed from token counts and `Provider` pricing. |
-| `responseHash` | string | SHA-256 of the final response — used for hallucination loop detection. |
 
 **Invariants**
 
@@ -341,7 +340,7 @@ erDiagram
 
 ## Invariants
 
-- **deterministic-cost-audit** — Every `Turn`'s cost is computed from token counts and the `Provider`'s pricing model before the next `Turn` begins, and accumulated on the `Session`.
+- **deterministic-cost-audit** — Every `Turn`'s cost is computed from token counts and the `Provider`'s pricing model before the next `Turn` begins, and accumulated on the session cost tracker (surfaced as `Session.totalCost`).
 
 ## Scenarios
 
@@ -381,11 +380,11 @@ After every `Turn` completes, the `Orchestrator` computes its USD cost using the
 2. `Orchestrator` looks up the active `Provider`'s model in `Pricing`.
 3. Cost is computed: (input × rate) + (output × rate) + (thinking × rate).
 4. The `Turn`'s `cost` attribute is set.
-5. The `Session`'s `totalCost` is updated to include this `Turn`.
+5. The session cost tracker accumulates the `Turn`'s cost; `Session.totalCost` reflects it.
 
 **Invariants touched**
 
-- **deterministic-cost-audit** — Every `Turn`'s cost is computed from token counts and the `Provider`'s pricing model before the next `Turn` begins, and accumulated on the `Session`.
+- **deterministic-cost-audit** — Every `Turn`'s cost is computed from token counts and the `Provider`'s pricing model before the next `Turn` begins, and accumulated on the session cost tracker (surfaced as `Session.totalCost`).
 - **pricing-unique-model** — Each `modelName` appears at most once in the pricing table.
 
 ### Skill injection into context
@@ -581,7 +580,7 @@ The user explicitly pins specific `Turn`s to protect them from summarisation. La
 **Steps**
 
 1. A long `Session` accumulates 20 `Turn`s; the user pins `Turn` 5 (an architectural decision) and `Turn` 15 (a key test result) via `manage_history`.
-2. The pinned indices are persisted as `_patch` lines in `History`.
+2. The pinned turn IDs are persisted as `_patch` metadata lines in `History`.
 3. On `Turn` 21, the `Orchestrator` assembles the `Context` and finds `tokenCount` exceeds `Pricing.contextWindow`.
 4. The `Orchestrator` identifies the oldest non-pinned `Turn`s for summarisation.
 5. `Turn`s 5 and 15 are skipped — their content remains verbatim in `Context`.
