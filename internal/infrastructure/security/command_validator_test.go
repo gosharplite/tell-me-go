@@ -168,7 +168,11 @@ func TestCommandValidator_PathSafety(t *testing.T) {
 		{"ls /safe", true},
 		{"ls /unsafe", false},
 		{"ls .", true},
-		{"ls ..", false}, // SecurityManager usually blocks ..
+		{"ls ..", false},   // SecurityManager usually blocks ..
+		{"ls ...", true},   // go-ism, allowed via isSpecialPattern
+		{"ls ./...", true}, // go-ism, allowed via isSpecialPattern
+		{"echo ..", false}, // guard is command-agnostic
+		{"echo .", true},
 		{"go list ./...", true},
 		{"grep foo --file=/safe/file", true},
 		{"grep foo --file=/unsafe/file", false},
