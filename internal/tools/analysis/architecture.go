@@ -277,7 +277,7 @@ func (m *architectureManager) classifyInternal(segments []string) string {
 		return layerDomain
 	case "infrastructure":
 		return layerInfrastructure
-	case "agent", "cli", "ui", "service", "application":
+	case "agent", "cli", "ui", "service", "application", "app":
 		return layerApplication
 	case "tools":
 		return layerTools

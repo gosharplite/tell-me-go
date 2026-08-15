@@ -8,10 +8,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -21,8 +21,22 @@ import (
 	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
-	"github.com/stretchr/testify/require"
 )
+
+type mockSkillRepo struct{}
+
+func (m *mockSkillRepo) GetAll(ctx context.Context) ([]domain_skills.Skill, error) {
+	return nil, nil
+}
+func (m *mockSkillRepo) Refresh(ctx context.Context) error {
+	return nil
+}
+
+type mockSummarizer struct{}
+
+func (m *mockSummarizer) Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, *llm.Metrics, error) {
+	return "", nil, nil
+}
 
 // mockSessionDeps is a field-based SessionDependencies used exclusively for
 // nil-dependency injection tests. The testify mock in agenttest
@@ -40,6 +54,8 @@ type mockSessionDeps struct {
 	paths           *persistence.Paths
 	tracker         pricing.CostTracker
 	sessionProvider ports.SessionProvider
+	skillRepo       domain_skills.SkillRepository
+	summarizer      ports.Summarizer
 }
 
 func (d *mockSessionDeps) GetGateway() llm.LLMGateway              { return d.gw }
@@ -60,7 +76,12 @@ func (d *mockSessionDeps) GetTurnsLogger() ports.TurnsLogger                    
 func (d *mockSessionDeps) GetSessionProvider() ports.SessionProvider            { return d.sessionProvider }
 func (d *mockSessionDeps) GetHealthManager() ports.HealthCheckManager           { return nil }
 func (d *mockSessionDeps) GetClient() llm.LLMClient                             { return nil }
-func (d *mockSessionDeps) GetSkillRepository() domain_skills.SkillRepository    { return nil }
+func (d *mockSessionDeps) GetSkillRepository() domain_skills.SkillRepository    { return d.skillRepo }
+func (d *mockSessionDeps) GetSummarizer() ports.Summarizer                      { return d.summarizer }
+func (d *mockSessionDeps) GetConfigWatcher() domain_config.ConfigWatcher        { return nil }
+func (d *mockSessionDeps) RegisterTrace(path string)                            {}
+
+var _ ports.ChatterComposer = (*mockSessionDeps)(nil)
 
 type mockGateway struct {
 	llm.LLMGateway
@@ -165,26 +186,6 @@ func TestNewChatter(t *testing.T) {
 		}
 	})
 
-	t.Run("fails when skill repo cannot load", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("os.Chmod(0000) does not prevent file reads on Windows")
-		}
-
-		// Drop an unreadable .md file into the skills dir to cause
-		// NewFileSkillRepository to fail.
-		skillsDir := filepath.Join(filepath.Dir(filepath.Dir(deps.paths.ModeDir)), "docs", "skills")
-		badFile := filepath.Join(skillsDir, "bad.md")
-		require.NoError(t, os.WriteFile(badFile,
-			[]byte("---\nname: Test\ndescription: Test\n---\nContent"), 0644))
-		require.NoError(t, os.Chmod(badFile, 0000))
-		t.Cleanup(func() { _ = os.Chmod(badFile, 0644) })
-
-		_, err := NewChatter(context.Background(), deps, cfg)
-		if err == nil || !strings.Contains(err.Error(), "failed to initialize skill repository") {
-			t.Errorf("expected 'failed to initialize skill repository' error, got: %v", err)
-		}
-	})
-
 	t.Run("fails when registry cannot be retrieved", func(t *testing.T) {
 		deps.regErr = errors.New("registry unavailable")
 		t.Cleanup(func() { deps.regErr = nil })
@@ -224,6 +225,8 @@ func setupNilDepTest(t *testing.T) (*mockSessionDeps, ports.ChatterConfig) {
 		paths:           &persistence.Paths{ModeDir: modeDir},
 		tracker:         &mockTracker{},
 		sessionProvider: &testfixtures.MockSessionProvider{},
+		skillRepo:       &mockSkillRepo{},
+		summarizer:      &mockSummarizer{},
 	}
 
 	cfg := ports.ChatterConfig{
@@ -319,71 +322,18 @@ func TestNewChatter_NilDependencyError(t *testing.T) {
 		assertNilDepRequired(t, deps, cfg, func(d *mockSessionDeps) { d.paths = nil }, "paths is required")
 	})
 
+	t.Run("nil skill repository", func(t *testing.T) {
+		deps, cfg := setupNilDepTest(t)
+		assertNilDepRequired(t, deps, cfg, func(d *mockSessionDeps) { d.skillRepo = nil }, "skill repository is required")
+	})
+
+	t.Run("nil summarizer", func(t *testing.T) {
+		deps, cfg := setupNilDepTest(t)
+		assertNilDepRequired(t, deps, cfg, func(d *mockSessionDeps) { d.summarizer = nil }, "summarizer is required")
+	})
+
 	t.Run("nil tracker", func(t *testing.T) {
 		deps, cfg := setupNilDepTest(t)
 		assertNilDepOptional(t, deps, cfg, func(d *mockSessionDeps) { d.tracker = nil }, "tracker")
-	})
-}
-
-// TestResolveSkillsDir exercises all three branches of resolveSkillsDir:
-// 1. Home-dir skills directory exists (happy path, already covered indirectly)
-// 2. Home-dir missing → CWD fallback succeeds
-// 3. Both missing → returns home path anyway
-//
-// The os.Getwd error branch (line 30) is intentionally left uncovered as
-// it guards against a theoretical OS failure that cannot be triggered on
-// a real operating system.
-func TestResolveSkillsDir(t *testing.T) {
-	t.Run("home dir skills exist", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		modeDir := filepath.Join(tmpDir, "modes", "dev")
-		require.NoError(t, os.MkdirAll(modeDir, 0755))
-		skillsDir := filepath.Join(tmpDir, "docs", "skills")
-		require.NoError(t, os.MkdirAll(skillsDir, 0755))
-
-		paths := &persistence.Paths{ModeDir: modeDir}
-		got := resolveSkillsDir(paths)
-		expected := filepath.Clean(skillsDir)
-		if got != expected {
-			t.Errorf("resolveSkillsDir() = %q, want %q", got, expected)
-		}
-	})
-
-	t.Run("cwd fallback when home dir missing", func(t *testing.T) {
-		// home tmp dir — no docs/skills/
-		homeTmp := t.TempDir()
-		modeDir := filepath.Join(homeTmp, "modes", "dev")
-		require.NoError(t, os.MkdirAll(modeDir, 0755))
-
-		// cwd tmp dir — HAS docs/skills/
-		cwdTmp := t.TempDir()
-		cwdSkills := filepath.Join(cwdTmp, "docs", "skills")
-		require.NoError(t, os.MkdirAll(cwdSkills, 0755))
-
-		// Switch CWD to cwdTmp. t.Chdir handles cleanup automatically.
-		t.Chdir(cwdTmp)
-
-		paths := &persistence.Paths{ModeDir: modeDir}
-		got := resolveSkillsDir(paths)
-		expected := filepath.Clean(cwdSkills)
-		if got != expected {
-			t.Errorf("resolveSkillsDir() = %q, want %q (cwd fallback)", got, expected)
-		}
-	})
-
-	t.Run("both missing returns home path anyway", func(t *testing.T) {
-		homeTmp := t.TempDir()
-		modeDir := filepath.Join(homeTmp, "modes", "dev")
-		require.NoError(t, os.MkdirAll(modeDir, 0755))
-
-		cwdTmp := t.TempDir()
-		t.Chdir(cwdTmp) // cwdTmp has no docs/skills/
-
-		paths := &persistence.Paths{ModeDir: modeDir}
-		got := resolveSkillsDir(paths)
-		expected := filepath.Clean(filepath.Join(homeTmp, "docs", "skills"))
-		if got != expected {
-			t.Errorf("resolveSkillsDir() = %q, want %q (home path fallback)", got, expected)
-		}
 	})
 }

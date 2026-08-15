@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -259,19 +260,22 @@ type MockServiceSecurityManager = mockServiceSecurityManager
 // Use this when a test only needs to construct a Chatter (e.g., via
 // factory.NewChatter). Set only the fields your test uses; leave the rest nil.
 type StubChatterComposer struct {
-	Gateway          llm.LLMGateway
-	EventBus         events.EventBus
-	Paths            *persistence.Paths
-	HistoryManager   ports.HistoryManager
-	Logger           ports.Logger
-	Tracker          pricing.CostTracker
-	PricingOverrides map[string]pricing.ModelPricing
-	SessionProvider  ports.SessionProvider
-	TurnsLogger      ports.TurnsLogger
-	SecurityManager  security.Manager
-	Registry         tools.Registry
-	RegistryErr      error
-	SkillRepo        domain_skills.SkillRepository
+	Gateway           llm.LLMGateway
+	EventBus          events.EventBus
+	Paths             *persistence.Paths
+	HistoryManager    ports.HistoryManager
+	Logger            ports.Logger
+	Tracker           pricing.CostTracker
+	PricingOverrides  map[string]pricing.ModelPricing
+	SessionProvider   ports.SessionProvider
+	TurnsLogger       ports.TurnsLogger
+	SecurityManager   security.Manager
+	Registry          tools.Registry
+	RegistryErr       error
+	SkillRepo         domain_skills.SkillRepository
+	Summarizer        ports.Summarizer
+	ConfigWatcher     domain_config.ConfigWatcher
+	RegisterTraceFunc func(path string)
 }
 
 var _ ports.ChatterComposer = (*StubChatterComposer)(nil)
@@ -291,6 +295,13 @@ func (s *StubChatterComposer) GetSecurityManager() security.Manager      { retur
 func (s *StubChatterComposer) GetRegistry() (tools.Registry, error)      { return s.Registry, s.RegistryErr }
 func (s *StubChatterComposer) GetSkillRepository() domain_skills.SkillRepository {
 	return s.SkillRepo
+}
+func (s *StubChatterComposer) GetSummarizer() ports.Summarizer               { return s.Summarizer }
+func (s *StubChatterComposer) GetConfigWatcher() domain_config.ConfigWatcher { return s.ConfigWatcher }
+func (s *StubChatterComposer) RegisterTrace(path string) {
+	if s.RegisterTraceFunc != nil {
+		s.RegisterTraceFunc(path)
+	}
 }
 
 // stubSessionFinalizer is a manual stub implementing ports.SessionFinalizer.

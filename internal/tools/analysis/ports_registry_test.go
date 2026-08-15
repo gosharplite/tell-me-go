@@ -343,7 +343,7 @@ func TestVerifyPortsRegistryStayKeyLiveness(t *testing.T) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	require.Len(t, keys, 7)
+	require.Len(t, keys, 9)
 
 	allPresent := func() []*symMeta {
 		decls := make([]*symMeta, 0, len(keys))

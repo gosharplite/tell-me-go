@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -223,6 +224,8 @@ func newPopulatedStubChatterComposer() *StubChatterComposer {
 		TurnsLogger:      &ports.NoOpTurnsLogger{},
 		SecurityManager:  &MockServiceSecurityManager{},
 		Registry:         NewMockToolRegistry(),
+		Summarizer:       new(MockSummarizer),
+		ConfigWatcher:    domain_config.NewNoOpConfigWatcher(100, 10, 20),
 	}
 }
 
@@ -316,6 +319,46 @@ func TestStubChatterComposer_Getters_Registry(t *testing.T) {
 	if gotErr != nil {
 		t.Errorf("GetRegistry unexpected error: %v", gotErr)
 	}
+}
+
+func TestStubChatterComposer_Getters_Summarizer(t *testing.T) {
+	t.Parallel()
+	c := newPopulatedStubChatterComposer()
+	if got := c.GetSummarizer(); got != c.Summarizer {
+		t.Errorf("GetSummarizer mismatch: got %v, want %v", got, c.Summarizer)
+	}
+}
+
+func TestStubChatterComposer_Getters_ConfigWatcher(t *testing.T) {
+	t.Parallel()
+	c := newPopulatedStubChatterComposer()
+	if got := c.GetConfigWatcher(); got != c.ConfigWatcher {
+		t.Errorf("GetConfigWatcher mismatch: got %v, want %v", got, c.ConfigWatcher)
+	}
+}
+
+func TestStubChatterComposer_RegisterTrace(t *testing.T) {
+	t.Parallel()
+
+	var recordedPath string
+	c := &StubChatterComposer{
+		RegisterTraceFunc: func(path string) {
+			recordedPath = path
+		},
+	}
+	c.RegisterTrace("/tmp/trace.jsonl")
+	if recordedPath != "/tmp/trace.jsonl" {
+		t.Errorf("RegisterTrace path mismatch: got %q, want %q", recordedPath, "/tmp/trace.jsonl")
+	}
+}
+
+func TestStubChatterComposer_RegisterTrace_NilFunc(t *testing.T) {
+	t.Parallel()
+
+	c := &StubChatterComposer{}
+	require.NotPanics(t, func() {
+		c.RegisterTrace("/tmp/trace.jsonl")
+	}, "RegisterTrace with nil RegisterTraceFunc must not panic")
 }
 
 func TestStubChatterComposer_RegistryErr(t *testing.T) {
@@ -423,6 +466,22 @@ func TestStubChatterComposer_NilFields_Registry(t *testing.T) {
 	}
 	if gotErr != nil {
 		t.Errorf("nil RegistryErr should return nil error, got %v", gotErr)
+	}
+}
+
+func TestStubChatterComposer_NilFields_Summarizer(t *testing.T) {
+	t.Parallel()
+	c := &StubChatterComposer{}
+	if c.GetSummarizer() != nil {
+		t.Error("nil Summarizer should return nil")
+	}
+}
+
+func TestStubChatterComposer_NilFields_ConfigWatcher(t *testing.T) {
+	t.Parallel()
+	c := &StubChatterComposer{}
+	if c.GetConfigWatcher() != nil {
+		t.Error("nil ConfigWatcher should return nil")
 	}
 }
 

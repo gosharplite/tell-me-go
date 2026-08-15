@@ -7,6 +7,7 @@ import (
 	"context"
 	"time"
 
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -101,8 +102,7 @@ type ChatterConfig struct {
 type ChatterFactory func(ctx context.Context, deps ChatterComposer, cfg ChatterConfig) (Chatter, error)
 
 // ChatterComposer defines the dependencies required to construct a Chatter
-// via a ChatterFactory. It is the narrowest interface needed by
-// factory.NewChatter.
+// via a ChatterFactory.
 type ChatterComposer interface {
 	GetGateway() llm.LLMGateway
 	GetEventBus() events.EventBus
@@ -115,7 +115,14 @@ type ChatterComposer interface {
 	GetTurnsLogger() TurnsLogger
 	GetSecurityManager() security.Manager
 	GetRegistry() (tools.Registry, error)
+	// GetSkillRepository returns the shared skill repository. Must be non-nil.
 	GetSkillRepository() domain_skills.SkillRepository
+	// GetSummarizer returns the conversation history summarizer. Must be non-nil.
+	GetSummarizer() Summarizer
+	// GetConfigWatcher returns the runtime configuration watcher. May be nil (agent uses no-op fallback).
+	GetConfigWatcher() domain_config.ConfigWatcher
+	// RegisterTrace subscribes an execution trace recorder for the given file path.
+	RegisterTrace(path string)
 }
 
 // SessionFinalizer defines the dependencies required to finalize a session
