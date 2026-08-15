@@ -19,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	infra_skills "github.com/gosharplite/tell-me-go/internal/infrastructure/skills"
@@ -91,6 +92,17 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 	pricingData, tracker, turnsLogger, cleanup := b.wireTelemetry(ctx, paths, cfg, pricingOverrides, cleanup)
 	lazyClient := b.wireLLMClient(cfg, pricingData, bus, logger)
 
+	summarizer := infra_llm.NewSummarizer(lazyClient, bus, infra_llm.WithLogger(logger))
+
+	configWatcher := infra_config.NewFileConfigWatcher(
+		&infra_config.YAMLConfigLoader{Finder: infra_config.NewDefaultConfigFinder()},
+		&infra_config.JSONSessionLoader{},
+		config.DefaultMaxHistoryTokens,
+		config.DefaultMaxToolTurns,
+		config.DefaultMaxHistoryTurns,
+		logger,
+	)
+
 	deps := &sessionDeps{
 		infraProvider: infraProvider{
 			paths: paths, sm: b.cfg.SM, bus: bus, logger: logger, turnsLogger: turnsLogger,
@@ -98,6 +110,8 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		telemetryProvider:    telemetryProvider{tracker: tracker, pricingOverrides: pricingOverrides},
 		sessionStateProvider: sessionStateProvider{hManager: hManager, sessionProvider: sessionProvider, workspacePolicy: b.cfg.WorkspacePolicy},
 		lazyProvider:         lazyProvider{client: lazyClient},
+		summarizer:           summarizer,
+		configWatcher:        configWatcher,
 	}
 
 	deps.health = b.wireHealth(cfg, sessionProvider, lazyClient)
@@ -217,14 +231,30 @@ type sessionDeps struct {
 	sessionStateProvider
 	lazyProvider
 	healthProvider
-	skillRepo domain_skills.SkillRepository
+	skillRepo     domain_skills.SkillRepository
+	summarizer    ports.Summarizer
+	configWatcher config.ConfigWatcher
 }
+
+var _ ports.ChatterComposer = (*sessionDeps)(nil)
 
 // GetSkillRepository returns the shared skill repository, used by both
 // the tool registry and the skill injector so Refresh() results are
 // visible to all consumers.
 func (d *sessionDeps) GetSkillRepository() domain_skills.SkillRepository {
 	return d.skillRepo
+}
+
+func (d *sessionDeps) GetSummarizer() ports.Summarizer {
+	return d.summarizer
+}
+
+func (d *sessionDeps) GetConfigWatcher() config.ConfigWatcher {
+	return d.configWatcher
+}
+
+func (d *sessionDeps) RegisterTrace(path string) {
+	telemetry.RegisterTraceSubscriber(d.bus, path)
 }
 
 // GetAgentFactory returns a factory for creating Chatter instances.

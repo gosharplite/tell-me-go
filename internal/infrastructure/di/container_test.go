@@ -114,6 +114,17 @@ func (m *mockClientFactory) NewFailoverChain(cfg *config.Config, pricingData pri
 	return nil, nil
 }
 
+type mockSummarizer struct {
+	SummarizeFunc func(ctx context.Context, contents []*llm.Content, focus string) (string, *llm.Metrics, error)
+}
+
+func (m *mockSummarizer) Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, *llm.Metrics, error) {
+	if m.SummarizeFunc != nil {
+		return m.SummarizeFunc(ctx, contents, focus)
+	}
+	return "", nil, nil
+}
+
 type mockKVStore struct {
 	GetFunc    func(ctx context.Context, key string) (string, error)
 	SetFunc    func(ctx context.Context, key, val string) error
@@ -313,6 +324,8 @@ func TestBuildSessionDependencies(t *testing.T) {
 	assert.NotNil(t, deps)
 	assert.NotNil(t, hManager)
 	assert.NotNil(t, cleanup)
+	assert.NotNil(t, deps.GetSummarizer())
+	assert.NotNil(t, deps.GetConfigWatcher())
 
 	_ = cleanup(ctx)
 }
@@ -685,6 +698,10 @@ func TestSessionDeps_Getters(t *testing.T) {
 		return reg, nil
 	}, &ports.NoOpLogger{})
 
+	skillRepo := &infra_skills.CompositeRepository{}
+	summarizer := &mockSummarizer{}
+	configWatcher := config.NewNoOpConfigWatcher(100, 10, 20)
+
 	deps := &sessionDeps{
 		infraProvider: infraProvider{
 			paths: paths,
@@ -706,6 +723,9 @@ func TestSessionDeps_Getters(t *testing.T) {
 		healthProvider: healthProvider{
 			health: &mockHealthCheckManager{},
 		},
+		skillRepo:     skillRepo,
+		summarizer:    summarizer,
+		configWatcher: configWatcher,
 	}
 
 	assert.NotNil(t, deps.GetGateway())
@@ -721,6 +741,13 @@ func TestSessionDeps_Getters(t *testing.T) {
 	assert.Equal(t, sessionProvider, deps.GetSessionProvider())
 	assert.NotNil(t, deps.GetHealthManager())
 	assert.NotNil(t, deps.GetWorkspacePolicy())
+	assert.Equal(t, skillRepo, deps.GetSkillRepository())
+	assert.Equal(t, summarizer, deps.GetSummarizer())
+	assert.Equal(t, configWatcher, deps.GetConfigWatcher())
+
+	// Test RegisterTrace
+	tracePath := filepath.Join(t.TempDir(), "test.trace.jsonl")
+	deps.RegisterTrace(tracePath)
 }
 
 func TestContainer_InitializationErrors(t *testing.T) {

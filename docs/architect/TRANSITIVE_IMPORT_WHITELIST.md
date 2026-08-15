@@ -40,8 +40,8 @@ allowed: config, events, llm, persistence, pricing, security, services, skills, 
 allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
 # test-access bridge mirrors agent's domain surface
 ## consumer: internal/agent/agenttest
-allowed: events, llm, persistence, pricing, security, skills, telemetry, tools
-# P1+P4: canonical test-double surface; telemetry via events
+allowed: config, events, llm, persistence, pricing, security, skills, telemetry, tools
+# P1+P4: canonical test-double surface; telemetry via events; config via ChatterComposer (issue #1369)
 ## consumer: internal/agent/orchestrator
 allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
 # P2+P5: engine/session deps
@@ -55,8 +55,8 @@ allowed: config, events, llm, persistence, pricing, security, services, skills, 
 allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
 # AMENDED: config prod (strategy/gatekeeper); persistence/pricing/security/services/skills test-edge (P4)
 ## consumer: internal/agent/session/ui
-allowed: events, llm, persistence, pricing, security, skills, telemetry, tools
-# P1+P2+P4: UI subpackage deps
+allowed: config, events, llm, persistence, pricing, security, skills, telemetry, tools
+# P1+P2+P4: UI subpackage deps; config via agenttest (P4)
 ## consumer: internal/agent/skills
 allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
 # P1+P2+P5: skill-injection deps
@@ -153,8 +153,8 @@ allowed: config, events, llm, persistence, pricing, security, services, skills, 
 # TD-1 (issue #1364): app construction seam (chatter/chat-service/suggestions); full hub surface
 
 ## infra-root: di
-allowed: exec, factory, history, llm, logging, persistence, registry, security, skills, telemetry, toolchain
-# infra-lateral composition: di composes infra adapters; no application-layer imports (ADR-066)
+allowed: config, exec, factory, history, llm, logging, persistence, registry, security, skills, telemetry, toolchain
+# infra-lateral composition: di composes infra adapters (config added for P1 config watcher injection — issue #1369); no application-layer imports (ADR-066)
 
 ## infra-sanctioned: llm → auth
 # llm/factory.go constructs auth (issue #1350 item 4, ADR-055 confinement)
