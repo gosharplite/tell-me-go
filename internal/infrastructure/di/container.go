@@ -20,6 +20,7 @@ import (
 	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	infra_skills "github.com/gosharplite/tell-me-go/internal/infrastructure/skills"
@@ -306,7 +307,13 @@ func (b *Bootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config
 
 // GetSuggestionService initializes and returns the suggestion service.
 func (b *Bootstrapper) GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error) {
-	return app.BuildSuggestionService(ctx, b.cfg.FileSystem, b.cfg.HomeDir, b.cfg.Stderr, b.cfg.Logger, b.cfg.WorkspacePolicy, recentHistory)
+	domainFS := infra_persistence.NewDomainFS(b.cfg.FileSystem)
+	tracker, err := history.NewGlobalPromptTracker(domainFS, b.cfg.HomeDir)
+	if err != nil {
+		b.cfg.Logger.Warn("failed to initialize global prompt tracker, falling back to no-op", "error", err)
+		tracker = history.NewNoOpTracker()
+	}
+	return app.BuildSuggestionService(ctx, domainFS, tracker, recentHistory, b.cfg.Stderr, b.cfg.WorkspacePolicy)
 }
 
 // GetHistoryBrowser returns a history browser that launches the TUI.

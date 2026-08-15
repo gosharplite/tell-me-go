@@ -508,10 +508,14 @@ func TestGetSuggestionService_Fallback(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Create an invalid directory structure to force NewGlobalPromptTracker to fail.
-	// NewGlobalPromptTracker tries to create a file in homeDir/.tellmego/prompts.jsonl
-	// If .tellmego is a file, it will fail.
-	err := os.WriteFile(filepath.Join(tempDir, ".tellmego"), []byte(""), 0644)
+	// NewGlobalPromptTracker tries to create a file in homeDir/output/global_prompts.jsonl
+	// If output is a regular file, MkdirAll will fail.
+	conflictFile := filepath.Join(tempDir, "output")
+	err := os.WriteFile(conflictFile, []byte("not a dir"), 0644)
 	assert.NoError(t, err)
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
 	sm := new(mockConfigurableSecurityManager)
 	fs := &infra_persistence.OSFileSystem{}
@@ -522,11 +526,13 @@ func TestGetSuggestionService_Fallback(t *testing.T) {
 	bcfg.Stdout = io.Discard
 	bcfg.Stderr = io.Discard
 	bcfg.FileSystem = fs
+	bcfg.Logger = logger
 	b := NewBootstrapper(bcfg)
 
 	svc, err := b.GetSuggestionService(ctx, []string{"test"})
 	assert.NoError(t, err)
 	assert.NotNil(t, svc)
+	assert.Contains(t, logBuf.String(), "failed to initialize global prompt tracker")
 }
 
 // failingCloser is an io.Closer that returns a configurable error.

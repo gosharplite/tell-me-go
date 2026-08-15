@@ -4,53 +4,98 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"io"
-	"log/slog"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
-	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
-// TestBuildSuggestionService_TrackerInitFailure verifies the graceful
-// degradation contract of BuildSuggestionService: when the global prompt
-// tracker cannot be initialized (MkdirAll on <homeDir>/output fails because
-// a plain file named "output" occupies the path), the function logs a
-// warning and substitutes history.NewNoOpTracker() instead of failing.
-//
-// The tracker-failure trigger reuses the proven real-FS technique from
-// TestNewGlobalPromptTracker_MkdirError (internal/infrastructure/history):
-// no custom FS double — a plain file blocks the MkdirAll.
-func TestBuildSuggestionService_TrackerInitFailure(t *testing.T) {
-	homeDir := t.TempDir()
-	conflictFile := filepath.Join(homeDir, "output")
-	if err := os.WriteFile(conflictFile, []byte("not a dir"), 0644); err != nil {
-		t.Fatal(err)
+type mockPromptTracker struct {
+	loadTopNFunc func(ctx context.Context, limit int) ([]string, error)
+	appendFunc   func(ctx context.Context, prompt string) error
+	closeFunc    func() error
+}
+
+var _ ports.PromptTracker = (*mockPromptTracker)(nil)
+
+func (m *mockPromptTracker) Append(ctx context.Context, prompt string) error {
+	if m.appendFunc != nil {
+		return m.appendFunc(ctx, prompt)
 	}
+	return nil
+}
 
-	// Real OS-backed filesystem adapter, constructed exactly as the production
-	// composition root does (internal/infrastructure/di/container.go:50).
-	fs := &infra_persistence.OSFileSystem{}
+func (m *mockPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string, error) {
+	if m.loadTopNFunc != nil {
+		return m.loadTopNFunc(ctx, limit)
+	}
+	return nil, nil
+}
 
-	var logBuf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+func (m *mockPromptTracker) Close() error {
+	if m.closeFunc != nil {
+		return m.closeFunc()
+	}
+	return nil
+}
 
-	var wp services.WorkspacePolicy // zero value (nil interface) — unused on this path
+type mockFileSystem struct {
+	persistence.FileSystem
+}
 
-	service, err := BuildSuggestionService(context.Background(), fs, homeDir, io.Discard, logger, wp, nil)
+var _ persistence.FileSystem = (*mockFileSystem)(nil)
+
+type mockWorkspacePolicy struct {
+	shouldIgnoreDirFunc  func(name string) bool
+	shouldIgnorePathFunc func(path string) bool
+}
+
+var _ services.WorkspacePolicy = (*mockWorkspacePolicy)(nil)
+
+func (m *mockWorkspacePolicy) ShouldIgnoreDir(name string) bool {
+	if m.shouldIgnoreDirFunc != nil {
+		return m.shouldIgnoreDirFunc(name)
+	}
+	return false
+}
+
+func (m *mockWorkspacePolicy) ShouldIgnorePath(path string) bool {
+	if m.shouldIgnorePathFunc != nil {
+		return m.shouldIgnorePathFunc(path)
+	}
+	return false
+}
+
+func TestBuildSuggestionService_Delegation(t *testing.T) {
+	ctx := context.Background()
+	fs := &mockFileSystem{}
+	tracker := &mockPromptTracker{
+		loadTopNFunc: func(ctx context.Context, limit int) ([]string, error) {
+			return []string{"git status", "git diff"}, nil
+		},
+	}
+	wp := &mockWorkspacePolicy{}
+	recentHistory := []string{"go test ./..."}
+
+	service, err := BuildSuggestionService(ctx, fs, tracker, recentHistory, io.Discard, wp)
 	if err != nil {
-		t.Fatalf("BuildSuggestionService must degrade gracefully on tracker init failure, got error: %v", err)
+		t.Fatalf("BuildSuggestionService failed: %v", err)
 	}
 	if service == nil {
 		t.Fatal("expected non-nil suggestion service")
 	}
 
-	if !strings.Contains(logBuf.String(), "failed to initialize global prompt tracker") {
-		t.Errorf("expected warning about tracker init failure, got log: %q", logBuf.String())
+	suggestions, err := service.GetSuggestions(ctx, "")
+	if err != nil {
+		t.Fatalf("GetSuggestions failed: %v", err)
+	}
+	if len(suggestions) < 3 {
+		t.Fatalf("expected at least 3 suggestions, got %v", suggestions)
+	}
+	if suggestions[0] != "git status" || suggestions[1] != "git diff" || suggestions[2] != "go test ./..." {
+		t.Errorf("unexpected suggestions: %v", suggestions)
 	}
 }
