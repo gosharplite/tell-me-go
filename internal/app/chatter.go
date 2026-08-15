@@ -13,8 +13,9 @@ import (
 )
 
 // validateChatterDeps returns an error if any required dependency is nil.
-// CostTracker and SecurityManager are intentionally excluded — both may
-// be nil by design and have downstream guards in agent.NewAgent.
+// EventBus, Paths, Gateway, HistoryManager, SkillRepository, and Summarizer are required.
+// CostTracker, SecurityManager, and ConfigWatcher are intentionally excluded — they
+// are optional by design and have downstream fallbacks in agent.NewAgent.
 func validateChatterDeps(deps ports.ChatterComposer) error {
 	if deps.GetEventBus() == nil {
 		return fmt.Errorf("event bus is required")
@@ -30,6 +31,9 @@ func validateChatterDeps(deps ports.ChatterComposer) error {
 	}
 	if deps.GetSkillRepository() == nil {
 		return fmt.Errorf("skill repository is required")
+	}
+	if deps.GetSummarizer() == nil {
+		return fmt.Errorf("summarizer is required")
 	}
 	return nil
 }

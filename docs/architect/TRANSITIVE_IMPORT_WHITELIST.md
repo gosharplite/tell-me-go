@@ -41,7 +41,7 @@ allowed: config, events, llm, persistence, pricing, security, services, skills, 
 # test-access bridge mirrors agent's domain surface
 ## consumer: internal/agent/agenttest
 allowed: config, events, llm, persistence, pricing, security, skills, telemetry, tools
-# P1+P4: canonical test-double surface; telemetry via events; config via ChatterComposer (issue #1369)
+# P1+P4: canonical test-double surface; telemetry via events; config for StubChatterComposer
 ## consumer: internal/agent/orchestrator
 allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
 # P2+P5: engine/session deps

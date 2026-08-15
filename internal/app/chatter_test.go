@@ -32,6 +32,12 @@ func (m *mockSkillRepo) Refresh(ctx context.Context) error {
 	return nil
 }
 
+type mockSummarizer struct{}
+
+func (m *mockSummarizer) Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, *llm.Metrics, error) {
+	return "", nil, nil
+}
+
 // mockSessionDeps is a field-based SessionDependencies used exclusively for
 // nil-dependency injection tests. The testify mock in agenttest
 // (MockServiceSessionDependencies) cannot inject nil because its
@@ -49,6 +55,7 @@ type mockSessionDeps struct {
 	tracker         pricing.CostTracker
 	sessionProvider ports.SessionProvider
 	skillRepo       domain_skills.SkillRepository
+	summarizer      ports.Summarizer
 }
 
 func (d *mockSessionDeps) GetGateway() llm.LLMGateway              { return d.gw }
@@ -70,7 +77,7 @@ func (d *mockSessionDeps) GetSessionProvider() ports.SessionProvider            
 func (d *mockSessionDeps) GetHealthManager() ports.HealthCheckManager           { return nil }
 func (d *mockSessionDeps) GetClient() llm.LLMClient                             { return nil }
 func (d *mockSessionDeps) GetSkillRepository() domain_skills.SkillRepository    { return d.skillRepo }
-func (d *mockSessionDeps) GetSummarizer() ports.Summarizer                      { return nil }
+func (d *mockSessionDeps) GetSummarizer() ports.Summarizer                      { return d.summarizer }
 func (d *mockSessionDeps) GetConfigWatcher() domain_config.ConfigWatcher        { return nil }
 func (d *mockSessionDeps) RegisterTrace(path string)                            {}
 
@@ -219,6 +226,7 @@ func setupNilDepTest(t *testing.T) (*mockSessionDeps, ports.ChatterConfig) {
 		tracker:         &mockTracker{},
 		sessionProvider: &testfixtures.MockSessionProvider{},
 		skillRepo:       &mockSkillRepo{},
+		summarizer:      &mockSummarizer{},
 	}
 
 	cfg := ports.ChatterConfig{
@@ -317,6 +325,11 @@ func TestNewChatter_NilDependencyError(t *testing.T) {
 	t.Run("nil skill repository", func(t *testing.T) {
 		deps, cfg := setupNilDepTest(t)
 		assertNilDepRequired(t, deps, cfg, func(d *mockSessionDeps) { d.skillRepo = nil }, "skill repository is required")
+	})
+
+	t.Run("nil summarizer", func(t *testing.T) {
+		deps, cfg := setupNilDepTest(t)
+		assertNilDepRequired(t, deps, cfg, func(d *mockSessionDeps) { d.summarizer = nil }, "summarizer is required")
 	})
 
 	t.Run("nil tracker", func(t *testing.T) {

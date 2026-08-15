@@ -620,7 +620,7 @@ func (m *mockSessionDeps) GetSessionProvider() ports.SessionProvider { return m.
 func (m *mockSessionDeps) GetSkillRepository() domain_skills.SkillRepository {
 	return &infra_skills.CompositeRepository{}
 }
-func (m *mockSessionDeps) GetSummarizer() ports.Summarizer        { return nil }
+func (m *mockSessionDeps) GetSummarizer() ports.Summarizer        { return &mockSummarizer{} }
 func (m *mockSessionDeps) GetConfigWatcher() config.ConfigWatcher { return nil }
 func (m *mockSessionDeps) RegisterTrace(path string)              {}
 
@@ -1798,11 +1798,45 @@ func TestBuildSharedSkillRepo_FileRepoFallback(t *testing.T) {
 	bcfg.Stderr = io.Discard
 	b := NewBootstrapper(bcfg)
 
-	repo := b.buildSharedSkillRepo(&config.Config{})
+	repo, err := b.buildSharedSkillRepo(&config.Config{})
+	require.NoError(t, err)
 
 	assert.NotNil(t, repo)
 	_, isComposite := repo.(*infra_skills.CompositeRepository)
 	assert.False(t, isComposite, "expected plain file repo fallback, got composite")
+}
+
+func TestBuildSharedSkillRepo_FileRepoError(t *testing.T) {
+	tempDir := t.TempDir()
+	// Create docs/skills with an invalid skill file (missing name in frontmatter)
+	docsSkillsDir := filepath.Join(tempDir, "docs", "skills")
+	require.NoError(t, os.MkdirAll(docsSkillsDir, 0755))
+	brokenSkill := filepath.Join(docsSkillsDir, "broken.md")
+	require.NoError(t, os.WriteFile(brokenSkill, []byte("---\ndescription: Missing name\n---\nContent"), 0644))
+
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = new(mockConfigurableSecurityManager)
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	b := NewBootstrapper(bcfg)
+
+	repo, err := b.buildSharedSkillRepo(&config.Config{})
+	assert.Error(t, err)
+	assert.Nil(t, repo)
+	assert.Contains(t, err.Error(), "failed to initialize skill repository")
+
+	// Also verify BuildSessionDependencies propagates this error and cleans up
+	ctx := context.Background()
+	bcfg.ClientFactory = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+		return new(mockLLMClient), nil
+	})
+	b2 := NewBootstrapper(bcfg)
+	_, _, cleanup, err := b2.BuildSessionDependencies(ctx, &config.Config{Mode: "assistant"}, "config.yaml", false, nil)
+	assert.Error(t, err)
+	assert.Nil(t, cleanup)
+	assert.Contains(t, err.Error(), "failed to initialize skill repository")
 }
 
 func TestFinalizeSession_RecordCostError(t *testing.T) {

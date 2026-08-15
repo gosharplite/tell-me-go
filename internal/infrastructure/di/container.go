@@ -121,7 +121,11 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 	// (SkillManager) and the skill injector (via ChatterComposer). A
 	// single instance ensures that Refresh() called by install_skill or
 	// remove_skill is visible to both consumers.
-	sharedSkillRepo := b.buildSharedSkillRepo(cfg)
+	sharedSkillRepo, err := b.buildSharedSkillRepo(cfg)
+	if err != nil {
+		_ = cleanup(ctx)
+		return nil, nil, nil, err
+	}
 	deps.skillRepo = sharedSkillRepo
 
 	deps.registry = b.wireToolRegistry(paths, sessionProvider, deps.health, lazyClient, bus, cfg, pricingOverrides, capturer, sharedSkillRepo)
@@ -202,14 +206,13 @@ func (b *Bootstrapper) wireToolRegistry(paths *persistence.Paths, sessionProvide
 // buildSharedSkillRepo constructs the shared skill repository used by
 // both the tool registry and the skill injector. A single instance ensures
 // that Refresh() results from install_skill/remove_skill are seen by both.
-func (b *Bootstrapper) buildSharedSkillRepo(cfg *config.Config) domain_skills.SkillRepository {
+func (b *Bootstrapper) buildSharedSkillRepo(cfg *config.Config) (domain_skills.SkillRepository, error) {
 	skillsDir := filepath.Join(b.cfg.HomeDir, "docs", "skills")
 	skillsShDir := filepath.Join(b.cfg.HomeDir, ".skills")
 
 	fileRepo, err := infra_skills.NewFileSkillRepository(skillsDir)
 	if err != nil {
-		b.cfg.Logger.Warn("file skill repository unavailable, continuing without skills", "error", err)
-		return nil
+		return nil, fmt.Errorf("failed to initialize skill repository: %w", err)
 	}
 
 	skillsShRepo, err := infra_skills.NewSkillsShRepository(skillsShDir)
@@ -221,9 +224,9 @@ func (b *Bootstrapper) buildSharedSkillRepo(cfg *config.Config) domain_skills.Sk
 	if skillsShRepo != nil {
 		return &infra_skills.CompositeRepository{
 			Repos: []domain_skills.SkillRepository{fileRepo, skillsShRepo},
-		}
+		}, nil
 	}
-	return fileRepo
+	return fileRepo, nil
 }
 
 type sessionDeps struct {
