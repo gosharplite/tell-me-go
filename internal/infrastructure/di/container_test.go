@@ -617,7 +617,12 @@ func (m *mockSessionDeps) GetTurnsLogger() ports.TurnsLogger {
 }
 func (m *mockSessionDeps) GetSessionProvider() ports.SessionProvider { return m.sessionProvider }
 
-func (m *mockSessionDeps) GetSkillRepository() domain_skills.SkillRepository { return nil }
+func (m *mockSessionDeps) GetSkillRepository() domain_skills.SkillRepository {
+	return &infra_skills.CompositeRepository{}
+}
+func (m *mockSessionDeps) GetSummarizer() ports.Summarizer        { return nil }
+func (m *mockSessionDeps) GetConfigWatcher() config.ConfigWatcher { return nil }
+func (m *mockSessionDeps) RegisterTrace(path string)              {}
 
 type mockTracker struct {
 	pricing.CostTracker
