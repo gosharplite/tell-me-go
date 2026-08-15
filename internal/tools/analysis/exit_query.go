@@ -47,13 +47,15 @@ const orphanExitLayerLabel = "orphan (no non-di consumers or implementers)"
 // transitive-closure-gate.md). Keyed by symbol name (the query's scope is
 // ports interfaces only, where names are unique).
 var exitStayRationales = map[string]string{
-	"Capturer":         "di signature (BootstrapperConfig) — full criterion cross-layer",
-	"HistoryBrowser":   "di uiFactory binding — full criterion cross-layer",
-	"HistoryEditor":    "di uiFactory binding — full criterion cross-layer",
-	"UIRenderer":       "di uiFactory binding — full criterion cross-layer",
-	"SessionFinalizer": "di-implemented sessionDeps — full criterion cross-layer",
-	"HistoryRenderer":  "di + telemetry — recorded stay confirmed (realignment-eligibility, not an exit)",
-	"ChatService":      "di signature — chatFactory/GetChatService — full criterion cross-layer",
+	"Capturer":          "di signature (BootstrapperConfig) — full criterion cross-layer",
+	"HistoryBrowser":    "di uiFactory binding — full criterion cross-layer",
+	"HistoryEditor":     "di uiFactory binding — full criterion cross-layer",
+	"UIRenderer":        "di uiFactory binding — full criterion cross-layer",
+	"SessionFinalizer":  "di-implemented sessionDeps — full criterion cross-layer",
+	"HistoryRenderer":   "di + telemetry — recorded stay confirmed (realignment-eligibility, not an exit)",
+	"ChatService":       "di signature — chatFactory/GetChatService — full criterion cross-layer",
+	"ChatterComposer":   "di-implemented sessionDeps — full criterion cross-layer",
+	"SuggestionService": "di signature — Bootstrapper.GetSuggestionService — full criterion cross-layer",
 }
 
 // ExitCandidate is one internal/domain/ports interface whose non-composition-root
@@ -274,6 +276,7 @@ var exitInternalLayerNames = map[string]string{
 	"ui":             layerApplication,
 	"service":        layerApplication,
 	"application":    layerApplication,
+	"app":            layerApplication,
 	"tools":          layerTools,
 	"pkg":            layerShared,
 }

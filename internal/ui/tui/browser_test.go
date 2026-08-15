@@ -15,6 +15,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/ui/tui/editor"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,17 +31,22 @@ func (m *mockHistoryProvider) GetHistoryStream(ctx context.Context, limit int, c
 }
 
 type mockHistoryModifier struct {
-	ArchiveFunc       func(ctx context.Context, contents []*llm.Content) error
-	SetPinnedFunc     func(ctx context.Context, turnID string, pinned bool) error
-	GetFilePathFunc   func() string
-	RollbackTurnsFunc func(ctx context.Context, turns int) (int, int, int, error)
-	GetModelTurnFunc  func(ctx context.Context, index int) (*llm.Content, error)
+	ArchiveFunc           func(ctx context.Context, contents []*llm.Content) error
+	SetPinnedFunc         func(ctx context.Context, turnID string, pinned bool) error
+	GetFilePathFunc       func() string
+	RollbackTurnsFunc     func(ctx context.Context, turns int) (int, int, int, error)
+	GetModelTurnFunc      func(ctx context.Context, index int) (*llm.Content, error)
+	UpdateTurnContentFunc func(ctx context.Context, index int, newText string, newThought string) error
 
-	SetPinnedCalled   bool
-	RollbackCalled    bool
-	LastPinnedID      string
-	LastPinnedState   bool
-	LastRollbackTurns int
+	SetPinnedCalled         bool
+	RollbackCalled          bool
+	UpdateTurnContentCalled bool
+	LastPinnedID            string
+	LastPinnedState         bool
+	LastRollbackTurns       int
+	LastUpdateIndex         int
+	LastUpdateText          string
+	LastUpdateThought       string
 }
 
 func (m *mockHistoryModifier) Archive(ctx context.Context, contents []*llm.Content) error {
@@ -88,6 +94,13 @@ func (m *mockHistoryModifier) GetModelTurn(ctx context.Context, index int) (*llm
 }
 
 func (m *mockHistoryModifier) UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error {
+	m.UpdateTurnContentCalled = true
+	m.LastUpdateIndex = index
+	m.LastUpdateText = newText
+	m.LastUpdateThought = newThought
+	if m.UpdateTurnContentFunc != nil {
+		return m.UpdateTurnContentFunc(ctx, index, newText, newThought)
+	}
 	return nil
 }
 
@@ -1400,4 +1413,171 @@ func TestBrowserEditKeybinding(t *testing.T) {
 			t.Errorf("expected error to contain 'get model turn', got: %v", updated.err)
 		}
 	})
+}
+
+// ── Browser editor message handling tests (handleEditorMsg) ──
+
+func setupEditingBrowser(ctx context.Context, mockProvider *mockHistoryProvider, mockModifier *mockHistoryModifier) *rootBrowserModel {
+	m := NewRootBrowserModel(ctx, mockProvider, mockModifier)
+	m.ready = true
+	m.width = 80
+	m.height = 24
+	m.viewport = viewport.New(80, 20)
+	m.history = []ports.HistoryViewDTO{
+		{ID: "user-0", Role: "user", ContentPreview: "hello", OriginalIndex: 0},
+		{ID: "model-0", Role: "assistant", ContentPreview: "hi", ThoughtProcess: "old thought", OriginalIndex: 1},
+	}
+	m.selectedTurn = 1
+	m.cachedThoughts["model-0"] = "cached thought"
+	m.editor = editor.NewModel("model text", "model thought")
+	_, _ = m.editor.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.editing = true
+	m.editIndex = 1
+	return m
+}
+
+func TestBrowserHandleEditorMsg_WindowSize(t *testing.T) {
+	ctx := context.Background()
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := setupEditingBrowser(ctx, mockProvider, mockModifier)
+
+	newModel, cmd := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	updated := newModel.(*rootBrowserModel)
+
+	require.True(t, updated.editing, "expected editing to remain true after WindowSizeMsg")
+	require.NotNil(t, updated.editor, "expected editor to remain non-nil")
+	require.Nil(t, cmd, "expected nil cmd from WindowSizeMsg forwarding")
+	require.Contains(t, updated.editor.View(), "Model Response")
+}
+
+func TestBrowserHandleEditorMsg_GenericMsg(t *testing.T) {
+	ctx := context.Background()
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := setupEditingBrowser(ctx, mockProvider, mockModifier)
+
+	type customEditorMsg struct{}
+	newModel, cmd := m.Update(customEditorMsg{})
+	updated := newModel.(*rootBrowserModel)
+
+	require.True(t, updated.editing, "expected editing to remain true after custom message")
+	require.NotNil(t, updated.editor, "expected editor to remain non-nil")
+	_ = cmd
+}
+
+func TestBrowserHandleEditorMsg_KeyTab(t *testing.T) {
+	ctx := context.Background()
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := setupEditingBrowser(ctx, mockProvider, mockModifier)
+
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updated := newModel.(*rootBrowserModel)
+
+	require.True(t, updated.editing, "expected editing to remain true after Tab key")
+	require.NotNil(t, updated.editor, "expected editor to remain non-nil")
+	require.False(t, updated.editor.WasAborted(), "expected not aborted after Tab key")
+	require.False(t, updated.editor.WasSaved(), "expected not saved after Tab key")
+	require.Nil(t, cmd, "expected nil cmd from Tab key")
+}
+
+func TestBrowserHandleEditorMsg_AbortEsc(t *testing.T) {
+	ctx := context.Background()
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := setupEditingBrowser(ctx, mockProvider, mockModifier)
+
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated := newModel.(*rootBrowserModel)
+
+	require.False(t, updated.editing, "expected editing to be false after Esc")
+	require.Nil(t, updated.editor, "expected editor to be nil after Esc")
+	require.False(t, mockModifier.UpdateTurnContentCalled, "expected UpdateTurnContent NOT to be called on abort")
+	require.Nil(t, cmd, "expected nil cmd after abort")
+}
+
+func TestBrowserHandleEditorMsg_AbortCtrlC(t *testing.T) {
+	ctx := context.Background()
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := setupEditingBrowser(ctx, mockProvider, mockModifier)
+
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	updated := newModel.(*rootBrowserModel)
+
+	require.False(t, updated.editing, "expected editing to be false after Ctrl+C")
+	require.Nil(t, updated.editor, "expected editor to be nil after Ctrl+C")
+	require.False(t, mockModifier.UpdateTurnContentCalled, "expected UpdateTurnContent NOT to be called on abort")
+	require.Nil(t, cmd, "expected nil cmd after abort")
+}
+
+func TestBrowserHandleEditorMsg_SaveSuccess(t *testing.T) {
+	ctx := context.Background()
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := setupEditingBrowser(ctx, mockProvider, mockModifier)
+
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	updated := newModel.(*rootBrowserModel)
+
+	require.False(t, updated.editing, "expected editing to be false after save")
+	require.Nil(t, updated.editor, "expected editor to be nil after save")
+	require.True(t, mockModifier.UpdateTurnContentCalled, "expected UpdateTurnContent to be called on save")
+	require.Equal(t, 1, mockModifier.LastUpdateIndex)
+	require.Equal(t, "model text", mockModifier.LastUpdateText)
+	require.Equal(t, "model thought", mockModifier.LastUpdateThought)
+	require.Equal(t, "model text", updated.history[1].ContentPreview)
+	require.Equal(t, "model thought", updated.history[1].ThoughtProcess)
+	require.NotEqual(t, "cached thought", updated.cachedThoughts["model-0"])
+	require.Contains(t, updated.cachedThoughts["model-0"], "model thought")
+	require.NoError(t, updated.err)
+	require.Nil(t, cmd)
+}
+
+func TestBrowserHandleEditorMsg_SaveOutOfBounds(t *testing.T) {
+	ctx := context.Background()
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := setupEditingBrowser(ctx, mockProvider, mockModifier)
+	m.selectedTurn = -1 // Out of bounds
+
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	updated := newModel.(*rootBrowserModel)
+
+	require.False(t, updated.editing, "expected editing to be false after save")
+	require.Nil(t, updated.editor, "expected editor to be nil after save")
+	require.True(t, mockModifier.UpdateTurnContentCalled, "expected UpdateTurnContent to be called on save")
+	require.NoError(t, updated.err)
+}
+
+func TestBrowserHandleEditorMsg_SaveError(t *testing.T) {
+	ctx := context.Background()
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{
+		UpdateTurnContentFunc: func(ctx context.Context, index int, newText, newThought string) error {
+			return errors.New("save disk error")
+		},
+	}
+	m := setupEditingBrowser(ctx, mockProvider, mockModifier)
+
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	updated := newModel.(*rootBrowserModel)
+
+	require.False(t, updated.editing, "expected editing to be false after save even with error")
+	require.Nil(t, updated.editor, "expected editor to be nil after save")
+	require.True(t, mockModifier.UpdateTurnContentCalled, "expected UpdateTurnContent to be called on save")
+	require.Error(t, updated.err)
+	require.Contains(t, updated.err.Error(), "save disk error")
+}
+
+func TestBrowserHandleEditorMsg_View(t *testing.T) {
+	ctx := context.Background()
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := setupEditingBrowser(ctx, mockProvider, mockModifier)
+
+	view := m.View()
+	require.Contains(t, view, "Model Response")
+	require.Contains(t, view, "Ctrl+S: save & exit")
 }

@@ -1025,28 +1025,20 @@ to reason about.
   the same structural-guard acceptance class as the rest of this function.
 - **See**: `internal/ui/history.go:26`
 
-### ui/tui/browser.go — (*rootBrowserModel).handleActionKeys (CC=15)
+### ui/tui/browser.go — (*rootBrowserModel).handleActionKeys (CC=15) → RESOLVED
 
-- **Status**: ACCEPTED (2026-07)
-- **Rationale**: Type-switch dispatching key actions in the browse TUI. The 'e' (edit) keybinding added 4 structural branches: bounds guard on `selectedTurn`, role guard (`"model" || "assistant"`), `GetModelTurn` error guard, and editor-creation. Each branch is a single-line guard or delegation, not branching business logic. Same acceptance class as `handleDomainEvent` (CC=12) and `(*model).Update` (CC=14) — type-switch dispatch where cyclomatic complexity is structural, not cognitive.
-- **See**: `internal/ui/tui/browser.go:294`
+- **Status**: RESOLVED (2026-09, refactored below CC=10 threshold)
+- **Complexity after fix**: `handleActionKeys` CC=7 (was 15), `handleEditKey` CC=9.
+- **What was refactored**: Extracted the "e" (edit) key action handling logic into `(*rootBrowserModel).handleEditKey()`.
+- **See**: `internal/ui/tui/browser.go` (`handleActionKeys`, `handleEditKey`)
 
-### ui/tui/browser.go — (*rootBrowserModel).handleEditorMsg at 0%
+### ui/tui/browser.go — (*rootBrowserModel).handleEditorMsg at 0% → RESOLVED
 
-- **Status**: ACCEPTED (2026-07)
-- **Rationale**: `handleEditorMsg` is a Bubble Tea sub-model message dispatcher that
-  routes `WindowSizeMsg`, `KeyMsg`, and other messages to an embedded
-  `editor.EditorModel` when the browse TUI is in editing mode (activated by the
-  'e' keybinding). The existing `TestBrowserEditKeybinding` tests the
-  `handleActionKeys` 'e' case (which sets `m.editing = true`) but never sends a
-  follow-up message to exercise `handleEditorMsg` itself. Testing it would require
-  a full TUI integration harness with `tea.NewProgram` to drive the editor
-  sub-model's save/abort lifecycle. Same acceptance class as
-  `renderMarkdownAsync` (Bubble Tea goroutine body at 13.3%) and the
-  `handleActionKeys` type-switch dispatch — TUI message handlers that require
-  full runtime integration to exercise synchronously.
-- **See**: `internal/ui/tui/browser.go:350` (`handleEditorMsg`),
-  `internal/ui/tui/browser_test.go:1303` (`TestBrowserEditKeybinding`)
+- **Status**: RESOLVED (2026-09, `TestBrowserHandleEditorMsg_*` suite)
+- **Coverage after fix**: `handleEditorMsg` **100%** (was 0%).
+- **What was covered**: Sub-model message forwarding, abort on Esc and Ctrl+C, save on Ctrl+S (updating DTO, clearing cache, handling errors and out-of-bounds selection), and View delegation.
+- **See**: `internal/ui/tui/browser.go` (`handleEditorMsg`),
+  `internal/ui/tui/browser_test.go` (`TestBrowserHandleEditorMsg_*`)
 
 ### tools/workspace/shell.go — (*windowsShellWrapper).isPowerShellIndicator (CC=10)
 
@@ -1254,12 +1246,6 @@ to reason about.
 
 ## Coverage Gaps (ACCEPTED — 2026-09 factory seams triage)
 
-### app/chatter.go — skills.sh repository graceful-degradation path
-
-- **Status**: ACCEPTED (2026-09)
-- **Rationale**: `NewSkillsShRepository` errors only on `filepath.Walk` traversal failure (an unreadable `.skills/` subdirectory) — filesystem fault injection; the directory-missing case returns an empty repo with no error. Both flagged branches — the `slog.Warn` + nil fallback (`chatter.go:107-111`) and the `skillRepo = fileRepo` else-branch (`chatter.go:119-121`) — are therefore reachable only via that fault. The underlying error is already unit-tested at `TestNewSkillsShRepository_UnreadableSubdirectory`. The whole block is backward-compat for tests: production injects a shared repo from the composition root, so `deps.GetSkillRepository()` is non-nil and this block is skipped. Same acceptance class as `di/container.go — skills repository init error paths`.
-- **See**: `internal/app/chatter.go:106-121`, `internal/infrastructure/skills/skillssh_repo_test.go:231`
-
 ### llm/factory.go — default case in createAuthenticator
 
 - **Status**: ACCEPTED (2026-09)
@@ -1268,4 +1254,4 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-09 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment); 2026-09 factory seams triage: coverage pins for chatter.go skills.sh graceful-degradation path + llm/factory.go createAuthenticator default-case; 2026-09 catalog hygiene: coverage pins for llm/failover.go ExtractDocument delegation wrapper + llm/provider_health.go getPingEndpoint panic and buildRequest error branch (structurally unreachable); re-anchored NewID (222-224 → 234-236) and Task accessors (105,108,111 → 112,116); coverage test for BuildSuggestionService tracker fallback)*
+*Last Updated: 2026-09 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment); 2026-09 factory seams triage: coverage pin for llm/factory.go createAuthenticator default-case; 2026-09 catalog hygiene: coverage pins for llm/failover.go ExtractDocument delegation wrapper + llm/provider_health.go getPingEndpoint panic and buildRequest error branch (structurally unreachable); re-anchored NewID (222-224 → 234-236) and Task accessors (105,108,111 → 112,116); coverage test for BuildSuggestionService tracker fallback)*

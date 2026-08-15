@@ -6,8 +6,11 @@ package di
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 func TestSessionFactory_ErrorWrappingFormat(t *testing.T) {
@@ -27,5 +30,61 @@ func TestSessionFactory_ErrorWrappingFormat(t *testing.T) {
 	}
 	if strings.Contains(msg, "paths") {
 		t.Errorf("error message should not contain raw paths, got: %s", msg)
+	}
+}
+
+func TestDefaultSessionFactory_SetupSecurity_RegistersSkillsPaths(t *testing.T) {
+	homeDir := t.TempDir()
+	configPath := filepath.Join(homeDir, "config.yaml")
+	var registeredReadOnly []string
+	var registeredSafe []string
+
+	sm := &mockConfigurableSecurityManager{
+		RegisterReadOnlyPathFunc: func(path string) {
+			registeredReadOnly = append(registeredReadOnly, path)
+		},
+		RegisterSafePathFunc: func(path string) {
+			registeredSafe = append(registeredSafe, path)
+		},
+	}
+	f := &defaultSessionFactory{
+		HomeDir: homeDir,
+		SM:      sm,
+	}
+
+	err := f.setupSecurity(&persistence.Paths{}, configPath)
+	if err != nil {
+		t.Fatalf("setupSecurity failed: %v", err)
+	}
+
+	expectedReadOnly := []string{
+		configPath,
+		filepath.Join(homeDir, "docs", "skills"),
+		filepath.Join(homeDir, ".skills"),
+	}
+
+	for _, expected := range expectedReadOnly {
+		found := false
+		for _, p := range registeredReadOnly {
+			if p == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected read-only path %q to be registered, registered: %v", expected, registeredReadOnly)
+		}
+	}
+
+	expectedSafe := filepath.Join(homeDir, "output")
+	foundSafe := false
+	for _, p := range registeredSafe {
+		if p == expectedSafe {
+			foundSafe = true
+			break
+		}
+	}
+	if !foundSafe {
+		t.Errorf("expected safe path %q to be registered, registered: %v", expectedSafe, registeredSafe)
 	}
 }

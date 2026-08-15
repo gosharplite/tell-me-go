@@ -613,6 +613,7 @@ func TestArchitectureManager_Classify(t *testing.T) {
 		{"github.com/org/repo/internal/domain", layerDomain},
 		{"github.com/org/repo/internal/infrastructure/db", layerInfrastructure},
 		{"github.com/org/repo/internal/service/api", layerApplication},
+		{"github.com/org/repo/internal/app", layerApplication},
 		{"github.com/org/repo/internal/tools/checker", layerTools},
 		{"github.com/org/repo/internal/pkg/utils", layerShared},
 		{"github.com/org/repo/cmd/server", layerCmd},

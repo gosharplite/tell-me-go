@@ -19,6 +19,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	infra_skills "github.com/gosharplite/tell-me-go/internal/infrastructure/skills"
@@ -91,6 +93,17 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 	pricingData, tracker, turnsLogger, cleanup := b.wireTelemetry(ctx, paths, cfg, pricingOverrides, cleanup)
 	lazyClient := b.wireLLMClient(cfg, pricingData, bus, logger)
 
+	summarizer := infra_llm.NewSummarizer(lazyClient, bus, infra_llm.WithLogger(logger))
+
+	configWatcher := infra_config.NewFileConfigWatcher(
+		&infra_config.YAMLConfigLoader{Finder: infra_config.NewDefaultConfigFinder()},
+		&infra_config.JSONSessionLoader{},
+		config.DefaultMaxHistoryTokens,
+		config.DefaultMaxToolTurns,
+		config.DefaultMaxHistoryTurns,
+		logger,
+	)
+
 	deps := &sessionDeps{
 		infraProvider: infraProvider{
 			paths: paths, sm: b.cfg.SM, bus: bus, logger: logger, turnsLogger: turnsLogger,
@@ -98,6 +111,8 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		telemetryProvider:    telemetryProvider{tracker: tracker, pricingOverrides: pricingOverrides},
 		sessionStateProvider: sessionStateProvider{hManager: hManager, sessionProvider: sessionProvider, workspacePolicy: b.cfg.WorkspacePolicy},
 		lazyProvider:         lazyProvider{client: lazyClient},
+		summarizer:           summarizer,
+		configWatcher:        configWatcher,
 	}
 
 	deps.health = b.wireHealth(cfg, sessionProvider, lazyClient)
@@ -106,7 +121,11 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 	// (SkillManager) and the skill injector (via ChatterComposer). A
 	// single instance ensures that Refresh() called by install_skill or
 	// remove_skill is visible to both consumers.
-	sharedSkillRepo := b.buildSharedSkillRepo(cfg)
+	sharedSkillRepo, err := b.buildSharedSkillRepo(cfg)
+	if err != nil {
+		_ = cleanup(ctx)
+		return nil, nil, nil, err
+	}
 	deps.skillRepo = sharedSkillRepo
 
 	deps.registry = b.wireToolRegistry(paths, sessionProvider, deps.health, lazyClient, bus, cfg, pricingOverrides, capturer, sharedSkillRepo)
@@ -187,14 +206,13 @@ func (b *Bootstrapper) wireToolRegistry(paths *persistence.Paths, sessionProvide
 // buildSharedSkillRepo constructs the shared skill repository used by
 // both the tool registry and the skill injector. A single instance ensures
 // that Refresh() results from install_skill/remove_skill are seen by both.
-func (b *Bootstrapper) buildSharedSkillRepo(cfg *config.Config) domain_skills.SkillRepository {
+func (b *Bootstrapper) buildSharedSkillRepo(cfg *config.Config) (domain_skills.SkillRepository, error) {
 	skillsDir := filepath.Join(b.cfg.HomeDir, "docs", "skills")
 	skillsShDir := filepath.Join(b.cfg.HomeDir, ".skills")
 
 	fileRepo, err := infra_skills.NewFileSkillRepository(skillsDir)
 	if err != nil {
-		b.cfg.Logger.Warn("file skill repository unavailable, continuing without skills", "error", err)
-		return nil
+		return nil, fmt.Errorf("failed to initialize skill repository: %w", err)
 	}
 
 	skillsShRepo, err := infra_skills.NewSkillsShRepository(skillsShDir)
@@ -206,9 +224,9 @@ func (b *Bootstrapper) buildSharedSkillRepo(cfg *config.Config) domain_skills.Sk
 	if skillsShRepo != nil {
 		return &infra_skills.CompositeRepository{
 			Repos: []domain_skills.SkillRepository{fileRepo, skillsShRepo},
-		}
+		}, nil
 	}
-	return fileRepo
+	return fileRepo, nil
 }
 
 type sessionDeps struct {
@@ -217,14 +235,30 @@ type sessionDeps struct {
 	sessionStateProvider
 	lazyProvider
 	healthProvider
-	skillRepo domain_skills.SkillRepository
+	skillRepo     domain_skills.SkillRepository
+	summarizer    ports.Summarizer
+	configWatcher config.ConfigWatcher
 }
+
+var _ ports.ChatterComposer = (*sessionDeps)(nil)
 
 // GetSkillRepository returns the shared skill repository, used by both
 // the tool registry and the skill injector so Refresh() results are
 // visible to all consumers.
 func (d *sessionDeps) GetSkillRepository() domain_skills.SkillRepository {
 	return d.skillRepo
+}
+
+func (d *sessionDeps) GetSummarizer() ports.Summarizer {
+	return d.summarizer
+}
+
+func (d *sessionDeps) GetConfigWatcher() config.ConfigWatcher {
+	return d.configWatcher
+}
+
+func (d *sessionDeps) RegisterTrace(path string) {
+	telemetry.RegisterTraceSubscriber(d.bus, path)
 }
 
 // GetAgentFactory returns a factory for creating Chatter instances.
@@ -276,7 +310,13 @@ func (b *Bootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config
 
 // GetSuggestionService initializes and returns the suggestion service.
 func (b *Bootstrapper) GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error) {
-	return app.BuildSuggestionService(ctx, b.cfg.FileSystem, b.cfg.HomeDir, b.cfg.Stderr, b.cfg.Logger, b.cfg.WorkspacePolicy, recentHistory)
+	domainFS := infra_persistence.NewDomainFS(b.cfg.FileSystem)
+	tracker, err := history.NewGlobalPromptTracker(domainFS, b.cfg.HomeDir)
+	if err != nil {
+		b.cfg.Logger.Warn("failed to initialize global prompt tracker, falling back to no-op", "error", err)
+		tracker = history.NewNoOpTracker()
+	}
+	return app.BuildSuggestionService(ctx, domainFS, tracker, recentHistory, b.cfg.Stderr, b.cfg.WorkspacePolicy)
 }
 
 // GetHistoryBrowser returns a history browser that launches the TUI.

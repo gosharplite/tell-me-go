@@ -114,6 +114,17 @@ func (m *mockClientFactory) NewFailoverChain(cfg *config.Config, pricingData pri
 	return nil, nil
 }
 
+type mockSummarizer struct {
+	SummarizeFunc func(ctx context.Context, contents []*llm.Content, focus string) (string, *llm.Metrics, error)
+}
+
+func (m *mockSummarizer) Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, *llm.Metrics, error) {
+	if m.SummarizeFunc != nil {
+		return m.SummarizeFunc(ctx, contents, focus)
+	}
+	return "", nil, nil
+}
+
 type mockKVStore struct {
 	GetFunc    func(ctx context.Context, key string) (string, error)
 	SetFunc    func(ctx context.Context, key, val string) error
@@ -313,6 +324,8 @@ func TestBuildSessionDependencies(t *testing.T) {
 	assert.NotNil(t, deps)
 	assert.NotNil(t, hManager)
 	assert.NotNil(t, cleanup)
+	assert.NotNil(t, deps.GetSummarizer())
+	assert.NotNil(t, deps.GetConfigWatcher())
 
 	_ = cleanup(ctx)
 }
@@ -604,7 +617,12 @@ func (m *mockSessionDeps) GetTurnsLogger() ports.TurnsLogger {
 }
 func (m *mockSessionDeps) GetSessionProvider() ports.SessionProvider { return m.sessionProvider }
 
-func (m *mockSessionDeps) GetSkillRepository() domain_skills.SkillRepository { return nil }
+func (m *mockSessionDeps) GetSkillRepository() domain_skills.SkillRepository {
+	return &infra_skills.CompositeRepository{}
+}
+func (m *mockSessionDeps) GetSummarizer() ports.Summarizer        { return &mockSummarizer{} }
+func (m *mockSessionDeps) GetConfigWatcher() config.ConfigWatcher { return nil }
+func (m *mockSessionDeps) RegisterTrace(path string)              {}
 
 type mockTracker struct {
 	pricing.CostTracker
@@ -685,6 +703,10 @@ func TestSessionDeps_Getters(t *testing.T) {
 		return reg, nil
 	}, &ports.NoOpLogger{})
 
+	skillRepo := &infra_skills.CompositeRepository{}
+	summarizer := &mockSummarizer{}
+	configWatcher := config.NewNoOpConfigWatcher(100, 10, 20)
+
 	deps := &sessionDeps{
 		infraProvider: infraProvider{
 			paths: paths,
@@ -706,6 +728,9 @@ func TestSessionDeps_Getters(t *testing.T) {
 		healthProvider: healthProvider{
 			health: &mockHealthCheckManager{},
 		},
+		skillRepo:     skillRepo,
+		summarizer:    summarizer,
+		configWatcher: configWatcher,
 	}
 
 	assert.NotNil(t, deps.GetGateway())
@@ -721,6 +746,13 @@ func TestSessionDeps_Getters(t *testing.T) {
 	assert.Equal(t, sessionProvider, deps.GetSessionProvider())
 	assert.NotNil(t, deps.GetHealthManager())
 	assert.NotNil(t, deps.GetWorkspacePolicy())
+	assert.Equal(t, skillRepo, deps.GetSkillRepository())
+	assert.Equal(t, summarizer, deps.GetSummarizer())
+	assert.Equal(t, configWatcher, deps.GetConfigWatcher())
+
+	// Test RegisterTrace
+	tracePath := filepath.Join(t.TempDir(), "test.trace.jsonl")
+	deps.RegisterTrace(tracePath)
 }
 
 func TestContainer_InitializationErrors(t *testing.T) {
@@ -1766,11 +1798,45 @@ func TestBuildSharedSkillRepo_FileRepoFallback(t *testing.T) {
 	bcfg.Stderr = io.Discard
 	b := NewBootstrapper(bcfg)
 
-	repo := b.buildSharedSkillRepo(&config.Config{})
+	repo, err := b.buildSharedSkillRepo(&config.Config{})
+	require.NoError(t, err)
 
 	assert.NotNil(t, repo)
 	_, isComposite := repo.(*infra_skills.CompositeRepository)
 	assert.False(t, isComposite, "expected plain file repo fallback, got composite")
+}
+
+func TestBuildSharedSkillRepo_FileRepoError(t *testing.T) {
+	tempDir := t.TempDir()
+	// Create docs/skills with an invalid skill file (missing name in frontmatter)
+	docsSkillsDir := filepath.Join(tempDir, "docs", "skills")
+	require.NoError(t, os.MkdirAll(docsSkillsDir, 0755))
+	brokenSkill := filepath.Join(docsSkillsDir, "broken.md")
+	require.NoError(t, os.WriteFile(brokenSkill, []byte("---\ndescription: Missing name\n---\nContent"), 0644))
+
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = new(mockConfigurableSecurityManager)
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	b := NewBootstrapper(bcfg)
+
+	repo, err := b.buildSharedSkillRepo(&config.Config{})
+	assert.Error(t, err)
+	assert.Nil(t, repo)
+	assert.Contains(t, err.Error(), "failed to initialize skill repository")
+
+	// Also verify BuildSessionDependencies propagates this error and cleans up
+	ctx := context.Background()
+	bcfg.ClientFactory = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+		return new(mockLLMClient), nil
+	})
+	b2 := NewBootstrapper(bcfg)
+	_, _, cleanup, err := b2.BuildSessionDependencies(ctx, &config.Config{Mode: "assistant"}, "config.yaml", false, nil)
+	assert.Error(t, err)
+	assert.Nil(t, cleanup)
+	assert.Contains(t, err.Error(), "failed to initialize skill repository")
 }
 
 func TestFinalizeSession_RecordCostError(t *testing.T) {
