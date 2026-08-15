@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -61,6 +62,11 @@ func (d *mockSessionDeps) GetSessionProvider() ports.SessionProvider            
 func (d *mockSessionDeps) GetHealthManager() ports.HealthCheckManager           { return nil }
 func (d *mockSessionDeps) GetClient() llm.LLMClient                             { return nil }
 func (d *mockSessionDeps) GetSkillRepository() domain_skills.SkillRepository    { return nil }
+func (d *mockSessionDeps) GetSummarizer() ports.Summarizer                      { return nil }
+func (d *mockSessionDeps) GetConfigWatcher() domain_config.ConfigWatcher        { return nil }
+func (d *mockSessionDeps) RegisterTrace(path string)                            {}
+
+var _ ports.ChatterComposer = (*mockSessionDeps)(nil)
 
 type mockGateway struct {
 	llm.LLMGateway
