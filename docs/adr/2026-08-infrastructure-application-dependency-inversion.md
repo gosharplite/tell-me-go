@@ -219,3 +219,10 @@ dormant exit-query ledger entries remain as the historical record, each
 gaining ports-internal usages from the relocated declarations. The
 `layerUnknown` classification of `internal/app` is a recorded, deliberately
 accepted known-gap (ADR-063 class) with no classifier change in M.
+
+## Addendum: Issue #1369 — Adoption of the X-Option and internal/app Layer Classification (2026-08)
+
+Issue #1369 completed the architecture transition initiated by ADR-066 by adopting the previously rejected X-option:
+1. **Elimination of Infrastructure Dependencies**: `internal/app` was completely decoupled from `internal/infrastructure/*`. Concrete adapter constructions (`infra_llm.NewSummarizer`, `infra_config.NewFileConfigWatcher`, `history.NewGlobalPromptTracker`, `infra_persistence.NewDomainFS`, `telemetry.RegisterTraceSubscriber`) were relocated to the composition root in `internal/infrastructure/di`.
+2. **Layer Classification**: `internal/app` is now formally classified as `layerApplication` in `internal/tools/analysis/architecture.go`. The Clean Architecture rule ("Application layer must not depend on Infrastructure") is now actively evaluated and satisfied for `internal/app`.
+3. **Exit Query Realignment & Stays**: `internal/app` was added to `exitInternalLayerNames`. `ChatterComposer` and `SuggestionService` were recorded as documented cross-layer stays in `exitStayRationales` under ADR-056 Decision 1, and the stay-key liveness count assertion was updated from 7 to 9.
