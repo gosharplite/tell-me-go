@@ -294,34 +294,7 @@ func (m *rootBrowserModel) moveSearchMatch(delta int) {
 func (m *rootBrowserModel) handleActionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "e":
-		if m.selectedTurn < 0 || m.selectedTurn >= len(m.history) {
-			return m, nil
-		}
-		dto := m.history[m.selectedTurn]
-		if dto.Role != "model" && dto.Role != "assistant" {
-			return m, nil
-		}
-		content, err := m.cmdService.GetModelTurn(m.ctx, dto.OriginalIndex)
-		if err != nil {
-			m.err = fmt.Errorf("get model turn: %w", err)
-			return m, nil
-		}
-		var text, thought string
-		for _, p := range content.Parts {
-			if p.IsThought {
-				thought += p.Text
-			} else if p.Text != "" {
-				text += p.Text
-			}
-		}
-		m.editor = editor.NewModel(text, thought)
-		// Seed the editor with the current window dimensions so its layout
-		// initializes before the first render. Bubble Tea does not re-send
-		// WindowSizeMsg to sub-models created after program startup.
-		_, _ = m.editor.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-		m.editing = true
-		m.editIndex = dto.OriginalIndex
-		return m, m.editor.Init()
+		return m.handleEditKey()
 	case "p":
 		m.togglePin()
 		if m.isLoading {
@@ -342,6 +315,37 @@ func (m *rootBrowserModel) handleActionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		return m, nil
 	}
 	return m, nil
+}
+
+func (m *rootBrowserModel) handleEditKey() (tea.Model, tea.Cmd) {
+	if m.selectedTurn < 0 || m.selectedTurn >= len(m.history) {
+		return m, nil
+	}
+	dto := m.history[m.selectedTurn]
+	if dto.Role != "model" && dto.Role != "assistant" {
+		return m, nil
+	}
+	content, err := m.cmdService.GetModelTurn(m.ctx, dto.OriginalIndex)
+	if err != nil {
+		m.err = fmt.Errorf("get model turn: %w", err)
+		return m, nil
+	}
+	var text, thought string
+	for _, p := range content.Parts {
+		if p.IsThought {
+			thought += p.Text
+		} else if p.Text != "" {
+			text += p.Text
+		}
+	}
+	m.editor = editor.NewModel(text, thought)
+	// Seed the editor with the current window dimensions so its layout
+	// initializes before the first render. Bubble Tea does not re-send
+	// WindowSizeMsg to sub-models created after program startup.
+	_, _ = m.editor.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+	m.editing = true
+	m.editIndex = dto.OriginalIndex
+	return m, m.editor.Init()
 }
 
 // handleEditorMsg delegates messages to the editor sub-model and handles
