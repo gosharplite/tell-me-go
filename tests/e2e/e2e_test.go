@@ -181,7 +181,7 @@ func runCommandWithEnvInDirEx(dir string, env []string, stdin string, injectConf
 		}
 		if !hasConfigFlag {
 			// Ensure absolute path to default config
-			configFlag := fmt.Sprintf("-c=%s", filepath.Join(projectRoot, "configs", "assistant.yaml"))
+			configFlag := fmt.Sprintf("-c=%s", filepath.Join(projectRoot, "configs", "butler.yaml"))
 			// Prepend config flag to ensure it's always set to a valid location
 			finalArgs = append([]string{configFlag}, args...)
 		} else {
@@ -977,7 +977,7 @@ func TestShowTurnsLog(t *testing.T) {
 	env := []string{"TELL_ME_HOME=" + homeDir}
 
 	// Create expected log directory and file
-	logDir := filepath.Join(homeDir, "output", "assistant")
+	logDir := filepath.Join(homeDir, "output", "butler")
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		t.Fatalf("Failed to create log directory: %v", err)
 	}

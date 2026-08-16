@@ -24,7 +24,7 @@ import (
 // executeBrowseCommand creates a root command with browse subcommand and executes it.
 func executeBrowseCommand(cmdCtx *context, args []string) error {
 	root := &cobra.Command{}
-	root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
+	root.PersistentFlags().StringP("config", "c", "configs/butler.yaml", "Path to the configuration file")
 
 	chatCmd := newChatCommand(cmdCtx, nil)
 	browseCmd := newBrowseCommand(cmdCtx)
@@ -543,7 +543,7 @@ func TestBrowseCommand_ConfigFlagPropagation(t *testing.T) {
 	// the RunE closure calls cmd.Flags().GetString("config") and passes the
 	// result to c.runBrowse — the exact line we need to cover.
 	root := &cobra.Command{}
-	root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
+	root.PersistentFlags().StringP("config", "c", "configs/butler.yaml", "Path to the configuration file")
 
 	browseCmd := &cobra.Command{
 		Use: "browse",

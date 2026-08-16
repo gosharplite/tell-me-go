@@ -6,7 +6,7 @@ This page check if new source branch is good enough to be merged into new target
 - **Coder** – Executes code and file changes (the only role that writes code).
 - **Tester** – Evaluates test coverage and testing strategy.
 - **Reviewer** – Performs security, idiomatic‑Go, and correctness reviews.
-- **Assistant** – Coordinates the workflow between roles.
+- **Butler** – Coordinates the workflow between roles.
 
 **Key Principle**: Every instruction given to the Coder must first be approved by the Architect. This guarantees architectural decisions are validated before any implementation begins.
 
@@ -14,9 +14,9 @@ This page check if new source branch is good enough to be merged into new target
 
 The workflow is driven by `tell‑me‑go`, a command‑line tool that communicates with each role using configuration files. Each role’s behavior is defined in a YAML configuration.
 
-## Starting the SOP with Assistant
+## Starting the SOP with Butler
 
-To initiate the process using the Assistant, provide a prompt that specifies the source branch, target branch and the location of your role configuration files.
+To initiate the process using the Butler, provide a prompt that specifies the source branch, target branch and the location of your role configuration files.
 
 **Example prompt:**
 
@@ -30,12 +30,12 @@ ARCHITECT_CONFIG: /path/to/your/architect.yaml
 TESTER_CONFIG: /path/to/your/tester.yaml
 REVIEWER_CONFIG: /path/to/your/reviewer.yaml
 CODER_CONFIG: /path/to/your/coder.yaml
-ASSISTANT_CONFIG: /path/to/your/assistant.yaml
+BUTLER_CONFIG: /path/to/your/butler.yaml
 
-You are Assistant, do not take over jobs of other roles. Do not try to do technical work by yourself.
+You are Butler, do not take over jobs of other roles. Do not try to do technical work by yourself.
 ```
 
-The Assistant will set the corresponding environment variables (`ARCHITECT_CONFIG`, `TESTER_CONFIG`, etc.) based on the values you provide.
+The Butler will set the corresponding environment variables (`ARCHITECT_CONFIG`, `TESTER_CONFIG`, etc.) based on the values you provide.
 
 ## Configuration Files
 
@@ -45,7 +45,9 @@ Set environment variables for each role pointing to its respective configuration
 - **Tester**: `${TESTER_CONFIG}` (e.g., `/path/to/tester.yaml`)
 - **Reviewer**: `${REVIEWER_CONFIG}` (e.g., `/path/to/reviewer.yaml`)
 - **Coder**: `${CODER_CONFIG}` (e.g., `/path/to/coder.yaml`)
-- **Assistant**: `${ASSISTANT_CONFIG}` (e.g., `/path/to/assistant.yaml`)
+- **Butler**: `${BUTLER_CONFIG}` (e.g., `/path/to/butler.yaml`)
+
+> **Note:** The repo root ships only `architect.yaml`, `butler.yaml`, and `coder.yaml` under `configs/`. The `reviewer.yaml` and `tester.yaml` personas are provisioned from a Dobby/Toby/Niffler template (e.g. `docs/user/niffler/ait-base/engineers/configs/`).
 
 **Example**: 
 ```bash
@@ -73,9 +75,9 @@ Before requesting reviews, ensure:
 
 ## Strict Role Adherence
 
-- **Assistant** MUST NOT interpret diffs, logs, or code logic.
-- **Assistant**'s primary responsibility is to relay information using `tell-me-go`.
-- If a role requires context (like a `git diff`), the Assistant should provide the raw data without adding technical commentary.
+- **Butler** MUST NOT interpret diffs, logs, or code logic.
+- **Butler**'s primary responsibility is to relay information using `tell-me-go`.
+- If a role requires context (like a `git diff`), the Butler should provide the raw data without adding technical commentary.
 
 ## Chatting with Roles
 
@@ -88,7 +90,7 @@ tell-me-go --new -r -c ${ARCHITECT_CONFIG} < /tmp/prompt.txt &> /dev/null
 
 **Notes:**
 - **CRITICAL:** When using the `execute_command` tool to run `tell-me-go`, you MUST set the `timeout` parameter to `1800` (1800 seconds / 30 minutes) to ensure the sub-agent has sufficient time to complete its task. If the `timeout` parameter is not explicitly set, `execute_command` will default to a 15-second hard limit, which is typically not enough for complex AI sub-tasks and will result in premature cancellation.
-- **Important:** Assistant must verify the prompt content is non‑empty and appropriate for the target role before forwarding it. Save prompts in a file then use input redirection (`<`) to tell-me-go. This can avoid parsing problems of using echo prompts directly to tell-me-go. Check /tmp/prompt.txt before sending it to tell-me-go.
+- **Important:** Butler must verify the prompt content is non‑empty and appropriate for the target role before forwarding it. Save prompts in a file then use input redirection (`<`) to tell-me-go. This can avoid parsing problems of using echo prompts directly to tell-me-go. Check /tmp/prompt.txt before sending it to tell-me-go.
 - The `&> /dev/null` discards stdout and stderr to **keep token usage low** and keep the terminal clean while the role processes in the background. If you need to review what happened, run `tell-me-go -t -c ${ROLE_CONFIG}` (e.g. `${ARCHITECT_CONFIG}`) to output the session's execution log.
 - Use `--new` when you first chat with a role. For a continuous conversation, omit `--new`.
 
@@ -112,6 +114,6 @@ Adjust the number `-l 3` as needed.
    - Reviewer must perform security, idiomatic‑Go, and correctness review.
 5. **Reviews by Tester and Reviewer must be agreed by Architect** before proceeding.
 6. **Coder must address** all feedback from Architect, Tester, and Reviewer.
-7. **Assistant outputs a summary** for each task, commits the changes to the new source branch, and after all opportunities are addressed, outputs a final summary and exits the agent loop.
+7. **Butler outputs a summary** for each task, commits the changes to the new source branch, and after all opportunities are addressed, outputs a final summary and exits the agent loop.
 
 Repeat steps 1‑6 for each task until the overall quality meets the project’s standards.

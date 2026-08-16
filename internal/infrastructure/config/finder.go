@@ -46,11 +46,11 @@ func NewDefaultConfigFinder(opts ...option) config.ConfigFinder {
 }
 
 // Find locates the configuration file by searching in several locations:
-// 1. Local Directory: ./configs/assistant.yaml or ./assistant.yaml (relative to baseDir).
-// 2. Executable Directory: Search for configs/assistant.yaml next to the binary.
-// 3. Parent Traversal: Search for configs/assistant.yaml or .tell-me-go.yaml in up to 5 levels of parent directories.
-// 4. Standard OS Config Paths: e.g., ~/.config/tell-me-go/assistant.yaml on Linux or %AppData%\tell-me-go\assistant.yaml on Windows.
-// 5. Fallback: Returns "configs/assistant.yaml" if no file is found.
+// 1. Local Directory: ./configs/butler.yaml or ./butler.yaml (relative to baseDir).
+// 2. Executable Directory: Search for configs/butler.yaml next to the binary.
+// 3. Parent Traversal: Search for configs/butler.yaml or .tell-me-go.yaml in up to 5 levels of parent directories.
+// 4. Standard OS Config Paths: e.g., ~/.config/tell-me-go/butler.yaml on Linux or %AppData%\tell-me-go\butler.yaml on Windows.
+// 5. Fallback: Returns "configs/butler.yaml" if no file is found.
 func (f *defaultConfigFinder) Find() (string, error) {
 	strategies := []searchStrategy{
 		f.findInLocalDir,
@@ -84,8 +84,8 @@ func (f *defaultConfigFinder) getBaseDir() string {
 func (f *defaultConfigFinder) findInLocalDir() (string, bool) {
 	base := f.getBaseDir()
 	localPaths := []string{
-		filepath.Join(base, "configs", "assistant.yaml"),
-		filepath.Join(base, "assistant.yaml"),
+		filepath.Join(base, "configs", "butler.yaml"),
+		filepath.Join(base, "butler.yaml"),
 	}
 	for _, path := range localPaths {
 		if _, err := os.Stat(path); err == nil {
@@ -113,7 +113,7 @@ func (f *defaultConfigFinder) findInExecutableDir() (string, bool) {
 		return "", false
 	}
 
-	path := filepath.Join(exeDir, "configs", "assistant.yaml")
+	path := filepath.Join(exeDir, "configs", "butler.yaml")
 	if _, err := os.Stat(path); err == nil {
 		return path, true
 	}
@@ -132,7 +132,7 @@ func (f *defaultConfigFinder) findInParentDirs() (string, bool) {
 		searchDir = parentDir
 
 		paths := []string{
-			filepath.Join(searchDir, "configs", "assistant.yaml"),
+			filepath.Join(searchDir, "configs", "butler.yaml"),
 			filepath.Join(searchDir, ".tell-me-go.yaml"),
 		}
 		for _, path := range paths {
@@ -152,7 +152,7 @@ func (f *defaultConfigFinder) findInSystemPaths() (string, bool) {
 		return "", false
 	}
 
-	path := filepath.Join(configDir, "tell-me-go", "assistant.yaml")
+	path := filepath.Join(configDir, "tell-me-go", "butler.yaml")
 	if _, err := os.Stat(path); err == nil {
 		return path, true
 	}
@@ -162,7 +162,7 @@ func (f *defaultConfigFinder) findInSystemPaths() (string, bool) {
 
 // getFallbackPath returns the fallback configuration path.
 func (f *defaultConfigFinder) getFallbackPath() string {
-	return filepath.Join(f.getBaseDir(), "configs", "assistant.yaml")
+	return filepath.Join(f.getBaseDir(), "configs", "butler.yaml")
 }
 
 // Ensure defaultConfigFinder implements config.ConfigFinder

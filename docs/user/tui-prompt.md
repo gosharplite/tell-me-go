@@ -25,10 +25,10 @@ tell-me-go -i
 
 ### 2. Via Configuration (Default for All Sessions)
 
-If you prefer to always use the TUI prompt, you can set it as the default in your `assistant.yaml` or `config.yaml` file:
+If you prefer to always use the TUI prompt, you can set it as the default in your `butler.yaml` or `config.yaml` file:
 
 ```yaml
-# assistant.yaml
+# butler.yaml
 USE_TUI_PROMPT: true
 ```
 *Note: Even if enabled in the config, the system will automatically fall back to the standard input if it detects a non-TTY environment (like a CI/CD pipeline or piped input).*

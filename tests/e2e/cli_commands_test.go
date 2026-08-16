@@ -80,7 +80,7 @@ func TestConfigAutoDiscovery(t *testing.T) {
 	// 1. Create a temporary working directory
 	workDir := t.TempDir()
 
-	// 2. Create assistant.yaml in that directory
+	// 2. Create butler.yaml in that directory
 	configContent := `
 MODE: "assistant"
 SELECTED_PROVIDER: "mock"
@@ -90,7 +90,7 @@ PROVIDERS:
     API_KEY: "secret-key"
     MODEL: "auto-discovered-model"
 `
-	if err := os.WriteFile(filepath.Join(workDir, "assistant.yaml"), []byte(configContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(workDir, "butler.yaml"), []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
 	}
 

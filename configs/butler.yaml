@@ -1,8 +1,8 @@
 # Copyright (c) 2026 gosharplite@gmail.com
 # SPDX-License-Identifier: MIT
 
-# Multi-Provider AI Assistant Configuration
-MODE: "assistant"
+# Multi-Provider AI Butler Configuration
+MODE: "butler"
 PERSON: "You are an AI assistant. Please respond concisely and accurately in English."
 
 SELECTED_PROVIDER: "deepseek-flash"

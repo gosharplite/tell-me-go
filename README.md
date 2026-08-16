@@ -91,7 +91,7 @@ go install github.com/gosharplite/tell-me-go/cmd/tell-me-go@latest
 ```
 
 ## 💻 Usage
-Run the assistant by passing your prompt as an argument. By default, it uses `configs/assistant.yaml`.
+Run the assistant by passing your prompt as an argument. By default, it uses `configs/butler.yaml`.
 
 **Basic Usage:**
 ```bash
@@ -178,8 +178,8 @@ Detailed cost and token breakdown after every response:
 
 ## ⚙️ Configuration
 ```yaml
-# configs/assistant.yaml
-MODE: "assistant"
+# configs/butler.yaml
+MODE: "butler"
 PERSON: "You are an AI assistant. Please respond concisely and accurately in English."
 
 # --- Active Provider ---
@@ -322,7 +322,7 @@ export TELL_ME_HOME="$HOME/tell-me-go"
 
 # 2. Main command alias (b for tell-me-go)
 b() {
-    tell-me-go -c "$TELL_ME_HOME/configs/assistant.yaml" "$@"
+    tell-me-go -c "$TELL_ME_HOME/configs/butler.yaml" "$@"
 }
 export -f b
 
@@ -345,8 +345,8 @@ $env:TELL_ME_HOME = "$HOME\tell-me-go"
 
 # 2. Main command functions with piping support
 function b {
-    if ($MyInvocation.ExpectingInput) { $input | & tell-me-go.exe -c "$env:TELL_ME_HOME\configs\assistant.yaml" @args }
-    else { & tell-me-go.exe -c "$env:TELL_ME_HOME\configs\assistant.yaml" @args }
+    if ($MyInvocation.ExpectingInput) { $input | & tell-me-go.exe -c "$env:TELL_ME_HOME\configs\butler.yaml" @args }
+    else { & tell-me-go.exe -c "$env:TELL_ME_HOME\configs\butler.yaml" @args }
 }
 
 # 3. Quick session undo
