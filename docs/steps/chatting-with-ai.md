@@ -38,6 +38,8 @@ export REVIEWER_CONFIG=/path/to/reviewer.yaml
 
 Each `.yaml` file defines the role's behavior, model, and system prompt.
 
+> **Note:** The repo root ships only `architect.yaml`, `assistant.yaml`, and `coder.yaml` under `configs/`. The `reviewer.yaml` and `tester.yaml` personas are provisioned from a Dobby/Toby/Niffler template (e.g. `docs/user/niffler/ait-base/engineers/configs/`).
+
 ## Flag Reference
 
 | Flag | Purpose |

@@ -50,6 +50,8 @@ Set environment variables for each role pointing to its respective configuration
 - **Coder**: `${CODER_CONFIG}` (e.g., `/path/to/coder.yaml`)
 - **Assistant**: `${ASSISTANT_CONFIG}` (e.g., `/path/to/assistant.yaml`)
 
+> **Note:** The repo root ships only `architect.yaml`, `assistant.yaml`, and `coder.yaml` under `configs/`. The `reviewer.yaml` and `tester.yaml` personas are provisioned from a Dobby/Toby/Niffler template (e.g. `docs/user/niffler/ait-base/engineers/configs/`).
+
 **Example**: 
 ```bash
 export ARCHITECT_CONFIG=/home/user/project/configs/architect.yaml
