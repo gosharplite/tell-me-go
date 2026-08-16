@@ -104,4 +104,4 @@ Test expectations (landed in Task 3):
 - [#1321](https://github.com/gosharplite/tell-me-go/issues/1321) — open: F2 evaluation (candidate 3 terminal, ADR-058).
 - [ADR-057](2026-08-remove-context-window-cache.md) — F1: cache removal; overflow residual tracked here.
 - [ADR-058](2026-08-getwindow-clone-evaluation.md) — F2: token-walk finding (write-only `TokenCount`, ≤1% at the calibrated fixture).
-- [docs/architect/1321-f1-baseline.md](../architect/1321-f1-baseline.md) — F1 baseline, real-counter instrument.
+- [docs/architect/1321-getwindow-clone-eval/1321-f1-baseline.md](../architect/1321-getwindow-clone-eval/1321-f1-baseline.md) — F1 baseline, real-counter instrument.

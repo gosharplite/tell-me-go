@@ -14,7 +14,7 @@ Two candidates were evaluated: **(i)** a cheaper per-message clone (arena-based 
 
 ## Decision
 
-**Candidate 3 (accept-with-data) for both evaluated candidates.** The full evaluation chain is recorded in `docs/architect/1321-stage1-prior.md` (stage-1 prior) and `docs/architect/1321-f1-baseline.md` (F1 baseline, real-counter instrument, candidate-(i) measurement — §2, §3, §5). Disposition:
+**Candidate 3 (accept-with-data) for both evaluated candidates.** The full evaluation chain is recorded in `docs/architect/1321-getwindow-clone-eval/1321-stage1-prior.md` (stage-1 prior) and `docs/architect/1321-getwindow-clone-eval/1321-f1-baseline.md` (F1 baseline, real-counter instrument, candidate-(i) measurement — §2, §3, §5). Disposition:
 
 | Candidate | Disposition | Summary (vintages cited in Evidence) |
 |---|---|---|
@@ -25,7 +25,7 @@ Two candidates were evaluated: **(i)** a cheaper per-message clone (arena-based 
 
 ## Evidence (vintage-referencing per protocol)
 
-Full tables live in `docs/architect/1321-f1-baseline.md`; this section cites vintages and key numbers only, per the baseline-vintage protocol.
+Full tables live in `docs/architect/1321-getwindow-clone-eval/1321-f1-baseline.md`; this section cites vintages and key numbers only, per the baseline-vintage protocol.
 
 | Vintage | Identity | `ContextRefiner/large` (mock counter) | Verdict |
 |---|---|---|---|
@@ -37,13 +37,13 @@ Supporting data points (also in the baseline doc): `large_real_counter` paired b
 
 ## Findings (the recorded value)
 
-1. **Struct-overhead finding — refines the issue's pre-measurement guess.** The per-round clone costs **211 B/entry** total (16864 B/op ÷ 80 entries), of which **94.9% is irreducible payload** — 200 B/entry (Content struct 96 B + Part struct 88 B + pointer slots 16 B, measured via `unsafe.Sizeof` and confirmed by `pprof -alloc_space`). The recoverable (non-payload) fraction is **≤ ~5.1% (864 B/op)** in safe Go. This **explicitly refines the issue's pre-measurement "~30–50% ceiling" estimate**: the ceiling for any standards-compliant (safe, no-unsafe) optimization is **~5%**, not 30–50%. The decomposition is in `docs/architect/1321-f1-baseline.md` §5.1.
+1. **Struct-overhead finding — refines the issue's pre-measurement guess.** The per-round clone costs **211 B/entry** total (16864 B/op ÷ 80 entries), of which **94.9% is irreducible payload** — 200 B/entry (Content struct 96 B + Part struct 88 B + pointer slots 16 B, measured via `unsafe.Sizeof` and confirmed by `pprof -alloc_space`). The recoverable (non-payload) fraction is **≤ ~5.1% (864 B/op)** in safe Go. This **explicitly refines the issue's pre-measurement "~30–50% ceiling" estimate**: the ceiling for any standards-compliant (safe, no-unsafe) optimization is **~5%**, not 30–50%. The decomposition is in `docs/architect/1321-getwindow-clone-eval/1321-f1-baseline.md` §5.1.
 2. **Token-walk finding (recorded; NO new issue — maintainer decision).** `HeuristicTokenCounter.countContentTokens` **writes `content.TokenCount` and never reads it** — a write-only cache (`internal/agent/session/context/token_counter.go:57-58`). The field is persisted as `token_count`, carried on clones, and not invalidated by `AppendParts`/`UpdateTurnContent`. Measured bound via the real-counter instrument: a second-walk cache-read would recover **≤ ~1%** at the 4 KB calibrated fixture (the two walks cost ~1.2% of the round, paired run), scaling with session **text volume**, not turn count. Any future reader of `TokenCount` must implement staleness discipline (invalidation on append/update paths) before relying on it.
 3. **Arena trade-off finding (documented reference point).** A fresh-per-call arena consolidates allocations (242→5), cuts ns/op sharply (−31.5% `ContextRefiner/large`, −48.8% `FullTurnCycle/large`), but **increases B/op (+6.5%)** — failing the B/op-sole-currency rule. The cause is allocator size-class rounding on contiguous medium backings (80×88 B = 7040 → 8064; 80×96 B = 7680 → 8064; ≈ +1792 B/op). Any future latency-bound reconsideration should consume this vintage rather than re-measuring.
 
 ## Falsifiability / Auditability
 
-- **Stage-1 prior flip conditions** (from `docs/architect/1321-stage1-prior.md` §5) — any one would flip the PTC gate: (1) production config telemetry showing a majority of sessions with `MaxHistoryTurns > 0` **and** session turn counts exceeding the sliding window; (2) a config-stratified production sample showing discard > 0; (3) a shipped product config/example that sets `MAX_HISTORY_TURNS > 0`; (4) cleaner-drop evidence in well-formed sessions.
+- **Stage-1 prior flip conditions** (from `docs/architect/1321-getwindow-clone-eval/1321-stage1-prior.md` §5) — any one would flip the PTC gate: (1) production config telemetry showing a majority of sessions with `MaxHistoryTurns > 0` **and** session turn counts exceeding the sliding window; (2) a config-stratified production sample showing discard > 0; (3) a shipped product config/example that sets `MAX_HISTORY_TURNS > 0`; (4) cleaner-drop evidence in well-formed sessions.
 - **(ii)/(iv) re-open condition: UNMET.** The structural-sharing family is parked unless a favorable prior materializes (PTC prototypes) — i.e. conditions (1)–(4) above. The full ownership-transfer invariant remains in force; no invariant relaxation was made by this evaluation.
 - **Collector design (as recorded in the issue contract) — PARKED, not shipped.** If a prior flip condition materializes, the stage-2 collector would measure per-round `windowTurns`/`prunedTurns`/`survivingTurns` plus config-identity via the existing event bus; consent-qualified and disabled-by-default. It was **not commissioned** and did not run.
 
@@ -70,7 +70,7 @@ Supporting data points (also in the baseline doc): `large_real_counter` paired b
 
 ## Alternatives considered
 
-- **(i) arena-based cheaper clone** — the measured candidate; rejected for the B/op regression (+6.5%). See the disposition table and `docs/architect/1321-f1-baseline.md` §5.
+- **(i) arena-based cheaper clone** — the measured candidate; rejected for the B/op regression (+6.5%). See the disposition table and `docs/architect/1321-getwindow-clone-eval/1321-f1-baseline.md` §5.
 - **Unsafe byte-packed arena** — would allocate one exact ~16 KB region (avoiding size-class rounding) and could beat the baseline on B/op; rejected because unsafe memory reinterpretation is outside this project's standards and would complicate the ownership-transfer proof.
 - **Pooled arena with retention proof** — rejected by the contract's lifetime constraint: `Prepare`'s output outlives `Prepare` (stored in `TurnState`), there is no round-end signal without a port/orchestration change (forbidden), so only a fresh-per-call arena is compliant.
 - **Per-entry micro-optimizations** — bounded by the ~5.1% recoverable ceiling measured here; not pursued as an issue.
@@ -83,5 +83,5 @@ Supporting data points (also in the baseline doc): `large_real_counter` paired b
 - [#1320](https://github.com/gosharplite/tell-me-go/issues/1320) — open: overflow residual.
 - [#1321](https://github.com/gosharplite/tell-me-go/issues/1321) — open: this issue (closed by this record).
 - [ADR-057](2026-08-remove-context-window-cache.md) — F1 baseline vintages and cache-removal decision.
-- [docs/architect/1321-stage1-prior.md](../architect/1321-stage1-prior.md) — stage-1 PTC prior (go/no-go, falsifiability conditions).
-- [docs/architect/1321-f1-baseline.md](../architect/1321-f1-baseline.md) — F1 baseline, real-counter instrument, candidate-(i) measurement and rejection (§2, §3, §5).
+- [docs/architect/1321-getwindow-clone-eval/1321-stage1-prior.md](../architect/1321-getwindow-clone-eval/1321-stage1-prior.md) — stage-1 PTC prior (go/no-go, falsifiability conditions).
+- [docs/architect/1321-getwindow-clone-eval/1321-f1-baseline.md](../architect/1321-getwindow-clone-eval/1321-f1-baseline.md) — F1 baseline, real-counter instrument, candidate-(i) measurement and rejection (§2, §3, §5).
