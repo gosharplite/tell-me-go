@@ -110,7 +110,7 @@ func TestEnvCommand_Execute(t *testing.T) {
 			}
 
 			root := &cobra.Command{}
-			root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
+			root.PersistentFlags().StringP("config", "c", "configs/butler.yaml", "Path to the configuration file")
 			cmd := newEnvCommand(cmdCtx)
 			root.AddCommand(cmd)
 

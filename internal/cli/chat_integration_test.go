@@ -139,7 +139,7 @@ func (w *wrappedContainer) GetAgentFactory() ports.ChatterFactory {
 func setupChatIntegrationEnv(t *testing.T) (tmpDir, cfgPath, historyPath, logPath string) {
 	tmpDir = t.TempDir()
 
-	cfgPath = filepath.Join(tmpDir, "assistant.yaml")
+	cfgPath = filepath.Join(tmpDir, "butler.yaml")
 	cfgContent := `
 AIMODEL: test-model
 MODE: test-mode

@@ -14,7 +14,7 @@ Unlike the static `-l N` flag, the browser offers full-text search, thought togg
 To launch the browser for a specific session, use the new `browse` subcommand:
 
 ```bash
-tell-me-go browse -c configs/assistant.yaml
+tell-me-go browse -c configs/butler.yaml
 ```
 
 *(Note: It accepts the exact same configuration flags as the `chat` command so it targets the correct history file).*

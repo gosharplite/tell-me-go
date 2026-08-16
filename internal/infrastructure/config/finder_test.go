@@ -37,18 +37,18 @@ func TestDefaultConfigFinder_Find(t *testing.T) {
 		wantErr      bool
 	}{
 		{
-			name: "Local Directory configs/assistant.yaml",
+			name: "Local Directory configs/butler.yaml",
 			files: []fileSetup{
-				{path: "configs/assistant.yaml", content: "test content"},
+				{path: "configs/butler.yaml", content: "test content"},
 			},
-			expectedPath: "configs/assistant.yaml",
+			expectedPath: "configs/butler.yaml",
 		},
 		{
-			name: "Local Directory assistant.yaml",
+			name: "Local Directory butler.yaml",
 			files: []fileSetup{
-				{path: "assistant.yaml", content: "test content"},
+				{path: "butler.yaml", content: "test content"},
 			},
-			expectedPath: "assistant.yaml",
+			expectedPath: "butler.yaml",
 		},
 		{
 			name: "Parent Traversal",
@@ -61,7 +61,7 @@ func TestDefaultConfigFinder_Find(t *testing.T) {
 		{
 			name:         "Fallback",
 			files:        []fileSetup{},
-			expectedPath: "configs/assistant.yaml",
+			expectedPath: "configs/butler.yaml",
 		},
 	}
 
@@ -133,7 +133,7 @@ func TestDefaultConfigFinder_FindInSystemPaths(t *testing.T) {
 	}
 
 	appDir := filepath.Join(configDir, "tell-me-go")
-	configPath := filepath.Join(appDir, "assistant.yaml")
+	configPath := filepath.Join(appDir, "butler.yaml")
 
 	if err := os.MkdirAll(appDir, 0755); err != nil {
 		t.Fatalf("failed to create directory: %v", err)
@@ -174,7 +174,7 @@ func TestFind_ReturnsFallbackWhenAllStrategiesFail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Find() returned error: %v", err)
 	}
-	expected := filepath.Join(tmpDir, "configs", "assistant.yaml")
+	expected := filepath.Join(tmpDir, "configs", "butler.yaml")
 	if path != expected {
 		t.Errorf("expected fallback path %q, got %q", expected, path)
 	}
@@ -353,7 +353,7 @@ func TestDefaultConfigFinder_FindInExecutableDir_StatFileNotFound(t *testing.T) 
 		originalExecutable := osExecutable
 		t.Cleanup(func() { osExecutable = originalExecutable })
 
-		// Use a clean temp dir with no configs/assistant.yaml inside
+		// Use a clean temp dir with no configs/butler.yaml inside
 		exeDir := t.TempDir()
 		osExecutable = func() (string, error) {
 			return exeDir + "/fake-binary", nil
@@ -373,7 +373,7 @@ func TestDefaultConfigFinder_FindInExecutableDir_StatFileNotFound(t *testing.T) 
 }
 
 // TestDefaultConfigFinder_FindInExecutableDir_Success verifies that
-// findInExecutableDir returns (path, true) when configs/assistant.yaml
+// findInExecutableDir returns (path, true) when configs/butler.yaml
 // exists in the executable directory and the base directory differs.
 // This covers the success branch at finder.go:119 (return path, true).
 func TestDefaultConfigFinder_FindInExecutableDir_Success(t *testing.T) {
@@ -382,14 +382,14 @@ func TestDefaultConfigFinder_FindInExecutableDir_Success(t *testing.T) {
 		t.Cleanup(func() { osExecutable = originalExecutable })
 
 		// Create a temp dir that simulates the executable's directory,
-		// complete with configs/assistant.yaml inside it.
+		// complete with configs/butler.yaml inside it.
 		exeDir := t.TempDir()
 		configsDir := filepath.Join(exeDir, "configs")
 		if err := os.MkdirAll(configsDir, 0755); err != nil {
 			t.Fatalf("failed to create configs dir: %v", err)
 		}
 		if err := os.WriteFile(
-			filepath.Join(configsDir, "assistant.yaml"),
+			filepath.Join(configsDir, "butler.yaml"),
 			[]byte("exe-adjacent-config"),
 			0644,
 		); err != nil {
@@ -411,7 +411,7 @@ func TestDefaultConfigFinder_FindInExecutableDir_Success(t *testing.T) {
 			t.Fatal("expected found=true when config exists in executable dir")
 		}
 
-		expected := filepath.Join(exeDir, "configs", "assistant.yaml")
+		expected := filepath.Join(exeDir, "configs", "butler.yaml")
 		if path != expected {
 			t.Errorf("got path %q; want %q", path, expected)
 		}

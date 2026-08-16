@@ -470,7 +470,7 @@ func TestChatCommand_Execute_LastN_Positional(t *testing.T) {
 
 func executeChatCommand(cmdCtx *context, args []string) error {
 	root := &cobra.Command{}
-	root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
+	root.PersistentFlags().StringP("config", "c", "configs/butler.yaml", "Path to the configuration file")
 	chatCmd := newChatCommand(cmdCtx, nil)
 	root.AddCommand(chatCmd)
 

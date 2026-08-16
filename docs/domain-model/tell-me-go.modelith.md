@@ -627,7 +627,7 @@ The user edits the YAML `Config` file (e.g. changing `MAX_TURNS`, `MAX_HISTORY_T
 **Steps**
 
 1. A `Session` is mid-`Turn`: the `Provider` has returned a response with tool calls.
-2. While the LLM was responding, the user edits `assistant.yaml` to raise `MAX_TURNS` (the `Config.maxToolTurns` limit) from 20 to 50.
+2. While the LLM was responding, the user edits `butler.yaml` to raise `MAX_TURNS` (the `Config.maxToolTurns` limit) from 20 to 50.
 3. The `Orchestrator`'s `configRefreshHook` fires on the `Inference → Execution` phase transition.
 4. The config watcher re-reads the file and extracts updated limits (`maxHistoryTokens`, `maxToolTurns`, `maxHistoryTurns`, `contextWindow`).
 5. New limits are atomically applied: `Context` token budget, max tool turns, and concurrency are updated.
