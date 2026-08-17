@@ -270,7 +270,7 @@ func (c *Config) ValidateProviders(logger *slog.Logger) error {
 func (c *Config) ValidateMCPServers() error {
 	for name, server := range c.MCPServers {
 		if !mcpServerKeyRegex.MatchString(name) {
-			return fmt.Errorf("MCP_SERVERS key %q is invalid: must match ^[a-z0-9-]+$ (lowercase alphanumeric and hyphens)", name)
+			return fmt.Errorf("MCP_SERVERS key %q is invalid: must match ^[a-z0-9-]{1,24}$ (1-24 lowercase alphanumeric and hyphens)", name)
 		}
 		if err := server.validate(name); err != nil {
 			return err

@@ -4,11 +4,13 @@
 package di
 
 import (
+	"errors"
 	"log/slog"
 	"net/url"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -36,6 +38,14 @@ type mcpFactory struct {
 	// cachedToken memoizes a successfully resolved token so that multiple
 	// servers sharing the same fallback do not spawn `gh` repeatedly.
 	cachedToken string
+
+	// mu protects clients. Build may be invoked concurrently with Close
+	// during session teardown, so client tracking is synchronized.
+	mu sync.Mutex
+
+	// clients tracks every successfully constructed MCP client so that
+	// session teardown can close them cleanly.
+	clients []tools.MCPClient
 }
 
 // newMCPFactory constructs the default MCP dependency factory. The default
@@ -78,6 +88,10 @@ func (f *mcpFactory) Build(servers map[string]config.MCPServerConfig) map[string
 			continue
 		}
 
+		f.mu.Lock()
+		f.clients = append(f.clients, client)
+		f.mu.Unlock()
+
 		deps[name] = plugin.MCPServerDependency{
 			Client:          client,
 			RequiresConsent: serverCfg.EffectiveRequiresConsent(),
@@ -86,6 +100,21 @@ func (f *mcpFactory) Build(servers map[string]config.MCPServerConfig) map[string
 	}
 
 	return deps
+}
+
+// Close terminates every MCP client constructed by this factory, joining any
+// errors with errors.Join. It is safe to call concurrently with Build.
+func (f *mcpFactory) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	var errs []error
+	for _, client := range f.clients {
+		if err := client.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // resolveServerToken resolves the bearer token for a single server from its

@@ -10,8 +10,13 @@ import (
 	"time"
 )
 
-// mcpServerKeyRegex enforces valid server key format (lowercase alphanumeric and hyphens).
-var mcpServerKeyRegex = regexp.MustCompile(`^[a-z0-9-]+$`)
+// mcpServerKeyRegex enforces the valid server key format: 1 to 24 lowercase
+// alphanumeric characters and hyphens. The 24-character upper bound is a
+// hard guarantee that every generated tool name stays within 64 bytes (see
+// FormatToolName): the fixed segments "mcp_" (4) + server (≤24) + "_" (1) +
+// hash8 (8) leave a tool-prefix budget that shrinks as the server name grows,
+// so the total never exceeds 64 bytes.
+var mcpServerKeyRegex = regexp.MustCompile(`^[a-z0-9-]{1,24}$`)
 
 // DefaultMCPTimeoutSeconds is the default timeout for MCP tool calls (5 minutes).
 const DefaultMCPTimeoutSeconds = 300

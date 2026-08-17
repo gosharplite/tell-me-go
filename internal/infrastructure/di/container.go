@@ -130,7 +130,21 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	deps.registry = b.wireToolRegistry(paths, sessionProvider, deps.health, lazyClient, bus, cfg, pricingOverrides, capturer, sharedSkillRepo)
 
+	// Attach MCP client teardown: all active MCP client sessions are closed
+	// cleanly when the chat session ends (ADR-067 Decision 10). This runs
+	// even when the registry was never lazily built (no clients → no-op).
+	cleanup = b.withMCPCleanup(cleanup)
+
 	return deps, hManager, cleanup, nil
+}
+
+// withMCPCleanup wraps the session cleanup so that MCP client teardown runs
+// in addition to (and independent of) the existing cleanup chain. Errors are
+// joined with errors.Join so both operations always execute.
+func (b *Bootstrapper) withMCPCleanup(cleanup func(stdctx.Context) error) func(stdctx.Context) error {
+	return func(ctx stdctx.Context) error {
+		return errors.Join(cleanup(ctx), b.toolchainFactory.CloseMCPClients())
+	}
 }
 
 // logBuildStart emits debug-level diagnostics about the configuration being used.

@@ -29,6 +29,52 @@ func (f *fakeMCPClient) CallTool(ctx context.Context, name string, args map[stri
 
 func (f *fakeMCPClient) Close() error { return nil }
 
+// closeCountingMCPClient is a tools.MCPClient double that records Close calls
+// so teardown wiring can be asserted without contacting a live server.
+type closeCountingMCPClient struct {
+	closeCalls int
+	closeErr   error
+}
+
+func (c *closeCountingMCPClient) ListTools(ctx context.Context) ([]tools.MCPToolDefinition, error) {
+	return nil, nil
+}
+
+func (c *closeCountingMCPClient) CallTool(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+	return tools.ToolResult{}, nil
+}
+
+func (c *closeCountingMCPClient) Close() error {
+	c.closeCalls++
+	return c.closeErr
+}
+
+// TestMCPFactory_Close verifies that Close iterates every tracked client,
+// calls Close on each, and joins any errors with errors.Join.
+func TestMCPFactory_Close(t *testing.T) {
+	clientA := &closeCountingMCPClient{}
+	clientB := &closeCountingMCPClient{closeErr: errors.New("boom")}
+	clientC := &closeCountingMCPClient{}
+
+	f := &mcpFactory{
+		logger:  slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+		clients: []tools.MCPClient{clientA, clientB, clientC},
+	}
+
+	err := f.Close()
+	if err == nil {
+		t.Fatal("Close() error = nil, want joined error")
+	}
+	if !errors.Is(err, clientB.closeErr) {
+		t.Errorf("Close() error = %v, want it to wrap %v", err, clientB.closeErr)
+	}
+	for i, c := range []*closeCountingMCPClient{clientA, clientB, clientC} {
+		if c.closeCalls != 1 {
+			t.Errorf("client[%d].Close() calls = %d, want 1", i, c.closeCalls)
+		}
+	}
+}
+
 func TestMCPFactory_ExplicitToken(t *testing.T) {
 	resolverCalls := 0
 	var capturedToken string

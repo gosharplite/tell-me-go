@@ -31,6 +31,7 @@ import (
 type toolchainFactory interface {
 	BuildRegistry(params toolchainParams) (tools.Registry, error)
 	BuildHealthChecker() ports.HealthChecker
+	CloseMCPClients() error
 }
 
 type toolchainParams struct {
@@ -55,6 +56,11 @@ type defaultToolchainFactory struct {
 	Logger           *slog.Logger
 	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
 	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error
+
+	// mcpFactory owns the lifecycle of every MCP client constructed by this
+	// factory. It is held here (rather than created per BuildRegistry call)
+	// so that session teardown can close all active MCP clients.
+	mcpFactory *mcpFactory
 }
 
 func newToolchainFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, wp services.WorkspacePolicy, logger *slog.Logger, registerAll func(params infra_tools.ToolRegistrationParams) error, registerMetrics func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error) toolchainFactory {
@@ -66,13 +72,14 @@ func newToolchainFactory(homeDir string, fs infra_persistence.FileSystem, sm Con
 		Logger:           logger,
 		RegisterAllTools: registerAll,
 		RegisterMetrics:  registerMetrics,
+		mcpFactory:       newMCPFactory(logger),
 	}
 }
 
 func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.Registry, error) {
 	reg := registry.New()
 
-	mcpClients := newMCPFactory(f.Logger).Build(params.MCPServers)
+	mcpClients := f.mcpFactory.Build(params.MCPServers)
 
 	regParams := infra_tools.ToolRegistrationParams{
 		Registry:         reg,
@@ -119,6 +126,13 @@ func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.R
 	}
 
 	return reg, nil
+}
+
+// CloseMCPClients terminates all MCP clients constructed by this factory.
+// It is wired into the session cleanup closure so active MCP sessions are
+// closed when the chat session ends.
+func (f *defaultToolchainFactory) CloseMCPClients() error {
+	return f.mcpFactory.Close()
 }
 
 // registerSkillsShTools registers the four skills.sh ecosystem tools

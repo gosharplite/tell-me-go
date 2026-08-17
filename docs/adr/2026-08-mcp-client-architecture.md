@@ -49,8 +49,22 @@ the infrastructure layer.
 
 ### 4. Authentication & Caching
 
-Tool-call authentication resolves via a hierarchy: an **explicit `Token`** on
-the server config wins, then a cached token, then `gh auth token`, then the
+Each server declares an explicit `AUTH` mode — `"auto"`, `"gh"`, `"bearer"`, or
+`"none"` (default `"auto"`) — that controls how its bearer token is resolved at
+client-construction time:
+
+- `auto` — an explicit `TOKEN` wins; otherwise a GitHub-hosted endpoint
+  resolves via `gh auth token` / `GITHUB_TOKEN`, and any other endpoint uses no
+  authentication.
+- `gh` — an explicit `TOKEN` wins; otherwise the token is resolved via
+  `gh auth token`, then the `GITHUB_TOKEN` environment variable.
+- `bearer` — the explicit `TOKEN` is required (an empty `TOKEN` is rejected at
+  config validation).
+- `none` — no authentication is attached.
+
+Across all token-resolving modes, resolution uses a hierarchy: an **explicit
+`Token`** on the server config wins, then a cached token (memoized across
+servers so `gh` is not spawned repeatedly), then `gh auth token`, then the
 `GITHUB_TOKEN` environment variable. The DI layer resolves credentials during
 client construction and skips (with a warning) a server whose credentials
 cannot be resolved, rather than failing startup for the whole agent.
@@ -58,11 +72,21 @@ cannot be resolved, rather than failing startup for the whole agent.
 ### 5. Namespacing & Shortening
 
 Discovered tools are registered under a deterministic, namespaced name
-`mcp_<server>_<tool>`. When that name exceeds 64 bytes, the tool segment is
+`mcp_<server>_<tool>`. Server keys are constrained to 1–24 lowercase
+alphanumeric/hyphen characters (`^[a-z0-9-]{1,24}$`, enforced at config
+validation). When the namespaced name exceeds 64 bytes, the tool segment is
 truncated (by runes, capped at 40) and a stable 8-hex-char SHA-256 prefix of
 the full tool name is appended, producing `mcp_<server>_<prefix40>_<hash8>`.
 This keeps names short enough for LLM token budgets while preserving
 uniqueness and determinism across runs.
+
+The 24-character server-key cap is a mathematical guarantee that every
+generated tool name stays within 64 bytes. In the truncation path the fixed
+segments are `mcp_` (4) + server (≤24) + `_` (1) + tool prefix + `_` (1) +
+hash8 (8); the tool prefix is budgeted to `64 − 4 − len(server) − 1 − 1 − 8`
+and further capped at 40 runes. With `server` = 24 the prefix budget is 26,
+yielding exactly 64 bytes; shorter server names yield a larger (≤40) prefix
+budget but a strictly smaller total — so no tool name exceeds 64 bytes.
 
 ### 6. Schema Normalization
 
@@ -98,6 +122,16 @@ Each server has a configurable per-server timeout (default 300s). Registered
 MCP tools are marked `LongRunning: true` with `LivenessThreshold: 0`, because
 remote tool execution can legitimately block for the full server timeout and
 must not be killed by the standard short-tool liveness heuristic.
+
+### 10. Session Lifecycle & Hot-Reload Boundary
+
+`MCP_SERVERS` is read once at session startup: the DI layer constructs MCP
+clients when the tool registry is first built (lazily) and tracks them so that
+session teardown closes every active client connection via the session
+`cleanup` closure. Reconfiguring MCP servers — adding, removing, or changing
+endpoints, credentials, or auth modes — requires starting a new session; MCP
+servers are excluded from mid-turn hot-reload, which remains scoped to the
+subset of configuration the per-turn config watcher manages.
 
 ## Consequences
 

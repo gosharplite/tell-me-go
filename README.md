@@ -311,9 +311,11 @@ MODELS:
       COMP: 25.00
 
 # --- Model Context Protocol (MCP) Servers ---
+# Server keys must match ^[a-z0-9-]{1,24}$ (1-24 lowercase letters, digits, hyphens).
 MCP_SERVERS:
   github:
     URL: "https://api.githubcopilot.com/mcp/readonly"
+    AUTH: "auto"                # auto (default), gh, bearer, or none
     # TOKEN: "${GITHUB_TOKEN}"  # Optional: auto-resolved via gh auth token if omitted
     # TIMEOUT: 300              # Seconds (default: 300)
     # REQUIRES_CONSENT: false   # Optional override (default: false for /readonly)

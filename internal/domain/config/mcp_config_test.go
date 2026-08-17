@@ -4,6 +4,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -13,13 +14,14 @@ import (
 )
 
 // TestConfig_ValidateMCPServers_KeyValidation pins the MCP server key
-// format contract: keys must match ^[a-z0-9-]+$ (lowercase alphanumeric
-// and hyphens). Uppercase, underscores, dots, and the empty string are
-// all rejected.
+// format contract: keys must match ^[a-z0-9-]{1,24}$ (1 to 24 lowercase
+// alphanumeric and hyphens). Uppercase, underscores, dots, the empty string,
+// and keys longer than 24 characters are all rejected; the 24-character
+// boundary is accepted.
 func TestConfig_ValidateMCPServers_KeyValidation(t *testing.T) {
 	t.Parallel()
 
-	valid := []string{"github", "github-copilot", "server-1"}
+	valid := []string{"github", "github-copilot", "server-1", "a", strings.Repeat("a", 24)}
 	for _, key := range valid {
 		key := key
 		t.Run("valid_"+key, func(t *testing.T) {
@@ -31,7 +33,7 @@ func TestConfig_ValidateMCPServers_KeyValidation(t *testing.T) {
 		})
 	}
 
-	invalid := []string{"GitHub", "my_server", "server.name", ""}
+	invalid := []string{"GitHub", "my_server", "server.name", "", strings.Repeat("a", 25)}
 	for _, key := range invalid {
 		key := key
 		t.Run("invalid_"+key, func(t *testing.T) {
