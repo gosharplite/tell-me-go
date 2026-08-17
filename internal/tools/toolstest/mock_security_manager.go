@@ -70,6 +70,16 @@ func (m *MockSecurityManager) IsCommandAllowed(command string) bool {
 	return false
 }
 
+func (m *MockSecurityManager) IsToolAllowed(name string) bool {
+	if m.AllowAll || m.BypassActive {
+		return true
+	}
+	if m.AllowedCommands != nil {
+		return m.AllowedCommands[name]
+	}
+	return false
+}
+
 func (m *MockSecurityManager) IsBypassActive() bool {
 	return m.BypassActive
 }

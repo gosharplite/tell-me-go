@@ -170,6 +170,38 @@ endpoints, credentials, or auth modes — requires starting a new session; MCP
 servers are excluded from mid-turn hot-reload, which remains scoped to the
 subset of configuration the per-turn config watcher manages.
 
+### 11. Tool Authorization — `mcp_` Prefix Allowance (Amendment 2026-10)
+
+1. **Decision:** MCP-discovered tools — namespaced `mcp_<server>_<tool>` per
+   §5 — are now permitted by the tool authorizer. Discovered-but-undenied
+   tools are dispatchable end-to-end: the #1378/#1379 schema fix made them
+   discoverable; this amendment makes them authorizable.
+2. **Implementation:** `domain.Policy.AllowedCommandPrefixes` (default
+   `["mcp_"]`) and `domain.Policy.IsToolAllowed(name)` (exact allowlist match
+   OR prefix match) in `internal/domain/security/policy.go`; enforced via
+   `Manager.IsToolAllowed` (`internal/infrastructure/security/manager.go`
+   delegation) in `securityAuthorizer.Authorize`
+   (`internal/agent/executor/authorizer.go`). `Policy.IsCommandAllowed`
+   remains **exact-match** (fail-closed) — shell command validation
+   (`SafetyService.IsCommandSafe` → `command_validator.go`) is byte-identical
+   and unaffected.
+3. **Consent unchanged:** the whitelist gate is separate from consent (per the
+   original §8). Consent remains per-tool via `RequiresConsent`; readonly
+   endpoints default `requiresConsent: false` — so `mcp_github_*` tools
+   dispatch without prompting, a deliberate, recorded posture consequence —
+   while non-readonly servers still prompt. `AutoApprovableCommands` is
+   untouched: `mcp_` tools are not auto-approvable.
+4. **Security rationale:** the `mcp_` prefix is a reserved namespace produced
+   only by `FormatToolName` (ADR-067 §5 — server keys
+   `^[a-z0-9-]{1,24}$`, tool names from server discovery); built-in tool
+   names never start with `mcp_`, so there is no collision; matching is
+   case-sensitive; every other name remains fail-closed.
+5. **Accepted trade-off:** the prefix check is a string-prefix allowance, not
+   a proof of MCP provenance — any in-process plugin registering a `mcp_*`
+   name would also pass, which is accepted because plugins are trusted
+   in-process code and the alternative (provenance tracking) adds registry
+   coupling disproportionate to the threat model.
+
 ## Consequences
 
 **Positive:** the SDK is fully isolated behind `tools.MCPClient`, so the

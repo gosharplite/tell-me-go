@@ -5,6 +5,7 @@ package executor
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -54,6 +55,39 @@ func TestAuthorizationPanic(t *testing.T) {
 	err := auth.Authorize(context.Background(), &tools.ToolDeclaration{Name: "forbidden"}, &llm.FunctionCall{Name: "forbidden"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not allowed")
+}
+
+func TestAuthorize_AllowsMCPTool(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockToolRegistry{}
+	sm := &mockSecurityManager{AllowedCommands: map[string]bool{"allowed": true}}
+	auth := newSecurityAuthorizer(sm, reg, newToolResolutionService(reg))
+
+	call := &llm.FunctionCall{Name: "mcp_github_run_secret_scanning"}
+	tool := &tools.ToolDeclaration{Name: "mcp_github_run_secret_scanning"}
+
+	err := auth.Authorize(context.Background(), tool, call)
+	assert.NoError(t, err, "mcp_-prefixed tool names must be allowed by IsToolAllowed")
+}
+
+func TestAuthorize_DeniesUnknownNonMCPTool(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockToolRegistry{}
+	sm := &mockSecurityManager{AllowedCommands: map[string]bool{"allowed": true}}
+	auth := newSecurityAuthorizer(sm, reg, newToolResolutionService(reg))
+
+	call := &llm.FunctionCall{Name: "unknown_tool"}
+	tool := &tools.ToolDeclaration{Name: "unknown_tool"}
+
+	err := auth.Authorize(context.Background(), tool, call)
+	if err == nil {
+		t.Fatal("expected error for unknown non-MCP tool")
+	}
+	if !strings.Contains(err.Error(), "not allowed") {
+		t.Errorf("error %q does not contain %q", err.Error(), "not allowed")
+	}
 }
 
 func TestRequestBatchConsent_BypassActive(t *testing.T) {
