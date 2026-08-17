@@ -129,6 +129,9 @@ allowed: llm, persistence, security, tools
 ## consumer: internal/tools/integrations/atlassian
 allowed: llm, persistence, security, tools
 # P2+P3: tool deps
+## consumer: internal/tools/integrations/mcp
+allowed: llm, persistence, security, tools
+# P2+P3: tool deps (via plugin.MCPServerDependency + tools.MCPClient port)
 ## consumer: internal/tools/workspace
 allowed: events, llm, persistence, security, services, telemetry, tools
 # P1+P2: llm/telemetry

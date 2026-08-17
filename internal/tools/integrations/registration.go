@@ -17,6 +17,7 @@ import (
 	// same-package in filename lexical order).
 	_ "github.com/gosharplite/tell-me-go/internal/tools/integrations/ado"
 	_ "github.com/gosharplite/tell-me-go/internal/tools/integrations/atlassian"
+	_ "github.com/gosharplite/tell-me-go/internal/tools/integrations/mcp"
 
 	"github.com/gosharplite/tell-me-go/internal/tools/integrations/plugin"
 )
