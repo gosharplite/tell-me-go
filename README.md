@@ -485,6 +485,7 @@ Significant architectural decisions are documented in our [Architecture Decision
 *   **[ADR-060](docs/adr/2026-08-toolchain-runner-injection.md)** — inject the Go toolchain runner into the tools layer (ToolchainRunner domain port).
 *   **[ADR-061](docs/adr/2026-08-per-turn-turn-lifecycle.md)** — per-turn Turn lifecycle (constructor-is-the-reset).
 *   **[ADR-066](docs/adr/2026-08-infrastructure-application-dependency-inversion.md)** — infrastructure→application dependency inversion: six-type port relocation, `internal/app` construction seam, factory slim, and the ADR-carved `di → ui` exception (issue #1364).
+*   **[ADR-067](docs/adr/2026-08-mcp-client-architecture.md)** — MCP client architecture: remote MCP server consumption via streamable HTTP and `tools.MCPClient` domain port (issue #1373).
 
 For the evolution of the shell-based environment management tooling — from simple bash aliases through Toby, Dobby, Porter, Sprawl, Winky, Flopsy, and Niffler — see [Evolution of Environment Management](docs/architect/environments/environment-management-evolution.md).
 
