@@ -23,7 +23,7 @@ var sqlOpenFn = sql.Open
 
 // initSQLiteDB opens the SQLite database and runs migrations.
 func initSQLiteDB(ctx context.Context, dbPath string) (*sql.DB, error) {
-	db, err := sqlOpenFn("sqlite", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, err := sqlOpenFn("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
 	}

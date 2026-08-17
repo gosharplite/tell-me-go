@@ -240,6 +240,26 @@ func TestInitSQLiteDB_PragmaFailure(t *testing.T) {
 	}
 }
 
+// TestInitSQLiteDB_Pragmas is the regression test for the DSN pragma fix
+// (issue #1383): the _pragma= DSN parameters must be applied to every
+// connection. This test fails against the old inert DSN
+// (?_journal_mode=WAL&_busy_timeout=5000), which modernc.org/sqlite strips.
+func TestInitSQLiteDB_Pragmas(t *testing.T) {
+	t.Parallel()
+
+	db, err := initSQLiteDB(context.Background(), filepath.Join(t.TempDir(), "pragmas.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	var journalMode string
+	require.NoError(t, db.QueryRowContext(context.Background(), "PRAGMA journal_mode").Scan(&journalMode))
+	assert.Equal(t, "wal", journalMode)
+
+	var busyTimeout int
+	require.NoError(t, db.QueryRowContext(context.Background(), "PRAGMA busy_timeout").Scan(&busyTimeout))
+	assert.GreaterOrEqual(t, busyTimeout, 5000)
+}
+
 func TestCreateTables_SecondQueryFailure(t *testing.T) {
 	t.Parallel()
 
