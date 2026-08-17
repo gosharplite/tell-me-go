@@ -16,10 +16,20 @@ var mcpServerKeyRegex = regexp.MustCompile(`^[a-z0-9-]+$`)
 // DefaultMCPTimeoutSeconds is the default timeout for MCP tool calls (5 minutes).
 const DefaultMCPTimeoutSeconds = 300
 
+// MCP auth mode constants. The effective auth mode of a server determines how
+// its bearer token is resolved at client-construction time.
+const (
+	MCPAuthAuto   = "auto"   // explicit token wins; else GitHub-hosted → gh; else none
+	MCPAuthGH     = "gh"     // resolve via gh auth token → GITHUB_TOKEN
+	MCPAuthBearer = "bearer" // use the explicit TOKEN
+	MCPAuthNone   = "none"   // no authentication
+)
+
 // MCPServerConfig defines configuration for an external Model Context Protocol server.
 type MCPServerConfig struct {
 	URL             string `yaml:"URL"`
 	Token           string `yaml:"TOKEN"`
+	Auth            string `yaml:"AUTH"` // "auto", "gh", "bearer", "none" (default: "auto")
 	RequiresConsent *bool  `yaml:"REQUIRES_CONSENT"`
 	Timeout         int    `yaml:"TIMEOUT"` // Seconds (0 = default 300s)
 }
@@ -48,6 +58,16 @@ func (c *MCPServerConfig) EffectiveSerial() bool {
 	return !c.IsReadOnly()
 }
 
+// EffectiveAuth returns the effective auth mode for this server, normalizing
+// to lowercase and trimming surrounding whitespace. An empty value defaults to
+// MCPAuthAuto.
+func (c *MCPServerConfig) EffectiveAuth() string {
+	if c.Auth == "" {
+		return MCPAuthAuto
+	}
+	return strings.ToLower(strings.TrimSpace(c.Auth))
+}
+
 // EffectiveTimeout resolves the per-operation timeout for this server. A
 // positive Timeout wins; zero falls back to DefaultMCPTimeoutSeconds.
 func (c *MCPServerConfig) EffectiveTimeout() time.Duration {
@@ -65,5 +85,19 @@ func (c *MCPServerConfig) validate(name string) error {
 	if c.Timeout < 0 {
 		return fmt.Errorf("MCP_SERVERS.%s.TIMEOUT must be >= 0, got %d", name, c.Timeout)
 	}
+
+	auth := c.EffectiveAuth()
+	switch auth {
+	case MCPAuthAuto, MCPAuthGH, MCPAuthBearer, MCPAuthNone:
+		// valid
+	default:
+		return fmt.Errorf("MCP_SERVERS.%s.AUTH must be one of %q, %q, %q, %q, got %q",
+			name, MCPAuthAuto, MCPAuthGH, MCPAuthBearer, MCPAuthNone, auth)
+	}
+
+	if auth == MCPAuthBearer && strings.TrimSpace(c.Token) == "" {
+		return fmt.Errorf("MCP_SERVERS.%s.TOKEN must not be empty when AUTH is bearer", name)
+	}
+
 	return nil
 }

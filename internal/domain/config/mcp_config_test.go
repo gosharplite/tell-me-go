@@ -235,3 +235,124 @@ MCP_SERVERS:
 	assert.True(t, gc.EffectiveRequiresConsent())
 	assert.True(t, gc.EffectiveSerial())
 }
+
+// TestMCPServerConfig_EffectiveAuth pins the auth-mode defaulting and
+// normalization contract: an empty Auth defaults to "auto"; otherwise the
+// value is lowercased and whitespace-trimmed.
+func TestMCPServerConfig_EffectiveAuth(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		auth string
+		want string
+	}{
+		{"empty defaults to auto", "", MCPAuthAuto},
+		{"explicit auto", "auto", MCPAuthAuto},
+		{"explicit gh", "gh", MCPAuthGH},
+		{"explicit bearer", "bearer", MCPAuthBearer},
+		{"explicit none", "none", MCPAuthNone},
+		{"mixed case normalized", "Bearer", MCPAuthBearer},
+		{"surrounding whitespace trimmed", "  gh  ", MCPAuthGH},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := MCPServerConfig{Auth: tt.auth}
+			assert.Equal(t, tt.want, c.EffectiveAuth())
+		})
+	}
+}
+
+// TestMCPServerConfig_Validate_AuthModes pins the auth-mode validation
+// contract: the four canonical modes (including mixed case) are accepted;
+// unknown modes are rejected.
+func TestMCPServerConfig_Validate_AuthModes(t *testing.T) {
+	t.Parallel()
+
+	valid := []string{"auto", "gh", "bearer", "none", "Bearer", "GH", "NONE", " AUTO "}
+	for _, auth := range valid {
+		auth := auth
+		t.Run("valid_"+auth, func(t *testing.T) {
+			t.Parallel()
+			cfg := MCPServerConfig{URL: "https://example.com/mcp", Auth: auth}
+			if cfg.EffectiveAuth() == MCPAuthBearer {
+				cfg.Token = "tok"
+			}
+			require.NoError(t, cfg.validate("server"))
+		})
+	}
+
+	invalid := []string{"basic", "oauth", "gh-token", "token"}
+	for _, auth := range invalid {
+		auth := auth
+		t.Run("invalid_"+auth, func(t *testing.T) {
+			t.Parallel()
+			cfg := MCPServerConfig{URL: "https://example.com/mcp", Auth: auth}
+			err := cfg.validate("server")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "AUTH")
+		})
+	}
+}
+
+// TestMCPServerConfig_Validate_BearerTokenRequired pins that AUTH: "bearer"
+// with an empty (or whitespace-only) TOKEN is hard-rejected during config
+// validation.
+func TestMCPServerConfig_Validate_BearerTokenRequired(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		token string
+	}{
+		{"empty token", ""},
+		{"whitespace token", "   "},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := MCPServerConfig{URL: "https://example.com/mcp", Auth: "bearer", Token: tt.token}
+			err := cfg.validate("server")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "MCP_SERVERS.server.TOKEN must not be empty when AUTH is bearer")
+		})
+	}
+
+	// A non-empty bearer token is valid.
+	cfg := MCPServerConfig{URL: "https://example.com/mcp", Auth: "bearer", Token: "tok"}
+	require.NoError(t, cfg.validate("server"))
+}
+
+// TestConfig_UnmarshalYAML_MCPServers_AuthField pins the yaml:"AUTH" binding:
+// the AUTH field unmarshals from YAML and flows into EffectiveAuth.
+func TestConfig_UnmarshalYAML_MCPServers_AuthField(t *testing.T) {
+	t.Parallel()
+
+	input := `
+MCP_SERVERS:
+  github:
+    URL: "https://api.githubcopilot.com/mcp/readonly"
+    AUTH: "gh"
+  local:
+    URL: "https://example.com/mcp"
+    AUTH: "bearer"
+    TOKEN: "explicit-token"
+`
+
+	var cfg Config
+	err := yaml.Unmarshal([]byte(input), &cfg)
+	require.NoError(t, err)
+	require.Len(t, cfg.MCPServers, 2)
+
+	gh, ok := cfg.MCPServers["github"]
+	require.True(t, ok, "github server must be bound")
+	assert.Equal(t, MCPAuthGH, gh.EffectiveAuth())
+
+	local, ok := cfg.MCPServers["local"]
+	require.True(t, ok, "local server must be bound")
+	assert.Equal(t, MCPAuthBearer, local.EffectiveAuth())
+	assert.Equal(t, "explicit-token", local.Token)
+}

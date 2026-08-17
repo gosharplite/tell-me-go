@@ -25,8 +25,9 @@ type mcpFactory struct {
 	logger *slog.Logger
 
 	// tokenResolver resolves a GitHub bearer token (e.g. by executing
-	// `gh auth token`). It is invoked only when no explicit server token
-	// is configured and the endpoint is GitHub-hosted.
+	// `gh auth token`). It is invoked only under the "gh" auth mode (no
+	// explicit token) or the "auto" auth mode (GitHub-hosted, no explicit
+	// token).
 	tokenResolver func() (string, error)
 
 	// newClient constructs the tools.MCPClient adapter for an endpoint.
@@ -66,13 +67,8 @@ func (f *mcpFactory) Build(servers map[string]config.MCPServerConfig) map[string
 	deps := make(map[string]plugin.MCPServerDependency, len(servers))
 
 	for name, serverCfg := range servers {
-		token := serverCfg.Token
-		if token == "" && requiresMCPServerAuth(serverCfg.URL) {
-			token = f.resolveToken()
-		}
-
-		if token == "" && requiresMCPServerAuth(serverCfg.URL) {
-			f.logger.Warn("mcp_token_resolution_skipped", "server", name, "url", serverCfg.URL)
+		token, ok := f.resolveServerToken(name, serverCfg)
+		if !ok {
 			continue
 		}
 
@@ -90,6 +86,52 @@ func (f *mcpFactory) Build(servers map[string]config.MCPServerConfig) map[string
 	}
 
 	return deps
+}
+
+// resolveServerToken resolves the bearer token for a single server from its
+// effective auth mode. It returns ok=false when the server must be skipped
+// (token resolution failed under an auth mode that requires it).
+func (f *mcpFactory) resolveServerToken(name string, serverCfg config.MCPServerConfig) (string, bool) {
+	auth := serverCfg.EffectiveAuth()
+
+	switch auth {
+	case config.MCPAuthNone:
+		return "", true
+
+	case config.MCPAuthBearer:
+		return serverCfg.Token, true
+
+	case config.MCPAuthGH:
+		if serverCfg.Token != "" {
+			return serverCfg.Token, true
+		}
+		return f.resolveTokenOrSkip(name, serverCfg.URL)
+
+	case config.MCPAuthAuto:
+		if serverCfg.Token != "" {
+			return serverCfg.Token, true
+		}
+		if !isGitHubHostname(serverCfg.URL) {
+			return "", true
+		}
+		return f.resolveTokenOrSkip(name, serverCfg.URL)
+
+	default:
+		// Unknown modes are rejected by config validation before Build runs;
+		// treat defensively as "none".
+		return "", true
+	}
+}
+
+// resolveTokenOrSkip resolves a bearer token and returns ok=false (after
+// emitting a warning) when resolution fails.
+func (f *mcpFactory) resolveTokenOrSkip(name, rawURL string) (string, bool) {
+	token := f.resolveToken()
+	if token == "" {
+		f.logger.Warn("mcp_token_resolution_skipped", "server", name, "url", rawURL)
+		return "", false
+	}
+	return token, true
 }
 
 // resolveToken resolves a bearer token using the cached value, the injected
@@ -115,11 +157,11 @@ func (f *mcpFactory) resolveToken() string {
 	return ""
 }
 
-// requiresMCPServerAuth reports whether an MCP endpoint requires a bearer
-// token. GitHub-hosted remote MCP endpoints (github.com, api.github.com,
-// api.githubcopilot.com, and other *.github* hosts) require authentication;
-// self-hosted or local endpoints do not.
-func requiresMCPServerAuth(rawURL string) bool {
+// isGitHubHostname reports whether an MCP endpoint host is GitHub-hosted
+// (github.com, api.github.com, api.githubcopilot.com, and other *.github*
+// hosts). Used only by the "auto" auth mode to choose between GitHub-token
+// resolution and no authentication.
+func isGitHubHostname(rawURL string) bool {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Hostname() == "" {
 		return false

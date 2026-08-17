@@ -216,3 +216,206 @@ func TestMCPFactory_ConsentAndSerialPropagation(t *testing.T) {
 		t.Error("mutating endpoint should be serial")
 	}
 }
+
+func TestMCPFactory_AuthNone(t *testing.T) {
+	resolverCalls := 0
+	captured := map[string]string{}
+
+	f := &mcpFactory{
+		logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+		tokenResolver: func() (string, error) {
+			resolverCalls++
+			return "", errors.New("should not be called")
+		},
+		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+			captured[endpoint] = token
+			return &fakeMCPClient{}, nil
+		},
+	}
+
+	deps := f.Build(map[string]config.MCPServerConfig{
+		"github": {URL: "https://github.com/org/repo/mcp", Auth: config.MCPAuthNone},
+	})
+
+	if resolverCalls != 0 {
+		t.Errorf("token resolver called %d times, want 0 (auth none must not resolve)", resolverCalls)
+	}
+	dep, ok := deps["github"]
+	if !ok {
+		t.Fatal("expected 'github' dependency")
+	}
+	if dep.Client == nil {
+		t.Error("expected non-nil MCP client")
+	}
+	if got := captured["https://github.com/org/repo/mcp"]; got != "" {
+		t.Errorf("client token = %q, want empty (auth none)", got)
+	}
+}
+
+func TestMCPFactory_AuthBearer(t *testing.T) {
+	resolverCalls := 0
+	captured := map[string]string{}
+
+	f := &mcpFactory{
+		logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+		tokenResolver: func() (string, error) {
+			resolverCalls++
+			return "", errors.New("should not be called")
+		},
+		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+			captured[endpoint] = token
+			return &fakeMCPClient{}, nil
+		},
+	}
+
+	deps := f.Build(map[string]config.MCPServerConfig{
+		"github": {URL: "https://api.githubcopilot.com/mcp/", Auth: config.MCPAuthBearer, Token: "explicit-token"},
+	})
+
+	if resolverCalls != 0 {
+		t.Errorf("token resolver called %d times, want 0 (bearer uses explicit token)", resolverCalls)
+	}
+	dep, ok := deps["github"]
+	if !ok {
+		t.Fatal("expected 'github' dependency")
+	}
+	if dep.Client == nil {
+		t.Error("expected non-nil MCP client")
+	}
+	if got := captured["https://api.githubcopilot.com/mcp/"]; got != "explicit-token" {
+		t.Errorf("client token = %q, want %q", got, "explicit-token")
+	}
+}
+
+func TestMCPFactory_AuthGH(t *testing.T) {
+	resolverCalls := 0
+	captured := map[string]string{}
+
+	f := &mcpFactory{
+		logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+		tokenResolver: func() (string, error) {
+			resolverCalls++
+			return "gh-token", nil
+		},
+		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+			captured[endpoint] = token
+			return &fakeMCPClient{}, nil
+		},
+	}
+
+	// A private/non-GitHub hostname under "gh" still triggers gh resolution.
+	deps := f.Build(map[string]config.MCPServerConfig{
+		"enterprise": {URL: "https://mcp.enterprise.internal/mcp", Auth: config.MCPAuthGH},
+	})
+
+	if resolverCalls != 1 {
+		t.Errorf("token resolver called %d times, want 1 (gh must resolve for any endpoint)", resolverCalls)
+	}
+	dep, ok := deps["enterprise"]
+	if !ok {
+		t.Fatal("expected 'enterprise' dependency")
+	}
+	if dep.Client == nil {
+		t.Error("expected non-nil MCP client")
+	}
+	if got := captured["https://mcp.enterprise.internal/mcp"]; got != "gh-token" {
+		t.Errorf("client token = %q, want %q", got, "gh-token")
+	}
+}
+
+func TestMCPFactory_AuthGH_ExplicitTokenWins(t *testing.T) {
+	resolverCalls := 0
+	captured := map[string]string{}
+
+	f := &mcpFactory{
+		logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+		tokenResolver: func() (string, error) {
+			resolverCalls++
+			return "gh-token", nil
+		},
+		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+			captured[endpoint] = token
+			return &fakeMCPClient{}, nil
+		},
+	}
+
+	deps := f.Build(map[string]config.MCPServerConfig{
+		"github": {URL: "https://api.githubcopilot.com/mcp/", Auth: config.MCPAuthGH, Token: "explicit-token"},
+	})
+
+	if resolverCalls != 0 {
+		t.Errorf("token resolver called %d times, want 0 (explicit token wins under gh)", resolverCalls)
+	}
+	if _, ok := deps["github"]; !ok {
+		t.Fatal("expected 'github' dependency")
+	}
+	if got := captured["https://api.githubcopilot.com/mcp/"]; got != "explicit-token" {
+		t.Errorf("client token = %q, want %q", got, "explicit-token")
+	}
+}
+
+func TestMCPFactory_AuthAuto(t *testing.T) {
+	resolverCalls := 0
+	captured := map[string]string{}
+
+	f := &mcpFactory{
+		logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+		tokenResolver: func() (string, error) {
+			resolverCalls++
+			return "gh-token", nil
+		},
+		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+			captured[endpoint] = token
+			return &fakeMCPClient{}, nil
+		},
+	}
+
+	deps := f.Build(map[string]config.MCPServerConfig{
+		"github": {URL: "https://github.com/org/repo/mcp"},
+		"local":  {URL: "https://example.com/mcp"},
+	})
+
+	if resolverCalls != 1 {
+		t.Errorf("token resolver called %d times, want 1 (only GitHub hostname resolves under auto)", resolverCalls)
+	}
+	if len(deps) != 2 {
+		t.Fatalf("deps count = %d, want 2", len(deps))
+	}
+	if got := captured["https://github.com/org/repo/mcp"]; got != "gh-token" {
+		t.Errorf("github client token = %q, want %q", got, "gh-token")
+	}
+	if got := captured["https://example.com/mcp"]; got != "" {
+		t.Errorf("local client token = %q, want empty (auto → none for non-GitHub)", got)
+	}
+}
+
+func TestMCPFactory_AuthAuto_ExplicitTokenWins(t *testing.T) {
+	resolverCalls := 0
+	captured := map[string]string{}
+
+	f := &mcpFactory{
+		logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+		tokenResolver: func() (string, error) {
+			resolverCalls++
+			return "gh-token", nil
+		},
+		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+			captured[endpoint] = token
+			return &fakeMCPClient{}, nil
+		},
+	}
+
+	deps := f.Build(map[string]config.MCPServerConfig{
+		"github": {URL: "https://github.com/org/repo/mcp", Token: "explicit-token"},
+	})
+
+	if resolverCalls != 0 {
+		t.Errorf("token resolver called %d times, want 0 (explicit token wins under auto)", resolverCalls)
+	}
+	if _, ok := deps["github"]; !ok {
+		t.Fatal("expected 'github' dependency")
+	}
+	if got := captured["https://github.com/org/repo/mcp"]; got != "explicit-token" {
+		t.Errorf("client token = %q, want %q", got, "explicit-token")
+	}
+}
