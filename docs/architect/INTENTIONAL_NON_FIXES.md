@@ -777,6 +777,12 @@ catalog a new gap no one reviewed. Policy:
 - **Rationale**: one-line delegation to clients[0].Client.ExtractDocument; testing a pass-through provides no value — same acceptance class as AppendTask / domainFS.Chmod (delegation-wrapper).
 - **See**: `internal/infrastructure/llm/failover.go:131-133`
 
+### llm/resilient_client.go — resilientClient.ExtractDocument delegation wrapper
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: one-line delegation to the underlying client; testing a pass-through provides no value — same acceptance class as FailoverGateway.ExtractDocument (delegation-wrapper).
+- **See**: `internal/infrastructure/llm/resilient_client.go:106-108`
+
 ### llm/provider_health.go — getPingEndpoint panic and buildRequest error branch (structurally unreachable)
 
 - **Status**: ACCEPTED (2026-09)

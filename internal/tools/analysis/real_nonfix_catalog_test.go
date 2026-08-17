@@ -131,6 +131,7 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"manager.go groupTurns error branch", "internal/agent/session/context/manager.go", 526, 528},
 		{"manager.go capBestBlock error branch", "internal/agent/session/context/manager.go", 571, 573},
 		{"failover.go ExtractDocument body", "internal/infrastructure/llm/failover.go", 131, 133},
+		{"resilient_client.go ExtractDocument body", "internal/infrastructure/llm/resilient_client.go", 106, 108},
 		{"provider_health.go buildRequest error branch", "internal/infrastructure/llm/provider_health.go", 126, 128},
 		{"provider_health.go getPingEndpoint panic", "internal/infrastructure/llm/provider_health.go", 238, 238},
 		{"types.go NewID", "internal/domain/llm/types.go", 234, 236},
