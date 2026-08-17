@@ -178,29 +178,21 @@ func TestMCPServerConfig_Validate(t *testing.T) {
 	}
 }
 
-// TestConfig_ValidateBounds_MCPServerTimeout pins that the defensive
-// bounds guard rejects a negative MCP server timeout at startup.
-func TestConfig_ValidateBounds_MCPServerTimeout(t *testing.T) {
+// TestConfig_ValidateMCPServers_NegativeTimeout pins that a negative MCP
+// server timeout is hard-rejected during config loading via
+// ValidateMCPServers. The redundant duplicate of this check in
+// ValidateBounds was removed in the MCP CC refactor (2026-08); this test
+// preserves the startup-rejection guarantee at its canonical home.
+func TestConfig_ValidateMCPServers_NegativeTimeout(t *testing.T) {
 	t.Parallel()
 
 	cfg := &Config{MCPServers: map[string]MCPServerConfig{
 		"bad": {URL: "https://example.com/mcp", Timeout: -1},
 	}}
-	err := cfg.ValidateBounds()
+	err := cfg.ValidateMCPServers()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "MCP_SERVERS.bad.TIMEOUT")
 	assert.Contains(t, err.Error(), "-1")
-}
-
-// TestConfig_ValidateBounds_MCPServerTimeoutValid is the negative control:
-// a zero (default) MCP timeout must pass the bounds guard.
-func TestConfig_ValidateBounds_MCPServerTimeoutValid(t *testing.T) {
-	t.Parallel()
-
-	cfg := &Config{MCPServers: map[string]MCPServerConfig{
-		"ok": {URL: "https://example.com/mcp", Timeout: 0},
-	}}
-	require.NoError(t, cfg.ValidateBounds())
 }
 
 // TestConfig_UnmarshalYAML_MCPServers pins the yaml:"MCP_SERVERS" binding:

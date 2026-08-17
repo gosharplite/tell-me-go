@@ -25,6 +25,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **System & Dev**: Shell execution (`execute_command`, `pipe_commands`), testing, linting, and vulnerability scanning (`govulncheck`).
     *   **State & History**: Task tracking, `summarize_history`, `manage_history` (pinning/unpinning turns to protect them from pruning), and **Interactive History Browser** (`tell-me-go browse`) with full-text search and O(1) archive navigation.
     *   **Media**: Imagen 3 image generation and Vision analysis.
+    *   **Model Context Protocol (MCP)**: Native consumption of remote MCP servers (GitHub Copilot, custom endpoints) over streamable HTTP with automatic credential resolution.
 *   **Safety Guardrails**: 
     *   **Context Control**: Automatic "self-healing" summarization and turn pinning to prevent overflow without losing intent.
     *   **Runaway Protection**: Hallucination loop detection (SHA-256 response hashing), tool repetition guards, and recursion limits.
@@ -308,6 +309,14 @@ MODELS:
       HIT: 0.50
       MISS: 6.25
       COMP: 25.00
+
+# --- Model Context Protocol (MCP) Servers ---
+MCP_SERVERS:
+  github:
+    URL: "https://api.githubcopilot.com/mcp/readonly"
+    # TOKEN: "${GITHUB_TOKEN}"  # Optional: auto-resolved via gh auth token if omitted
+    # TIMEOUT: 300              # Seconds (default: 300)
+    # REQUIRES_CONSENT: false   # Optional override (default: false for /readonly)
 ```
 
 ## ⌨️ Shell Integration (Recommended)

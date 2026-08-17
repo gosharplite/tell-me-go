@@ -309,11 +309,6 @@ func (c *Config) ValidateBounds() error {
 	if c.WrapWidth < 0 {
 		return fmt.Errorf("WRAP_WIDTH must be >= 0, got %d", c.WrapWidth)
 	}
-	for name, server := range c.MCPServers {
-		if server.Timeout < 0 {
-			return fmt.Errorf("MCP_SERVERS.%s.TIMEOUT must be >= 0, got %d", name, server.Timeout)
-		}
-	}
 	return nil
 }
 

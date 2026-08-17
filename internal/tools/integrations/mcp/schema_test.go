@@ -6,6 +6,8 @@ package mcp
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 func TestConvertSchema_NilOrEmpty(t *testing.T) {
@@ -110,45 +112,69 @@ func TestConvertSchema_FullObject(t *testing.T) {
 		t.Fatal("ConvertSchema() returned nil")
 	}
 
+	assertFullObjectRoot(t, got)
+	assertFullObjectNameProp(t, got.Properties["name"])
+	assertFullObjectCountProp(t, got.Properties["count"])
+	assertFullObjectTagsProp(t, got.Properties["tags"])
+	assertFullObjectRequired(t, got.Required)
+}
+
+// assertFullObjectRoot pins the root-level schema of the full-object fixture:
+// OBJECT type, description passthrough, and three converted properties.
+func assertFullObjectRoot(t *testing.T, got *tools.Schema) {
+	t.Helper()
 	if got.Type != "OBJECT" {
 		t.Errorf("Type = %q, want OBJECT", got.Type)
 	}
 	if got.Description != "root object" {
 		t.Errorf("Description = %q, want %q", got.Description, "root object")
 	}
-
 	if len(got.Properties) != 3 {
 		t.Fatalf("len(Properties) = %d, want 3", len(got.Properties))
 	}
+}
 
-	nameProp := got.Properties["name"]
+// assertFullObjectNameProp pins the "name" string property: STRING type,
+// description passthrough, and enum slice preservation.
+func assertFullObjectNameProp(t *testing.T, nameProp *tools.Schema) {
+	t.Helper()
 	if nameProp == nil || nameProp.Type != "STRING" {
 		t.Errorf("properties[name] = %+v, want STRING schema", nameProp)
+		return
 	}
-	if nameProp != nil {
-		if nameProp.Description != "a name" {
-			t.Errorf("properties[name].Description = %q, want %q", nameProp.Description, "a name")
-		}
-		if len(nameProp.Enum) != 2 || nameProp.Enum[0] != "a" || nameProp.Enum[1] != "b" {
-			t.Errorf("properties[name].Enum = %v, want [a b]", nameProp.Enum)
-		}
+	if nameProp.Description != "a name" {
+		t.Errorf("properties[name].Description = %q, want %q", nameProp.Description, "a name")
 	}
+	if len(nameProp.Enum) != 2 || nameProp.Enum[0] != "a" || nameProp.Enum[1] != "b" {
+		t.Errorf("properties[name].Enum = %v, want [a b]", nameProp.Enum)
+	}
+}
 
-	countProp := got.Properties["count"]
+// assertFullObjectCountProp pins the "count" integer property type.
+func assertFullObjectCountProp(t *testing.T, countProp *tools.Schema) {
+	t.Helper()
 	if countProp == nil || countProp.Type != "INTEGER" {
 		t.Errorf("properties[count] = %+v, want INTEGER schema", countProp)
 	}
+}
 
-	tagsProp := got.Properties["tags"]
+// assertFullObjectTagsProp pins the "tags" array property: ARRAY type with a
+// STRING items schema.
+func assertFullObjectTagsProp(t *testing.T, tagsProp *tools.Schema) {
+	t.Helper()
 	if tagsProp == nil || tagsProp.Type != "ARRAY" {
 		t.Fatalf("properties[tags] = %+v, want ARRAY schema", tagsProp)
 	}
 	if tagsProp.Items == nil || tagsProp.Items.Type != "STRING" {
 		t.Errorf("properties[tags].Items = %+v, want STRING schema", tagsProp.Items)
 	}
+}
 
-	if len(got.Required) != 1 || got.Required[0] != "name" {
-		t.Errorf("Required = %v, want [name]", got.Required)
+// assertFullObjectRequired pins the required-fields slice.
+func assertFullObjectRequired(t *testing.T, required []string) {
+	t.Helper()
+	if len(required) != 1 || required[0] != "name" {
+		t.Errorf("Required = %v, want [name]", required)
 	}
 }
 

@@ -220,11 +220,34 @@ func TestRegister_RegistersDiscoveredTools(t *testing.T) {
 	if err := p.Register(reg, deps); err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
-
 	if len(reg.registered) != 2 {
 		t.Fatalf("registered %d tools, want 2", len(reg.registered))
 	}
 
+	assertFirstRegisteredTool(t, reg)
+	assertSecondRegisteredTool(t, reg)
+
+	// Invoke the proxied handler to confirm it forwards to CallTool with the
+	// original (unnamespaced) tool name.
+	if _, err := reg.registered[0].handler(context.Background(), map[string]interface{}{"q": "x"}, nil); err != nil {
+		t.Fatalf("handler() error = %v", err)
+	}
+	if callCount != 1 {
+		t.Errorf("CallTool call count = %d, want 1", callCount)
+	}
+	if calledName != "search" {
+		t.Errorf("CallTool name = %q, want %q", calledName, "search")
+	}
+	if calledArgs["q"] != "x" {
+		t.Errorf("CallTool args = %v, want q=x", calledArgs)
+	}
+}
+
+// assertFirstRegisteredTool pins the first (namespaced) registered tool: the
+// deterministic mcp_github_search name, consent requirement, non-nil parameter
+// schema, and the Serial+LongRunning options.
+func assertFirstRegisteredTool(t *testing.T, reg *mockRegistry) {
+	t.Helper()
 	first := reg.registered[0]
 	if first.decl.Name != "mcp_github_search" {
 		t.Errorf("first decl name = %q, want %q", first.decl.Name, "mcp_github_search")
@@ -238,26 +261,15 @@ func TestRegister_RegistersDiscoveredTools(t *testing.T) {
 	if first.opts.Serial != true || first.opts.LongRunning != true {
 		t.Errorf("first opts = %+v, want Serial+LongRunning", first.opts)
 	}
+}
 
-	// Second tool had empty schema {} -> Parameters nil (freeform args).
+// assertSecondRegisteredTool pins the second registered tool: its empty schema
+// ({}) degrades to a nil Parameters (freeform args).
+func assertSecondRegisteredTool(t *testing.T, reg *mockRegistry) {
+	t.Helper()
 	second := reg.registered[1]
 	if second.decl.Parameters != nil {
 		t.Errorf("second decl Parameters = %+v, want nil", second.decl.Parameters)
-	}
-
-	// Invoke the proxied handler to confirm it forwards to CallTool with the
-	// original (unnamespaced) tool name.
-	if _, err := first.handler(context.Background(), map[string]interface{}{"q": "x"}, nil); err != nil {
-		t.Fatalf("handler() error = %v", err)
-	}
-	if callCount != 1 {
-		t.Errorf("CallTool call count = %d, want 1", callCount)
-	}
-	if calledName != "search" {
-		t.Errorf("CallTool name = %q, want %q", calledName, "search")
-	}
-	if calledArgs["q"] != "x" {
-		t.Errorf("CallTool args = %v, want q=x", calledArgs)
 	}
 }
 

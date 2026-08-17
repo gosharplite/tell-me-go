@@ -245,36 +245,47 @@ func convertCallToolResult(res *sdkmcp.CallToolResult) (text string, binaries []
 	var textParts []string
 
 	for _, content := range res.Content {
-		switch c := content.(type) {
-		case *sdkmcp.TextContent:
-			if c != nil {
-				textParts = append(textParts, c.Text)
-			}
-		case *sdkmcp.ImageContent:
-			if c != nil {
-				binaries = append(binaries, tools.BinaryData{MIMEType: c.MIMEType, Data: c.Data})
-			}
-		case *sdkmcp.AudioContent:
-			if c != nil {
-				binaries = append(binaries, tools.BinaryData{MIMEType: c.MIMEType, Data: c.Data})
-			}
-		case *sdkmcp.EmbeddedResource:
-			if c != nil && c.Resource != nil {
-				if len(c.Resource.Blob) > 0 {
-					binaries = append(binaries, tools.BinaryData{MIMEType: c.Resource.MIMEType, Data: c.Resource.Blob})
-				}
-				if c.Resource.Text != "" {
-					textParts = append(textParts, c.Resource.Text)
-				}
-			}
-		default:
-			// ResourceLink, ToolUseContent, ToolResultContent, and unknown
-			// content types carry no directly-relayable text/binary payload for
-			// the agent; they are intentionally ignored here.
-		}
+		convertContentItem(content, &textParts, &binaries)
 	}
 
 	return strings.Join(textParts, "\n"), binaries, resultMetadata(res)
+}
+
+// convertContentItem dispatches a single MCP content block into the textParts
+// and binaries accumulators. ResourceLink, ToolUseContent, ToolResultContent,
+// and unknown content types carry no directly-relayable text/binary payload for
+// the agent and are intentionally ignored (no default case is needed).
+func convertContentItem(content sdkmcp.Content, textParts *[]string, binaries *[]tools.BinaryData) {
+	switch c := content.(type) {
+	case *sdkmcp.TextContent:
+		if c != nil {
+			*textParts = append(*textParts, c.Text)
+		}
+	case *sdkmcp.ImageContent:
+		if c != nil {
+			*binaries = append(*binaries, tools.BinaryData{MIMEType: c.MIMEType, Data: c.Data})
+		}
+	case *sdkmcp.AudioContent:
+		if c != nil {
+			*binaries = append(*binaries, tools.BinaryData{MIMEType: c.MIMEType, Data: c.Data})
+		}
+	case *sdkmcp.EmbeddedResource:
+		convertEmbeddedResource(c, textParts, binaries)
+	}
+}
+
+// convertEmbeddedResource handles the EmbeddedResource content kind, which may
+// carry a binary blob, plain text, or both.
+func convertEmbeddedResource(c *sdkmcp.EmbeddedResource, textParts *[]string, binaries *[]tools.BinaryData) {
+	if c == nil || c.Resource == nil {
+		return
+	}
+	if len(c.Resource.Blob) > 0 {
+		*binaries = append(*binaries, tools.BinaryData{MIMEType: c.Resource.MIMEType, Data: c.Resource.Blob})
+	}
+	if c.Resource.Text != "" {
+		*textParts = append(*textParts, c.Resource.Text)
+	}
 }
 
 // resultMetadata captures the structured content into a fresh map for the

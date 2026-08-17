@@ -178,78 +178,82 @@ func TestMarshalInputSchema(t *testing.T) {
 	})
 }
 
-func TestConvertCallToolResult(t *testing.T) {
-	t.Run("text only", func(t *testing.T) {
-		res := &sdkmcp.CallToolResult{
-			Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "hello"}},
-		}
-		text, binaries, metadata := convertCallToolResult(res)
-		if text != "hello" {
-			t.Errorf("text = %q, want %q", text, "hello")
-		}
-		if len(binaries) != 0 {
-			t.Errorf("binaries = %v, want empty", binaries)
-		}
-		if metadata != nil {
-			t.Errorf("metadata = %v, want nil", metadata)
-		}
-	})
+func TestConvertCallToolResult_TextOnly(t *testing.T) {
+	res := &sdkmcp.CallToolResult{
+		Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "hello"}},
+	}
+	text, binaries, metadata := convertCallToolResult(res)
+	if text != "hello" {
+		t.Errorf("text = %q, want %q", text, "hello")
+	}
+	if len(binaries) != 0 {
+		t.Errorf("binaries = %v, want empty", binaries)
+	}
+	if metadata != nil {
+		t.Errorf("metadata = %v, want nil", metadata)
+	}
+}
 
-	t.Run("multiple text blocks joined with newline", func(t *testing.T) {
-		res := &sdkmcp.CallToolResult{
-			Content: []sdkmcp.Content{
-				&sdkmcp.TextContent{Text: "first"},
-				&sdkmcp.TextContent{Text: "second"},
-			},
-		}
-		text, _, _ := convertCallToolResult(res)
-		if text != "first\nsecond" {
-			t.Errorf("text = %q, want %q", text, "first\nsecond")
-		}
-	})
+func TestConvertCallToolResult_MultipleTextBlocks(t *testing.T) {
+	res := &sdkmcp.CallToolResult{
+		Content: []sdkmcp.Content{
+			&sdkmcp.TextContent{Text: "first"},
+			&sdkmcp.TextContent{Text: "second"},
+		},
+	}
+	text, _, _ := convertCallToolResult(res)
+	if text != "first\nsecond" {
+		t.Errorf("text = %q, want %q", text, "first\nsecond")
+	}
+}
 
-	t.Run("binary and embedded resources", func(t *testing.T) {
-		res := &sdkmcp.CallToolResult{
-			Content: []sdkmcp.Content{
-				&sdkmcp.ImageContent{MIMEType: "image/png", Data: []byte{0x89, 0x50}},
-				&sdkmcp.AudioContent{MIMEType: "audio/mpeg", Data: []byte{0x01, 0x02}},
-				&sdkmcp.EmbeddedResource{Resource: &sdkmcp.ResourceContents{MIMEType: "text/csv", Blob: []byte("a,b,c")}},
-				&sdkmcp.EmbeddedResource{Resource: &sdkmcp.ResourceContents{MIMEType: "text/plain", Text: "embedded text"}},
-			},
-		}
-		text, binaries, _ := convertCallToolResult(res)
-		if text != "embedded text" {
-			t.Errorf("text = %q, want %q", text, "embedded text")
-		}
-		want := []tools.BinaryData{
-			{MIMEType: "image/png", Data: []byte{0x89, 0x50}},
-			{MIMEType: "audio/mpeg", Data: []byte{0x01, 0x02}},
-			{MIMEType: "text/csv", Data: []byte("a,b,c")},
-		}
-		if !reflect.DeepEqual(binaries, want) {
-			t.Errorf("binaries = %#v, want %#v", binaries, want)
-		}
-	})
+func TestConvertCallToolResult_BinaryAndEmbeddedResources(t *testing.T) {
+	res := &sdkmcp.CallToolResult{
+		Content: []sdkmcp.Content{
+			&sdkmcp.ImageContent{MIMEType: "image/png", Data: []byte{0x89, 0x50}},
+			&sdkmcp.AudioContent{MIMEType: "audio/mpeg", Data: []byte{0x01, 0x02}},
+			&sdkmcp.EmbeddedResource{Resource: &sdkmcp.ResourceContents{MIMEType: "text/csv", Blob: []byte("a,b,c")}},
+			&sdkmcp.EmbeddedResource{Resource: &sdkmcp.ResourceContents{MIMEType: "text/plain", Text: "embedded text"}},
+		},
+	}
+	text, binaries, _ := convertCallToolResult(res)
+	if text != "embedded text" {
+		t.Errorf("text = %q, want %q", text, "embedded text")
+	}
+	want := []tools.BinaryData{
+		{MIMEType: "image/png", Data: []byte{0x89, 0x50}},
+		{MIMEType: "audio/mpeg", Data: []byte{0x01, 0x02}},
+		{MIMEType: "text/csv", Data: []byte("a,b,c")},
+	}
+	if !reflect.DeepEqual(binaries, want) {
+		t.Errorf("binaries = %#v, want %#v", binaries, want)
+	}
+}
 
-	t.Run("structured content only", func(t *testing.T) {
-		res := &sdkmcp.CallToolResult{
-			StructuredContent: map[string]any{"result": "ok"},
-		}
-		_, _, metadata := convertCallToolResult(res)
-		want := map[string]interface{}{
-			"structuredContent": map[string]any{"result": "ok"},
-		}
-		if !reflect.DeepEqual(metadata, want) {
-			t.Errorf("metadata = %#v, want %#v", metadata, want)
-		}
-	})
+func TestConvertCallToolResult_StructuredContentOnly(t *testing.T) {
+	res := &sdkmcp.CallToolResult{
+		StructuredContent: map[string]any{"result": "ok"},
+	}
+	_, _, metadata := convertCallToolResult(res)
+	want := map[string]interface{}{
+		"structuredContent": map[string]any{"result": "ok"},
+	}
+	if !reflect.DeepEqual(metadata, want) {
+		t.Errorf("metadata = %#v, want %#v", metadata, want)
+	}
+}
 
-	t.Run("empty result", func(t *testing.T) {
-		text, binaries, metadata := convertCallToolResult(&sdkmcp.CallToolResult{})
-		if text != "" || len(binaries) != 0 || metadata != nil {
-			t.Errorf("got (%q, %v, %v), want empty", text, binaries, metadata)
-		}
-	})
+func TestConvertCallToolResult_Empty(t *testing.T) {
+	text, binaries, metadata := convertCallToolResult(&sdkmcp.CallToolResult{})
+	if text != "" {
+		t.Errorf("text = %q, want empty", text)
+	}
+	if len(binaries) != 0 {
+		t.Errorf("binaries = %v, want empty", binaries)
+	}
+	if metadata != nil {
+		t.Errorf("metadata = %v, want nil", metadata)
+	}
 }
 
 func TestOperationContext(t *testing.T) {
@@ -278,254 +282,250 @@ func TestOperationContext(t *testing.T) {
 	})
 }
 
-func TestListTools(t *testing.T) {
-	t.Run("happy path with multiple tools", func(t *testing.T) {
-		toolsList := []*sdkmcp.Tool{
-			{
-				Name:        "search",
-				Description: "Search for things",
-				InputSchema: objectSchema(map[string]any{
-					"query": map[string]any{"type": "string"},
-				}),
-			},
-			{
-				Name:        "ping",
-				Description: "Ping the server",
-				InputSchema: objectSchema(nil),
-			},
-		}
-		handlers := map[string]sdkmcp.ToolHandler{
-			"search": func(context.Context, *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
-				return &sdkmcp.CallToolResult{}, nil
-			},
-			"ping": func(context.Context, *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
-				return &sdkmcp.CallToolResult{}, nil
-			},
-		}
+func TestListTools_HappyPathMultipleTools(t *testing.T) {
+	toolsList := []*sdkmcp.Tool{
+		{
+			Name:        "search",
+			Description: "Search for things",
+			InputSchema: objectSchema(map[string]any{
+				"query": map[string]any{"type": "string"},
+			}),
+		},
+		{
+			Name:        "ping",
+			Description: "Ping the server",
+			InputSchema: objectSchema(nil),
+		},
+	}
+	handlers := map[string]sdkmcp.ToolHandler{
+		"search": func(context.Context, *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+			return &sdkmcp.CallToolResult{}, nil
+		},
+		"ping": func(context.Context, *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+			return &sdkmcp.CallToolResult{}, nil
+		},
+	}
 
-		ts := newSDKTestServer(t, toolsList, handlers)
-		defer ts.Close()
+	ts := newSDKTestServer(t, toolsList, handlers)
+	defer ts.Close()
 
-		c, err := NewClient(ts.URL, "", 5*time.Second)
-		if err != nil {
-			t.Fatalf("NewClient() error = %v", err)
-		}
-		defer func() { _ = c.Close() }()
+	c, err := NewClient(ts.URL, "", 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer func() { _ = c.Close() }()
 
-		got, err := c.ListTools(context.Background())
-		if err != nil {
-			t.Fatalf("ListTools() error = %v", err)
-		}
-		got = sortDefs(got)
+	got, err := c.ListTools(context.Background())
+	if err != nil {
+		t.Fatalf("ListTools() error = %v", err)
+	}
+	got = sortDefs(got)
 
-		if len(got) != 2 {
-			t.Fatalf("len(ListTools()) = %d, want 2", len(got))
-		}
-		if got[0].Name != "ping" || got[1].Name != "search" {
-			t.Errorf("names = [%q %q], want [ping search]", got[0].Name, got[1].Name)
-		}
-		if got[1].Description != "Search for things" {
-			t.Errorf("search description = %q", got[1].Description)
-		}
-		wantSchema := map[string]any{
-			"type":       "object",
-			"properties": map[string]any{"query": map[string]any{"type": "string"}},
-		}
-		if !reflect.DeepEqual(decodeJSON(t, got[1].InputSchema), wantSchema) {
-			t.Errorf("search InputSchema = %v, want %v", decodeJSON(t, got[1].InputSchema), wantSchema)
-		}
-	})
-
-	t.Run("empty list", func(t *testing.T) {
-		ts := newSDKTestServer(t, nil, map[string]sdkmcp.ToolHandler{})
-		defer ts.Close()
-
-		c, err := NewClient(ts.URL, "", 5*time.Second)
-		if err != nil {
-			t.Fatalf("NewClient() error = %v", err)
-		}
-		defer func() { _ = c.Close() }()
-
-		got, err := c.ListTools(context.Background())
-		if err != nil {
-			t.Fatalf("ListTools() error = %v", err)
-		}
-		if len(got) != 0 {
-			t.Errorf("len(ListTools()) = %d, want 0", len(got))
-		}
-	})
-
-	t.Run("HTTP 500 error", func(t *testing.T) {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
-		}))
-		defer ts.Close()
-
-		c, err := NewClient(ts.URL, "", 5*time.Second)
-		if err != nil {
-			t.Fatalf("NewClient() error = %v", err)
-		}
-		defer func() { _ = c.Close() }()
-
-		if _, err := c.ListTools(context.Background()); err == nil {
-			t.Fatal("ListTools() error = nil, want error")
-		}
-	})
+	if len(got) != 2 {
+		t.Fatalf("len(ListTools()) = %d, want 2", len(got))
+	}
+	if got[0].Name != "ping" || got[1].Name != "search" {
+		t.Errorf("names = [%q %q], want [ping search]", got[0].Name, got[1].Name)
+	}
+	if got[1].Description != "Search for things" {
+		t.Errorf("search description = %q", got[1].Description)
+	}
+	wantSchema := map[string]any{
+		"type":       "object",
+		"properties": map[string]any{"query": map[string]any{"type": "string"}},
+	}
+	if !reflect.DeepEqual(decodeJSON(t, got[1].InputSchema), wantSchema) {
+		t.Errorf("search InputSchema = %v, want %v", decodeJSON(t, got[1].InputSchema), wantSchema)
+	}
 }
 
-func TestCallTool(t *testing.T) {
-	t.Run("text success", func(t *testing.T) {
-		toolsList := []*sdkmcp.Tool{
-			{Name: "echo", InputSchema: objectSchema(map[string]any{"text": map[string]any{"type": "string"}})},
-		}
-		handlers := map[string]sdkmcp.ToolHandler{
-			"echo": func(ctx context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
-				return &sdkmcp.CallToolResult{
-					Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "hello"}},
-				}, nil
-			},
-		}
+func TestListTools_EmptyList(t *testing.T) {
+	ts := newSDKTestServer(t, nil, map[string]sdkmcp.ToolHandler{})
+	defer ts.Close()
 
-		ts := newSDKTestServer(t, toolsList, handlers)
-		defer ts.Close()
+	c, err := NewClient(ts.URL, "", 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer func() { _ = c.Close() }()
 
-		c, err := NewClient(ts.URL, "", 5*time.Second)
-		if err != nil {
-			t.Fatalf("NewClient() error = %v", err)
-		}
-		defer func() { _ = c.Close() }()
+	got, err := c.ListTools(context.Background())
+	if err != nil {
+		t.Fatalf("ListTools() error = %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("len(ListTools()) = %d, want 0", len(got))
+	}
+}
 
-		res, err := c.CallTool(context.Background(), "echo", map[string]interface{}{"text": "hi"})
-		if err != nil {
-			t.Fatalf("CallTool() error = %v", err)
-		}
-		if res.Text != "hello" {
-			t.Errorf("Text = %q, want %q", res.Text, "hello")
-		}
-		if res.Error != nil {
-			t.Errorf("Error = %v, want nil", res.Error)
-		}
-	})
+func TestListTools_HTTP500Error(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
 
-	t.Run("mixed text binary and structured metadata", func(t *testing.T) {
-		toolsList := []*sdkmcp.Tool{
-			{Name: "mixed", InputSchema: objectSchema(nil)},
-		}
-		handlers := map[string]sdkmcp.ToolHandler{
-			"mixed": func(ctx context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
-				return &sdkmcp.CallToolResult{
-					Content: []sdkmcp.Content{
-						&sdkmcp.TextContent{Text: "text output"},
-						&sdkmcp.ImageContent{MIMEType: "image/png", Data: []byte{0x89, 0x50}},
-						&sdkmcp.AudioContent{MIMEType: "audio/mpeg", Data: []byte{0x01, 0x02}},
-					},
-					StructuredContent: map[string]any{"result": "ok", "count": 3},
-				}, nil
-			},
-		}
+	c, err := NewClient(ts.URL, "", 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer func() { _ = c.Close() }()
 
-		ts := newSDKTestServer(t, toolsList, handlers)
-		defer ts.Close()
+	if _, err := c.ListTools(context.Background()); err == nil {
+		t.Fatal("ListTools() error = nil, want error")
+	}
+}
 
-		c, err := NewClient(ts.URL, "", 5*time.Second)
-		if err != nil {
-			t.Fatalf("NewClient() error = %v", err)
-		}
-		defer func() { _ = c.Close() }()
+func TestCallTool_TextSuccess(t *testing.T) {
+	toolsList := []*sdkmcp.Tool{
+		{Name: "echo", InputSchema: objectSchema(map[string]any{"text": map[string]any{"type": "string"}})},
+	}
+	handlers := map[string]sdkmcp.ToolHandler{
+		"echo": func(ctx context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+			return &sdkmcp.CallToolResult{
+				Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "hello"}},
+			}, nil
+		},
+	}
 
-		res, err := c.CallTool(context.Background(), "mixed", nil)
-		if err != nil {
-			t.Fatalf("CallTool() error = %v", err)
-		}
-		if res.Error != nil {
-			t.Fatalf("Error = %v, want nil", res.Error)
-		}
-		if res.Text != "text output" {
-			t.Errorf("Text = %q, want %q", res.Text, "text output")
-		}
-		wantBinary := []tools.BinaryData{
-			{MIMEType: "image/png", Data: []byte{0x89, 0x50}},
-			{MIMEType: "audio/mpeg", Data: []byte{0x01, 0x02}},
-		}
-		if !reflect.DeepEqual(res.BinaryData, wantBinary) {
-			t.Errorf("BinaryData = %#v, want %#v", res.BinaryData, wantBinary)
-		}
-		wantMeta := map[string]interface{}{
-			"structuredContent": map[string]any{"result": "ok", "count": float64(3)},
-		}
-		if !reflect.DeepEqual(res.Metadata, wantMeta) {
-			t.Errorf("Metadata = %#v, want %#v", res.Metadata, wantMeta)
-		}
-	})
+	ts := newSDKTestServer(t, toolsList, handlers)
+	defer ts.Close()
 
-	t.Run("MCP tool error is non-terminal", func(t *testing.T) {
-		toolsList := []*sdkmcp.Tool{
-			{Name: "fails", InputSchema: objectSchema(nil)},
-		}
-		handlers := map[string]sdkmcp.ToolHandler{
-			"fails": func(ctx context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
-				return &sdkmcp.CallToolResult{
-					Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "something went wrong"}},
-					IsError: true,
-				}, nil
-			},
-		}
+	c, err := NewClient(ts.URL, "", 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer func() { _ = c.Close() }()
 
-		ts := newSDKTestServer(t, toolsList, handlers)
-		defer ts.Close()
+	res, err := c.CallTool(context.Background(), "echo", map[string]interface{}{"text": "hi"})
+	if err != nil {
+		t.Fatalf("CallTool() error = %v", err)
+	}
+	if res.Text != "hello" {
+		t.Errorf("Text = %q, want %q", res.Text, "hello")
+	}
+	if res.Error != nil {
+		t.Errorf("Error = %v, want nil", res.Error)
+	}
+}
 
-		c, err := NewClient(ts.URL, "", 5*time.Second)
-		if err != nil {
-			t.Fatalf("NewClient() error = %v", err)
-		}
-		defer func() { _ = c.Close() }()
+func TestCallTool_MixedContent(t *testing.T) {
+	toolsList := []*sdkmcp.Tool{
+		{Name: "mixed", InputSchema: objectSchema(nil)},
+	}
+	handlers := map[string]sdkmcp.ToolHandler{
+		"mixed": func(ctx context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+			return &sdkmcp.CallToolResult{
+				Content: []sdkmcp.Content{
+					&sdkmcp.TextContent{Text: "text output"},
+					&sdkmcp.ImageContent{MIMEType: "image/png", Data: []byte{0x89, 0x50}},
+					&sdkmcp.AudioContent{MIMEType: "audio/mpeg", Data: []byte{0x01, 0x02}},
+				},
+				StructuredContent: map[string]any{"result": "ok", "count": 3},
+			}, nil
+		},
+	}
 
-		res, err := c.CallTool(context.Background(), "fails", nil)
-		if err != nil {
-			t.Fatalf("CallTool() error = %v, want nil Go error for MCP tool error", err)
-		}
-		if res.Text != "something went wrong" {
-			t.Errorf("Text = %q, want %q", res.Text, "something went wrong")
-		}
-		if res.Error == nil {
-			t.Fatal("Error = nil, want non-nil")
-		}
-		if res.Error.Error() != "something went wrong" {
-			t.Errorf("Error = %q, want %q", res.Error.Error(), "something went wrong")
-		}
-	})
+	ts := newSDKTestServer(t, toolsList, handlers)
+	defer ts.Close()
 
-	t.Run("unknown tool returns Go error", func(t *testing.T) {
-		ts := newSDKTestServer(t, nil, map[string]sdkmcp.ToolHandler{})
-		defer ts.Close()
+	c, err := NewClient(ts.URL, "", 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer func() { _ = c.Close() }()
 
-		c, err := NewClient(ts.URL, "", 5*time.Second)
-		if err != nil {
-			t.Fatalf("NewClient() error = %v", err)
-		}
-		defer func() { _ = c.Close() }()
+	res, err := c.CallTool(context.Background(), "mixed", nil)
+	if err != nil {
+		t.Fatalf("CallTool() error = %v", err)
+	}
+	if res.Error != nil {
+		t.Fatalf("Error = %v, want nil", res.Error)
+	}
+	if res.Text != "text output" {
+		t.Errorf("Text = %q, want %q", res.Text, "text output")
+	}
+	wantBinary := []tools.BinaryData{
+		{MIMEType: "image/png", Data: []byte{0x89, 0x50}},
+		{MIMEType: "audio/mpeg", Data: []byte{0x01, 0x02}},
+	}
+	if !reflect.DeepEqual(res.BinaryData, wantBinary) {
+		t.Errorf("BinaryData = %#v, want %#v", res.BinaryData, wantBinary)
+	}
+	wantMeta := map[string]interface{}{
+		"structuredContent": map[string]any{"result": "ok", "count": float64(3)},
+	}
+	if !reflect.DeepEqual(res.Metadata, wantMeta) {
+		t.Errorf("Metadata = %#v, want %#v", res.Metadata, wantMeta)
+	}
+}
 
-		if _, err := c.CallTool(context.Background(), "missing", nil); err == nil {
-			t.Fatal("CallTool() error = nil, want error for unknown tool")
-		}
-	})
+func TestCallTool_MCPErrorNonTerminal(t *testing.T) {
+	toolsList := []*sdkmcp.Tool{
+		{Name: "fails", InputSchema: objectSchema(nil)},
+	}
+	handlers := map[string]sdkmcp.ToolHandler{
+		"fails": func(ctx context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+			return &sdkmcp.CallToolResult{
+				Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "something went wrong"}},
+				IsError: true,
+			}, nil
+		},
+	}
 
-	t.Run("transport HTTP 500 returns Go error", func(t *testing.T) {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
-		}))
-		defer ts.Close()
+	ts := newSDKTestServer(t, toolsList, handlers)
+	defer ts.Close()
 
-		c, err := NewClient(ts.URL, "", 5*time.Second)
-		if err != nil {
-			t.Fatalf("NewClient() error = %v", err)
-		}
-		defer func() { _ = c.Close() }()
+	c, err := NewClient(ts.URL, "", 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer func() { _ = c.Close() }()
 
-		if _, err := c.CallTool(context.Background(), "tool", nil); err == nil {
-			t.Fatal("CallTool() error = nil, want transport error")
-		}
-	})
+	res, err := c.CallTool(context.Background(), "fails", nil)
+	if err != nil {
+		t.Fatalf("CallTool() error = %v, want nil Go error for MCP tool error", err)
+	}
+	if res.Text != "something went wrong" {
+		t.Errorf("Text = %q, want %q", res.Text, "something went wrong")
+	}
+	if res.Error == nil {
+		t.Fatal("Error = nil, want non-nil")
+	}
+	if res.Error.Error() != "something went wrong" {
+		t.Errorf("Error = %q, want %q", res.Error.Error(), "something went wrong")
+	}
+}
+
+func TestCallTool_UnknownTool(t *testing.T) {
+	ts := newSDKTestServer(t, nil, map[string]sdkmcp.ToolHandler{})
+	defer ts.Close()
+
+	c, err := NewClient(ts.URL, "", 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	if _, err := c.CallTool(context.Background(), "missing", nil); err == nil {
+		t.Fatal("CallTool() error = nil, want error for unknown tool")
+	}
+}
+
+func TestCallTool_TransportHTTP500(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	c, err := NewClient(ts.URL, "", 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	if _, err := c.CallTool(context.Background(), "tool", nil); err == nil {
+		t.Fatal("CallTool() error = nil, want transport error")
+	}
 }
 
 func TestCallToolContextCancellation(t *testing.T) {
