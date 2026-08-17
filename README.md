@@ -200,6 +200,14 @@ PROVIDERS:
     URL: "https://api.deepseek.com"
     API_KEY: "${DEEPSEEK_API_KEY}"
     MAX_TOKENS: 32768
+  kimi:
+    TYPE: "kimi"
+    MODEL: "kimi-k3"
+    URL: "https://api.moonshot.ai/v1"
+    API_KEY: "${MOONSHOT_API_KEY}"
+    MAX_TOKENS: 32768
+    HEADERS:
+      reasoning_effort: "max"
   vertex-deepseek:
     TYPE: "deepseek"
     MODEL: "deepseek-ai/deepseek-v3.2-maas"
@@ -246,6 +254,12 @@ USE_SEARCH: false
 SHOW_THOUGHTS: false
 SHOW_TOOLS: true
 
+# --- Output ---
+# WRAP_WIDTH: column width for word-wrapping non-TUI markdown output.
+# 0 (default) = glamour's built-in 80 columns. Env TELL_ME_WRAP_WIDTH
+# overrides. Read at session start; changes apply from the next session.
+# WRAP_WIDTH: 120
+
 # --- Global Timeouts & Streaming ---
 HTTP_TIMEOUT: 300
 
@@ -279,6 +293,12 @@ MODELS:
       HIT:      0.056
       MISS:     0.56
       COMP:     1.68
+  "kimi-k3":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT:      0.3
+      MISS:     3.0
+      COMP:     15.0
   "gemini-3-flash-preview":
     CONTEXT_WINDOW: 200000
     PRICING:
@@ -309,8 +329,15 @@ MODELS:
       HIT: 0.50
       MISS: 6.25
       COMP: 25.00
+```
 
-# --- Model Context Protocol (MCP) Servers ---
+### Optional: Model Context Protocol (MCP) Servers
+
+The default `configs/butler.yaml` ships without any MCP servers. To connect a
+remote MCP server (e.g. GitHub Copilot), add an `MCP_SERVERS` block to your
+config:
+
+```yaml
 # Server keys must match ^[a-z0-9-]{1,24}$ (1-24 lowercase letters, digits, hyphens).
 MCP_SERVERS:
   github:
