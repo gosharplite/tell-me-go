@@ -161,12 +161,13 @@ type Config struct {
 	// WrapWidth is the column width for word-wrapping non-TUI markdown
 	// output. Zero means "use glamour's built-in default (80)". Read at
 	// session start only — changes take effect from the next session.
-	WrapWidth          int                    `yaml:"WRAP_WIDTH"`
-	BypassConfirmation bool                   `yaml:"BYPASS_CONFIRMATION"`
-	Models             map[string]ModelConfig `yaml:"MODELS"` // Model-specific overrides
-	SelectedProvider   string                 `yaml:"SELECTED_PROVIDER"`
-	Providers          map[string]LLMProvider `yaml:"PROVIDERS"`
-	FailoverOrder      []string               `yaml:"FAILOVER_ORDER"`
+	WrapWidth          int                        `yaml:"WRAP_WIDTH"`
+	BypassConfirmation bool                       `yaml:"BYPASS_CONFIRMATION"`
+	Models             map[string]ModelConfig     `yaml:"MODELS"` // Model-specific overrides
+	SelectedProvider   string                     `yaml:"SELECTED_PROVIDER"`
+	Providers          map[string]LLMProvider     `yaml:"PROVIDERS"`
+	MCPServers         map[string]MCPServerConfig `yaml:"MCP_SERVERS"`
+	FailoverOrder      []string                   `yaml:"FAILOVER_ORDER"`
 }
 
 // GetActiveProvider returns the configuration for the selected provider.
@@ -258,6 +259,26 @@ func (c *Config) ValidateProviders(logger *slog.Logger) error {
 	return nil
 }
 
+// ValidateMCPServers validates every MCP server entry in MCPServers and
+// returns the first error encountered. Server keys must match
+// mcpServerKeyRegex (lowercase alphanumeric and hyphens); each server's
+// URL and Timeout are then validated via MCPServerConfig.validate.
+//
+// The order of per-server iteration is undefined (Go map iteration);
+// operators should treat first-error semantics as "any one of multiple
+// invalid servers will be reported".
+func (c *Config) ValidateMCPServers() error {
+	for name, server := range c.MCPServers {
+		if !mcpServerKeyRegex.MatchString(name) {
+			return fmt.Errorf("MCP_SERVERS key %q is invalid: must match ^[a-z0-9-]+$ (lowercase alphanumeric and hyphens)", name)
+		}
+		if err := server.validate(name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ValidateBounds checks every non-negative int field on Config and returns
 // an error for any negative value. Viper's WeaklyTypedInput can silently
 // produce negative values from integer overflow, so this is the guard.
@@ -287,6 +308,11 @@ func (c *Config) ValidateBounds() error {
 	}
 	if c.WrapWidth < 0 {
 		return fmt.Errorf("WRAP_WIDTH must be >= 0, got %d", c.WrapWidth)
+	}
+	for name, server := range c.MCPServers {
+		if server.Timeout < 0 {
+			return fmt.Errorf("MCP_SERVERS.%s.TIMEOUT must be >= 0, got %d", name, server.Timeout)
+		}
 	}
 	return nil
 }

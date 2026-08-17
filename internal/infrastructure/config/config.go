@@ -84,6 +84,12 @@ func load(path string) (*domain_config.Config, error) {
 		return nil, err
 	}
 
+	// Domain-level MCP server validation: key format, URL presence, and
+	// per-server timeout bounds. Hard errors fail the load.
+	if err := cfg.ValidateMCPServers(); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
 }
 
