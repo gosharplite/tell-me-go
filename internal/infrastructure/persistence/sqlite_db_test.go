@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -1150,4 +1151,245 @@ func TestCreateTables_PersistentBusyBounded(t *testing.T) {
 	require.True(t, errors.As(err, &se), "exhaustion must return the real busy error, got: %v", err)
 	assert.Equal(t, sqliteBusyCode, se.Code())
 	assert.Contains(t, err.Error(), "executing schema query")
+}
+
+// =============================================================================
+// Task 6 (issue #1383): deterministic migrateFromJSON SQLITE_BUSY retry +
+// convergence tests. Real-busy via the T5 holdBusyLock harness (RESERVED lock
+// from BEGIN IMMEDIATE), release→ack handshake inside the retried fn —
+// zero time.Sleep, zero timing assertions (ADR-036). queryLoggingConnector
+// pins the exact query sequence for the winner-commits convergence proof.
+// =============================================================================
+
+// writeNTasks writes a valid N-task JSON file (IDs 1..N, distinct content,
+// RFC3339 created_at) via fs — the shared seeder for the migrate busy tests.
+func writeNTasks(t *testing.T, ctx context.Context, fs persistence.FileSystem, tasksPath string, n int) {
+	t.Helper()
+
+	tasksJSON := "["
+	for i := 1; i <= n; i++ {
+		if i > 1 {
+			tasksJSON += ","
+		}
+		tasksJSON += fmt.Sprintf(`{"id": %d, "content": "Migrated Task %d", "status": "pending", "created_at": "2025-01-01T00:00:00Z"}`, i, i)
+	}
+	tasksJSON += "]"
+
+	if err := fs.WriteFile(ctx, tasksPath, []byte(tasksJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// queryLoggingConnector wraps a raw sqlite connection and appends every
+// ExecContext/QueryContext SQL string to a mutex-guarded log, so tests can
+// pin the exact query sequence (ADR-036 race-safety: database/sql pool
+// goroutines append concurrently).
+type queryLoggingConnector struct {
+	dbPath string
+	log    *[]string
+	logMu  *sync.Mutex
+}
+
+func (c *queryLoggingConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	realConn, err := sqliteDriver.Open(c.dbPath)
+	if err != nil {
+		return nil, err
+	}
+	return &queryLoggingConn{conn: realConn, log: c.log, logMu: c.logMu}, nil
+}
+
+func (c *queryLoggingConnector) Driver() driver.Driver { return sqliteDriver }
+
+type queryLoggingConn struct {
+	conn  driver.Conn
+	log   *[]string
+	logMu *sync.Mutex
+}
+
+func (c *queryLoggingConn) logQuery(query string) {
+	c.logMu.Lock()
+	defer c.logMu.Unlock()
+	*c.log = append(*c.log, query)
+}
+
+func (c *queryLoggingConn) Prepare(query string) (driver.Stmt, error) { return c.conn.Prepare(query) }
+func (c *queryLoggingConn) Close() error                              { return c.conn.Close() }
+func (c *queryLoggingConn) Begin() (driver.Tx, error) {
+	return c.BeginTx(context.Background(), driver.TxOptions{})
+}
+
+func (c *queryLoggingConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	if bc, ok := c.conn.(driver.ConnBeginTx); ok {
+		return bc.BeginTx(ctx, opts)
+	}
+	return c.conn.Begin() //nolint:staticcheck // SA1019: fallback for older drivers
+}
+
+func (c *queryLoggingConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	c.logQuery(query)
+	if qc, ok := c.conn.(driver.QueryerContext); ok {
+		return qc.QueryContext(ctx, query, args)
+	}
+	return nil, driver.ErrSkip
+}
+
+func (c *queryLoggingConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	c.logQuery(query)
+	if ec, ok := c.conn.(driver.ExecerContext); ok {
+		return ec.ExecContext(ctx, query, args)
+	}
+	return nil, driver.ErrSkip
+}
+
+// TestMigrateFromJSON_RetriesOnRealBusy proves migrateFromJSON retries on a
+// genuine SQLITE_BUSY at the batch INSERT (the COUNT read passes the RESERVED
+// lock; only the write contends). Attempt 1 releases the lock inside the
+// retried fn (T5 release→ack pattern); attempt 2 migrates fully; final
+// COUNT == N proves single-transaction atomicity + INSERT OR REPLACE
+// idempotency made the retry safe.
+func TestMigrateFromJSON_RetriesOnRealBusy(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dir := t.TempDir()
+	tasksPath := filepath.Join(dir, "tasks.json")
+	dbPath := filepath.Join(dir, "test.db")
+	fs := NewOSFileSystem()
+	writeNTasks(t, ctx, fs, tasksPath, 5)
+
+	// SUT connection: bare path → busy_timeout 0 → immediate genuine busy.
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	// Create the tasks table BEFORE taking the lock: a held RESERVED lock
+	// busy-fails the CREATE TABLE (write), which would break the premise
+	// that only the batch INSERT contends.
+	require.NoError(t, createTables(ctx, db))
+
+	release := holdBusyLock(t, dbPath)
+
+	var attempts atomic.Int32
+	err = withBusyRetry(ctx, func() error {
+		n := attempts.Add(1)
+		err := migrateFromJSON(ctx, db, fs, tasksPath, slog.Default())
+		if n == 1 && isBusyErr(err) {
+			release() // release→ack inside the retried fn (T5 pattern)
+		}
+		return err
+	}, migrateAttempts)
+
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), attempts.Load(), "transient busy must succeed on attempt 2")
+
+	var count int
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tasks").Scan(&count))
+	assert.Equal(t, 5, count)
+}
+
+// TestMigrateFromJSON_PersistentBusyBounded proves the retry budget is
+// honored with a persistent (never-released) lock: exactly migrateAttempts
+// (3) invocations, and the exhaustion error is the last real busy error
+// (code 5 via errors.As) wrapped through both migrateFromJSON layers.
+func TestMigrateFromJSON_PersistentBusyBounded(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dir := t.TempDir()
+	tasksPath := filepath.Join(dir, "tasks.json")
+	dbPath := filepath.Join(dir, "test.db")
+	fs := NewOSFileSystem()
+	writeNTasks(t, ctx, fs, tasksPath, 5)
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, createTables(ctx, db))
+
+	_ = holdBusyLock(t, dbPath) // never released
+
+	var attempts atomic.Int32
+	err = withBusyRetry(ctx, func() error {
+		attempts.Add(1)
+		return migrateFromJSON(ctx, db, fs, tasksPath, slog.Default())
+	}, migrateAttempts)
+
+	require.Error(t, err)
+	assert.Equal(t, int32(3), attempts.Load(), "persistent busy must exhaust exactly migrateAttempts (3)")
+
+	var se *sqlite.Error
+	require.True(t, errors.As(err, &se), "exhaustion must return the real busy error, got: %v", err)
+	assert.Equal(t, sqliteBusyCode, se.Code())
+	assert.Contains(t, err.Error(), "migrating legacy tasks from")
+	assert.Contains(t, err.Error(), "bulk inserting legacy tasks")
+}
+
+// TestMigrateFromJSON_WinnerCommitsBetweenAttempts pins the convergence
+// behavior: B's attempt 1 hits genuine busy at the INSERT; the lock is
+// released and a third bare-path connection C migrates + commits all N rows
+// while B is between attempts (migrateFromJSON returns only after COMMIT, so
+// attempt 2 deterministically sees COUNT == N). Attempt 2 takes the
+// fast-path skip (count > 0 → nil), so the query log is exactly
+// [COUNT, INSERT(busy)] → [COUNT] with zero ExecContexts on attempt 2.
+func TestMigrateFromJSON_WinnerCommitsBetweenAttempts(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dir := t.TempDir()
+	tasksPath := filepath.Join(dir, "tasks.json")
+	dbPath := filepath.Join(dir, "test.db")
+	fs := NewOSFileSystem()
+	writeNTasks(t, ctx, fs, tasksPath, 5)
+
+	var log []string
+	var logMu sync.Mutex
+	db := sql.OpenDB(&queryLoggingConnector{dbPath: dbPath, log: &log, logMu: &logMu})
+	t.Cleanup(func() { _ = db.Close() })
+
+	// Create the tasks table on the SUT connection BEFORE taking the lock
+	// (a held RESERVED lock would busy-fail the CREATE TABLE). The two
+	// CREATE TABLE ExecContexts land in the query log, so reset the log
+	// before the migrate attempts — the pin below must see exactly
+	// [COUNT, INSERT(busy)] → [COUNT].
+	require.NoError(t, createTables(ctx, db))
+	logMu.Lock()
+	log = log[:0]
+	logMu.Unlock()
+
+	release := holdBusyLock(t, dbPath)
+
+	var attempts atomic.Int32
+	err := withBusyRetry(ctx, func() error {
+		n := attempts.Add(1)
+		err := migrateFromJSON(ctx, db, fs, tasksPath, slog.Default())
+		if n == 1 && isBusyErr(err) {
+			release()
+			// Winner: a third bare-path connection migrates and commits N rows
+			// while B is between attempts; migrateFromJSON returns only after
+			// COMMIT completes, so attempt 2 deterministically sees COUNT == N.
+			dbC, cerr := sql.Open("sqlite", dbPath)
+			require.NoError(t, cerr)
+			cerr = migrateFromJSON(ctx, dbC, fs, tasksPath, slog.Default())
+			require.NoError(t, cerr)
+			require.NoError(t, dbC.Close())
+		}
+		return err
+	}, migrateAttempts)
+
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), attempts.Load())
+
+	// Query-log pin: [COUNT, INSERT(busy)] -> [COUNT]; zero INSERTs on attempt 2.
+	// NOTE: explicit Unlock (not defer) — the convergence COUNT below
+	// re-enters the logging connector and would self-deadlock on a held logMu.
+	logMu.Lock()
+	require.Len(t, log, 3, "log = %v", log)
+	assert.Equal(t, "SELECT COUNT(*) FROM tasks", log[0])
+	assert.Contains(t, log[1], "INSERT OR REPLACE INTO tasks")
+	assert.Equal(t, "SELECT COUNT(*) FROM tasks", log[2])
+	logMu.Unlock()
+
+	// Convergence: exactly N rows, committed by the winner, observed by B's skip.
+	var count int
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tasks").Scan(&count))
+	assert.Equal(t, 5, count)
 }
