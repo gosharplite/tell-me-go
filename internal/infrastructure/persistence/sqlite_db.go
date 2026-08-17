@@ -31,6 +31,43 @@ func isBusyErr(err error) bool {
 	return errors.As(err, &se) && se.Code() == sqliteBusyCode
 }
 
+// createTablesAttempts bounds SQLITE_BUSY retries for schema creation
+// (CREATE TABLE IF NOT EXISTS transactions are sub-ms).
+const createTablesAttempts = 2
+
+// migrateAttempts bounds SQLITE_BUSY retries for legacy migration; the
+// migrate write lock scales with the legacy file (a 100k+ row tasks.json
+// holds the lock well over 10 s), so the third attempt converts the
+// 10-15 s-hold contention window from failure to success.
+const migrateAttempts = 3
+
+// withBusyRetry runs fn, retrying only when fn returns SQLITE_BUSY, with
+// exponential backoff (50/100/200 ms base schedule), honoring ctx
+// cancellation during backoff. Non-busy errors fail immediately with the
+// error chain unchanged. Exhaustion returns the last real (busy) error.
+func withBusyRetry(ctx context.Context, fn func() error, attempts int) error {
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		if err := fn(); err != nil {
+			if !isBusyErr(err) {
+				return err // fail-fast: non-busy, no backoff
+			}
+			lastErr = err
+			if i < attempts-1 {
+				delay := time.Duration(50<<i) * time.Millisecond // 50, 100, 200...
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(delay):
+				}
+			}
+			continue
+		}
+		return nil
+	}
+	return lastErr // exhaustion: last real error
+}
+
 // initSQLiteDB opens the SQLite database and runs migrations.
 func initSQLiteDB(ctx context.Context, dbPath string) (*sql.DB, error) {
 	db, err := sqlOpenFn("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")

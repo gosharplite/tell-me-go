@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -975,4 +976,76 @@ func TestMigrateTasks_RollbackWarning(t *testing.T) {
 			}
 		})
 	}
+}
+
+// =============================================================================
+// Task 3 (issue #1383): withBusyRetry — bounded, ctx-honoring, fail-fast
+// backoff for SQLITE_BUSY. Both tests are fully deterministic per ADR-036:
+// no time.Sleep, no timing assertions. Cancellation and fail-fast are proven
+// structurally (by ctx state and invocation count), never by waiting.
+// =============================================================================
+
+// TestWithBusyRetry_NonBusyFailsFast verifies that a non-busy error (READONLY,
+// code 8) fails immediately: fn is invoked exactly once and the error chain is
+// returned unchanged (code 8 detectable via errors.As).
+func TestWithBusyRetry_NonBusyFailsFast(t *testing.T) {
+	t.Parallel()
+
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "ff.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.Exec("PRAGMA query_only = 1")
+	require.NoError(t, err)
+
+	var calls atomic.Int32
+	err = withBusyRetry(context.Background(), func() error {
+		calls.Add(1)
+		_, e := db.ExecContext(context.Background(), "CREATE TABLE t (id INTEGER)")
+		return e
+	}, 3)
+
+	require.Error(t, err)
+	assert.Equal(t, int32(1), calls.Load(), "non-busy error must fail fast: fn invoked exactly once")
+	var se *sqlite.Error
+	if errors.As(err, &se) {
+		assert.Equal(t, 8, se.Code(), "error chain must be unchanged (READONLY)")
+	}
+}
+
+// TestCreateTables_BusyCancellation verifies that cancellation during backoff
+// surfaces as ctx.Err() and fn is never retried. Deterministic by ctx state:
+// the fn itself cancels the ctx on the first (busy) invocation, so
+// withBusyRetry's backoff select sees an already-closed ctx.Done().
+func TestCreateTables_BusyCancellation(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "cancel.db")
+
+	// Lock holder (bare path → busy_timeout 0 → immediate genuine busy).
+	lockConn, err := sqliteDriver.Open(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = lockConn.Close() })
+	_, err = lockConn.(driver.ExecerContext).ExecContext(context.Background(), "BEGIN IMMEDIATE", nil)
+	require.NoError(t, err)
+
+	// SUT connection: bare path, no busy_timeout.
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var calls atomic.Int32
+	err = withBusyRetry(ctx, func() error {
+		if calls.Add(1) == 1 {
+			cancel() // cancel during backoff: deterministic by ctx state
+		}
+		return createTables(ctx, db)
+	}, 3)
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, context.Canceled), "cancellation must surface as ctx.Err(), got: %v", err)
+	assert.Equal(t, int32(1), calls.Load(), "fn must not be retried after cancellation")
 }
