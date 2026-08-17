@@ -760,6 +760,54 @@ func TestLoad_ValidateBoundsError(t *testing.T) {
 	}
 }
 
+// TestLoad_ValidateMCPServersError verifies that load() propagates
+// ValidateMCPServers errors (config.go:89-91) for invalid MCP_SERVERS
+// entries: a server key that violates ^[a-z0-9-]{1,24}$ (uppercase and
+// underscore), and a valid key whose server fails
+// (*MCPServerConfig).validate (empty URL).
+func TestLoad_ValidateMCPServersError(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "") // neutralize ambient env pollution
+
+	tests := []struct {
+		name        string
+		fileContent string
+		wantErrSub  string
+	}{
+		{
+			name: "InvalidKeyFormat",
+			fileContent: "MCP_SERVERS:\n" +
+				"  \"Bad_Key\":\n" + // uppercase + underscore violates ^[a-z0-9-]{1,24}$
+				"    URL: \"https://example.com/mcp\"\n",
+			wantErrSub: "MCP_SERVERS key",
+		},
+		{
+			name: "ValidKeyEmptyURL",
+			fileContent: "MCP_SERVERS:\n" +
+				"  \"good-key\":\n" + // valid key; empty URL fails (*MCPServerConfig).validate
+				"    URL: \"\"\n",
+			wantErrSub: "URL must not be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			path := filepath.Join(tmpDir, "test.yaml")
+			if err := os.WriteFile(path, []byte(tt.fileContent), 0644); err != nil {
+				t.Fatalf("failed to write test config: %v", err)
+			}
+
+			_, err := load(path)
+			if err == nil {
+				t.Fatalf("load() expected error containing %q, got nil", tt.wantErrSub)
+			}
+			if !strings.Contains(err.Error(), tt.wantErrSub) {
+				t.Fatalf("load() error = %q, want substring %q", err.Error(), tt.wantErrSub)
+			}
+		})
+	}
+}
+
 // TestLoad_WrapWidth_RoundTrip pins that the top-level WRAP_WIDTH field
 // round-trips correctly from YAML through Viper + mapstructure into the
 // domain Config.WrapWidth field, and that the loader rejects negative
