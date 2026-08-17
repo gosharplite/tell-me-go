@@ -75,8 +75,9 @@ func initSQLiteDB(ctx context.Context, dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
 	}
 
-	// Run schema migrations
-	if err := createTables(ctx, db); err != nil {
+	// Run schema migrations (single retry layer for SQLITE_BUSY; createTables
+	// itself stays pure so attempt counts are unambiguous at this call site).
+	if err := withBusyRetry(ctx, func() error { return createTables(ctx, db) }, createTablesAttempts); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to create tables: %w", err)
 	}

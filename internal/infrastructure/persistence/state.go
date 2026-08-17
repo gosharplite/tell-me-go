@@ -234,8 +234,10 @@ func initRepositories(ctx context.Context, configDir, storageType string) (ports
 		return nil, nil, nil, nil, err
 	}
 
-	// Perform migration if needed
-	err = migrateFromJSON(ctx, db, fs, tasksPath, slog.Default())
+	// Perform migration if needed (single retry layer for SQLITE_BUSY;
+	// migrateFromJSON stays pure. migrateAttempts=3 because the migrate
+	// write lock scales with the legacy file size).
+	err = withBusyRetry(ctx, func() error { return migrateFromJSON(ctx, db, fs, tasksPath, slog.Default()) }, migrateAttempts)
 	if err != nil {
 		_ = db.Close()
 		return nil, nil, nil, nil, err
