@@ -1049,3 +1049,105 @@ func TestCreateTables_BusyCancellation(t *testing.T) {
 	assert.True(t, errors.Is(err, context.Canceled), "cancellation must surface as ctx.Err(), got: %v", err)
 	assert.Equal(t, int32(1), calls.Load(), "fn must not be retried after cancellation")
 }
+
+// =============================================================================
+// Task 5 (issue #1383): deterministic createTables SQLITE_BUSY retry tests
+// with a real-busy lock harness. The release→ack handshake (ROLLBACK's
+// ExecContext return is the ack) sequences the release before the next
+// attempt with no timing window — zero time.Sleep, zero timing assertions,
+// zero require.Eventually (ADR-036 determinism).
+// =============================================================================
+
+// holdBusyLock acquires a real SQLITE_BUSY lock on dbPath via a raw driver
+// connection (bare path → busy_timeout 0 → contended statements fail
+// immediately with a genuine *sqlite.Error{code:5}). The returned release
+// func executes ROLLBACK synchronously: the lock is guaranteed released when
+// release returns (ExecContext's return is the ack), so a caller can sequence
+// the release before withBusyRetry's next attempt with no timing window.
+func holdBusyLock(t *testing.T, dbPath string) (release func()) {
+	t.Helper()
+
+	conn, err := sqliteDriver.Open(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	ec, ok := conn.(driver.ExecerContext)
+	require.True(t, ok, "raw sqlite conn must implement driver.ExecerContext")
+	if _, err := ec.ExecContext(context.Background(), "BEGIN IMMEDIATE", nil); err != nil {
+		t.Fatalf("BEGIN IMMEDIATE failed: %v", err)
+	}
+
+	return func() {
+		if _, err := ec.ExecContext(context.Background(), "ROLLBACK", nil); err != nil {
+			t.Fatalf("release (ROLLBACK) failed: %v", err)
+		}
+	}
+}
+
+// TestCreateTables_RetriesOnRealBusy proves the retry behavior end-to-end at
+// the withBusyRetry + createTables level: attempt 1 hits a genuine SQLITE_BUSY
+// (real RESERVED lock held by holdBusyLock), the release→ack handshake fires
+// INSIDE the retried fn, and attempt 2 succeeds. Attempt counter == 2 proves
+// the retry fired exactly once.
+func TestCreateTables_RetriesOnRealBusy(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "retry.db")
+	release := holdBusyLock(t, dbPath)
+
+	// SUT connection: bare path → busy_timeout 0 → immediate genuine busy.
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	var attempts atomic.Int32
+	err = withBusyRetry(context.Background(), func() error {
+		n := attempts.Add(1)
+		err := createTables(context.Background(), db)
+		// Release→ack handshake INSIDE the retried fn: the lock is released
+		// (and the release acked by ExecContext's return) before the busy
+		// error is handed to withBusyRetry, so the 50 ms backoff can never
+		// race the release.
+		if n == 1 && isBusyErr(err) {
+			release()
+		}
+		return err
+	}, createTablesAttempts)
+
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), attempts.Load(), "transient busy must succeed on attempt 2")
+
+	// Tables exist.
+	var n int
+	require.NoError(t, db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM tasks").Scan(&n))
+	require.NoError(t, db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM settings").Scan(&n))
+}
+
+// TestCreateTables_PersistentBusyBounded proves the retry budget is honored
+// with a persistent (never-released) lock: exactly createTablesAttempts (2)
+// invocations, and the returned error is the last real busy error (code 5 via
+// errors.As, wrap string intact).
+func TestCreateTables_PersistentBusyBounded(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "persist.db")
+	_ = holdBusyLock(t, dbPath) // never released
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	var attempts atomic.Int32
+	err = withBusyRetry(context.Background(), func() error {
+		attempts.Add(1)
+		return createTables(context.Background(), db)
+	}, createTablesAttempts)
+
+	require.Error(t, err)
+	assert.Equal(t, int32(2), attempts.Load(), "persistent busy must exhaust exactly createTablesAttempts (2)")
+
+	var se *sqlite.Error
+	require.True(t, errors.As(err, &se), "exhaustion must return the real busy error, got: %v", err)
+	assert.Equal(t, sqliteBusyCode, se.Code())
+	assert.Contains(t, err.Error(), "executing schema query")
+}
