@@ -541,6 +541,17 @@ func TestAnthropic_GenerateImages_NotImplemented(t *testing.T) {
 	}
 }
 
+// TestAnthropic_ExtractDocument_NotImplemented pins the contract that
+// Anthropic document extraction is deliberately unsupported: the stub at
+// client.go:316-318 returns llm.ErrNotImplemented.
+func TestAnthropic_ExtractDocument_NotImplemented(t *testing.T) {
+	client := NewClient("", "", nil)
+	_, err := client.ExtractDocument(context.Background(), []byte("data"), "doc.pdf")
+	if err == nil {
+		t.Error("expected error for ExtractDocument")
+	}
+}
+
 func TestAnthropic_RefreshAuth(t *testing.T) {
 	auth := &auth.AnthropicAuth{APIKey: "old"}
 	client := NewClient("", "", auth)
