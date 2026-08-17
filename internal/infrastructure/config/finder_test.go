@@ -180,6 +180,32 @@ func TestFind_ReturnsFallbackWhenAllStrategiesFail(t *testing.T) {
 	}
 }
 
+// TestDefaultConfigFinder_FindInParentDirs_RootTermination covers the
+// parentDir == searchDir guard at finder.go:129-130: when the search base
+// is the filesystem root, parent traversal must terminate immediately
+// (no infinite loop) and find nothing; Find() must then complete via the
+// fallback path.
+func TestDefaultConfigFinder_FindInParentDirs_RootTermination(t *testing.T) {
+	f := &defaultConfigFinder{baseDir: "/"}
+
+	path, found := f.findInParentDirs()
+	if found {
+		t.Fatalf("findInParentDirs() unexpectedly found %q at filesystem root", path)
+	}
+	if path != "" {
+		t.Fatalf("findInParentDirs() = %q, want empty", path)
+	}
+
+	got, err := f.Find()
+	if err != nil {
+		t.Fatalf("Find() unexpected error: %v", err)
+	}
+	want := filepath.Join("/", "configs", "butler.yaml")
+	if got != want {
+		t.Fatalf("Find() = %q, want fallback %q", got, want)
+	}
+}
+
 func TestDefaultConfigFinder_GetBaseDir_GetwdError(t *testing.T) {
 	// Save original and restore
 	originalGetwd := osGetwd
