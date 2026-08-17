@@ -4,10 +4,14 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/integrations/plugin"
@@ -381,6 +385,187 @@ func TestAutoRegistration(t *testing.T) {
 	if !found {
 		t.Error("mcp plugin not auto-registered via init()")
 	}
+}
+
+// --- Concurrent & bounded discovery ---
+
+// waitForRegisterDone waits for Register to finish, failing the test on error
+// or timeout. Register is run in its own goroutine so that a discovery bug
+// that blocks forever fails the test instead of hanging it.
+func waitForRegisterDone(t *testing.T, done <-chan error) {
+	t.Helper()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Register() error = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Register() did not return")
+	}
+}
+
+// assertRegisteredNames asserts the exact registration order recorded by the
+// mock registry.
+func assertRegisteredNames(t *testing.T, reg *mockRegistry, want []string) {
+	t.Helper()
+	if len(reg.registered) != len(want) {
+		t.Fatalf("registered %d tools, want %d", len(reg.registered), len(want))
+	}
+	for i, w := range want {
+		if reg.registered[i].decl.Name != w {
+			t.Errorf("registered[%d] = %q, want %q", i, reg.registered[i].decl.Name, w)
+		}
+	}
+}
+
+func TestRegister_ConcurrentDiscovery(t *testing.T) {
+	const numServers = 3
+
+	// Each server signals it has entered ListTools, then blocks until the
+	// shared release channel closes. A sequential implementation would block
+	// on the first server and never let the others start.
+	started := make(chan struct{}, numServers)
+	release := make(chan struct{})
+
+	mk := func() *mockMCPClient {
+		return &mockMCPClient{
+			listToolsFunc: func(ctx context.Context) ([]tools.MCPToolDefinition, error) {
+				started <- struct{}{}
+				<-release
+				return []tools.MCPToolDefinition{{Name: "t"}}, nil
+			},
+		}
+	}
+
+	deps := plugin.PluginDependencies{
+		MCPClients: map[string]plugin.MCPServerDependency{
+			"alpha": {Client: mk()},
+			"beta":  {Client: mk()},
+			"gamma": {Client: mk()},
+		},
+	}
+
+	reg := &mockRegistry{}
+	p := NewPlugin()
+	done := make(chan error, 1)
+	go func() { done <- p.Register(reg, deps) }()
+
+	for i := 0; i < numServers; i++ {
+		select {
+		case <-started:
+		case <-time.After(5 * time.Second):
+			close(release)
+			t.Fatalf("discovery was not concurrent: %d/%d servers started", i, numServers)
+		}
+	}
+	close(release)
+	waitForRegisterDone(t, done)
+
+	assertRegisteredNames(t, reg, []string{"mcp_alpha_t", "mcp_beta_t", "mcp_gamma_t"})
+}
+
+func TestRegister_DiscoveryTimeout(t *testing.T) {
+	// Shorten the discovery window so the timeout path runs quickly.
+	original := discoveryTimeout
+	discoveryTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { discoveryTimeout = original })
+
+	// Capture the default logger to assert the discovery-failure warning.
+	var logBuf bytes.Buffer
+	originalLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+
+	ctxCancelled := make(chan struct{})
+	slow := &mockMCPClient{
+		listToolsFunc: func(ctx context.Context) ([]tools.MCPToolDefinition, error) {
+			<-ctx.Done()
+			close(ctxCancelled)
+			return nil, ctx.Err()
+		},
+	}
+	fast := &mockMCPClient{
+		listToolsFunc: func(ctx context.Context) ([]tools.MCPToolDefinition, error) {
+			return []tools.MCPToolDefinition{{Name: "ping"}}, nil
+		},
+	}
+
+	deps := plugin.PluginDependencies{
+		MCPClients: map[string]plugin.MCPServerDependency{
+			"fast": {Client: fast},
+			"slow": {Client: slow},
+		},
+	}
+
+	reg := &mockRegistry{}
+	p := NewPlugin()
+	done := make(chan error, 1)
+	go func() { done <- p.Register(reg, deps) }()
+
+	waitForRegisterDone(t, done)
+
+	// The slow server's context must have been cancelled by the timeout.
+	select {
+	case <-ctxCancelled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("slow server's context was not cancelled by the discovery timeout")
+	}
+
+	// The fast server must not be blocked by the slow server's timeout; the
+	// slow server is skipped.
+	assertRegisteredNames(t, reg, []string{"mcp_fast_ping"})
+
+	if !strings.Contains(logBuf.String(), "mcp_server_discovery_failed") {
+		t.Errorf("expected discovery-failure warning, got %q", logBuf.String())
+	}
+}
+
+func TestRegister_DeterministicOrderingUnderConcurrency(t *testing.T) {
+	names := []string{"alpha", "mike", "zebra"}
+	release := make(map[string]chan struct{}, len(names))
+	for _, n := range names {
+		release[n] = make(chan struct{})
+	}
+	completed := make(chan string, len(names))
+
+	mk := func(name string) *mockMCPClient {
+		return &mockMCPClient{
+			listToolsFunc: func(ctx context.Context) ([]tools.MCPToolDefinition, error) {
+				<-release[name]
+				completed <- name
+				return []tools.MCPToolDefinition{{Name: "t"}}, nil
+			},
+		}
+	}
+
+	deps := plugin.PluginDependencies{
+		MCPClients: map[string]plugin.MCPServerDependency{
+			"alpha": {Client: mk("alpha")},
+			"mike":  {Client: mk("mike")},
+			"zebra": {Client: mk("zebra")},
+		},
+	}
+
+	reg := &mockRegistry{}
+	p := NewPlugin()
+	done := make(chan error, 1)
+	go func() { done <- p.Register(reg, deps) }()
+
+	// Release servers in reverse alphabetical order, waiting for each to
+	// complete before releasing the next. This deterministically forces a
+	// non-alphabetical completion order; registration must still be
+	// alphabetical.
+	for i := len(names) - 1; i >= 0; i-- {
+		close(release[names[i]])
+		select {
+		case <-completed:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("server %q did not complete after release", names[i])
+		}
+	}
+	waitForRegisterDone(t, done)
+
+	assertRegisteredNames(t, reg, []string{"mcp_alpha_t", "mcp_mike_t", "mcp_zebra_t"})
 }
 
 // rawJSON is a test helper returning a json.RawMessage from a string literal.

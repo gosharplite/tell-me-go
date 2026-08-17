@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"sync"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/integrations/plugin"
@@ -23,6 +25,26 @@ import (
 // mcpPlugin implements plugin.Plugin for the MCP integration. A single plugin
 // discovers and registers tools from every configured MCP server.
 type mcpPlugin struct{}
+
+// defaultDiscoveryTimeout bounds how long a single MCP server's tool
+// discovery may take before the server is skipped. A server that does not
+// respond within this window is logged as a discovery failure and skipped,
+// without blocking discovery of the other configured servers.
+const defaultDiscoveryTimeout = 30 * time.Second
+
+// discoveryTimeout is the effective per-server discovery timeout used by
+// Register. It defaults to defaultDiscoveryTimeout; tests may temporarily
+// lower it to keep the timeout path fast. Production code must not reassign it.
+var discoveryTimeout = defaultDiscoveryTimeout
+
+// serverDiscoveryResult captures the outcome of discovering a single MCP
+// server's tools.
+type serverDiscoveryResult struct {
+	serverName string
+	dep        plugin.MCPServerDependency
+	tools      []tools.MCPToolDefinition
+	err        error
+}
 
 // NewPlugin returns a new MCP plugin for the global registry.
 func NewPlugin() plugin.Plugin { return &mcpPlugin{} }
@@ -34,51 +56,82 @@ func (mcpPlugin) Register(r tools.Registry, deps plugin.PluginDependencies) erro
 		return nil
 	}
 
-	// Deterministic registration order so tool discovery is reproducible
-	// across runs regardless of map iteration order.
-	serverNames := make([]string, 0, len(deps.MCPClients))
-	for name := range deps.MCPClients {
-		serverNames = append(serverNames, name)
+	// Discover every configured server concurrently, each bounded by the
+	// discovery timeout. A single slow or failing server must not block the
+	// others.
+	var (
+		mu      sync.Mutex
+		results []serverDiscoveryResult
+		wg      sync.WaitGroup
+	)
+	for serverName, dep := range deps.MCPClients {
+		wg.Add(1)
+		go func(serverName string, dep plugin.MCPServerDependency) {
+			defer wg.Done()
+
+			ctx, cancel := context.WithTimeout(context.Background(), discoveryTimeout)
+			defer cancel()
+
+			toolsList, err := dep.Client.ListTools(ctx)
+
+			mu.Lock()
+			results = append(results, serverDiscoveryResult{
+				serverName: serverName,
+				dep:        dep,
+				tools:      toolsList,
+				err:        err,
+			})
+			mu.Unlock()
+		}(serverName, dep)
 	}
-	sort.Strings(serverNames)
+	wg.Wait()
 
-	for _, serverName := range serverNames {
-		dep := deps.MCPClients[serverName]
+	// Sort results by server name so tool registration order is deterministic
+	// regardless of goroutine completion order.
+	sort.Slice(results, func(i, j int) bool { return results[i].serverName < results[j].serverName })
 
-		toolsList, err := dep.Client.ListTools(context.Background())
-		if err != nil {
+	for _, res := range results {
+		if res.err != nil {
 			// Non-fatal: a single server failing discovery must not abort
 			// registration of other MCP servers or core tools.
-			slog.Warn("mcp_server_discovery_failed", "server", serverName, "error", err)
+			slog.Warn("mcp_server_discovery_failed", "server", res.serverName, "error", res.err)
 			continue
 		}
-
-		for _, t := range toolsList {
-			namespacedName := FormatToolName(serverName, t.Name)
-			paramSchema := ConvertSchema(t.InputSchema, namespacedName)
-
-			decl := &tools.ToolDeclaration{
-				Name:            namespacedName,
-				Description:     t.Description,
-				Parameters:      paramSchema,
-				RequiresConsent: dep.RequiresConsent,
-			}
-
-			handler := func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return dep.Client.CallTool(ctx, t.Name, args)
-			}
-
-			opts := tools.ToolOptions{
-				Serial:            dep.Serial,
-				LongRunning:       true,
-				LivenessThreshold: 0,
-			}
-			if err := r.RegisterWithOptions(decl, handler, opts); err != nil {
-				return fmt.Errorf("mcp register tool %q: %w", namespacedName, err)
-			}
+		if err := registerServerTools(r, res.serverName, res.dep, res.tools); err != nil {
+			return err
 		}
 	}
 
+	return nil
+}
+
+// registerServerTools registers the discovered tools of a single MCP server
+// into r under deterministic, namespaced names.
+func registerServerTools(r tools.Registry, serverName string, dep plugin.MCPServerDependency, toolsList []tools.MCPToolDefinition) error {
+	for _, t := range toolsList {
+		namespacedName := FormatToolName(serverName, t.Name)
+		paramSchema := ConvertSchema(t.InputSchema, namespacedName)
+
+		decl := &tools.ToolDeclaration{
+			Name:            namespacedName,
+			Description:     t.Description,
+			Parameters:      paramSchema,
+			RequiresConsent: dep.RequiresConsent,
+		}
+
+		handler := func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+			return dep.Client.CallTool(ctx, t.Name, args)
+		}
+
+		opts := tools.ToolOptions{
+			Serial:            dep.Serial,
+			LongRunning:       true,
+			LivenessThreshold: 0,
+		}
+		if err := r.RegisterWithOptions(decl, handler, opts); err != nil {
+			return fmt.Errorf("mcp register tool %q: %w", namespacedName, err)
+		}
+	}
 	return nil
 }
 
