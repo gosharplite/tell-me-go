@@ -287,3 +287,55 @@ func TestDetailedCoverageReport_AgentPackageCataloged(t *testing.T) {
 	require.Contains(t, report, "service.go (Lines 189-191)")
 	require.Contains(t, report, "EditLastTurn")
 }
+
+// TestDetailedCoverageReport_SkillsshPackageCataloged is the end-to-end
+// regression for the interval-anchored skillssh catalog entry: the
+// formerly-MEDIUM error-handling gaps (e.g. manager_impl.go:60-62) must
+// appear under [CATALOGED GAPS (ACCEPTED)] and never as actionable. The
+// report renders at most 10 cataloged gaps (maxItems), so the search.go
+// fetchSkillMeta branches and the tools.go registration branches — later in
+// profile order — are proven cataloged via the exact counts: 35 total gaps,
+// 0 High / 0 Medium / 0 Low, 35 cataloged, with the 25 unreported ones
+// folded into the truncation note.
+func TestDetailedCoverageReport_SkillsshPackageCataloged(t *testing.T) {
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	// Run from the module root so the coverage profile records repo-relative
+	// paths; restore on cleanup (all arch-tagged tests are sequential).
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoRoot))
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	// Mirror production wiring (manager.go newAnalysisManager).
+	executor := &exec.RealExecutor{}
+	m := &healthManager{
+		SP:          &mockSecurityProvider{},
+		Exec:        executor,
+		Runner:      toolchain.NewGoRunner(executor),
+		clk:         clock.RealClock{},
+		catalogPath: defaultNonFixCatalogPath,
+	}
+
+	report, err := m.getDetailedCoverageReport(context.Background(), "./internal/tools/integrations/skillssh", nil, nil)
+	require.NoError(t, err)
+
+	// No actionable gaps of any priority: every uncovered block is ACCEPTED,
+	// so no HIGH/MEDIUM section is rendered and the priority counts are 0.
+	require.NotContains(t, report, "[HIGH PRIORITY GAPS]")
+	require.Contains(t, report, "- High Priority (Architectural): 0")
+	require.Contains(t, report, "- Medium Priority (Technical Debt): 0")
+	require.Contains(t, report, "- Low Priority: 0")
+	// The first rendered cataloged gaps (profile order, capped at 10) pin the
+	// formerly-MEDIUM error branch in searchGitHubAPI ...
+	require.Contains(t, report, "[CATALOGED GAPS (ACCEPTED)]")
+	require.Contains(t, report, "manager_impl.go (Lines 60-62)")
+	// ... and the exact counts prove the remaining 25 cataloged blocks —
+	// including all four search.go fetchSkillMeta branches (78-80, 83-85,
+	// 88-90, 93-95) and the 15 tools.go registration branches, which sort
+	// later in profile order and are folded into the truncation note — are
+	// accepted, never actionable.
+	require.Contains(t, report, "- Cataloged (ACCEPTED): 35")
+	require.Contains(t, report, "... and 25 more cataloged (ACCEPTED) gaps.")
+}

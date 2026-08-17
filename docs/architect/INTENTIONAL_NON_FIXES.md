@@ -765,8 +765,7 @@ catalog a new gap no one reviewed. Policy:
   - `validateSkillRemovable`: `repo.GetAll` error — already covered by the
     `ListSkills` repo-error test pattern.
 
-- **See**: `internal/tools/integrations/skillssh/manager_impl.go`,
-  `internal/tools/integrations/skillssh/tools.go`
+- **See**: `internal/tools/integrations/skillssh/manager_impl.go:50-52,60-62,75-77,102-104,129-131,141-146,206-208,312-312,330-332,342-344,360-362,366-368,371-373,381-381,397-397`, `internal/tools/integrations/skillssh/search.go:78-80,83-85,88-90,93-95`, `internal/tools/integrations/skillssh/tools.go:23-25,27-32,35-50,53-62,65-81,84-100,102-102`
 
 ---
 
