@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/integrations/plugin"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
 )
@@ -400,5 +401,82 @@ func TestRegisterAll_GoDoc_ReachesFakeRunner(t *testing.T) {
 	}
 	if !fake.Called("GetGoDoc") {
 		t.Error("fake runner GetGoDoc was not reached through the go_doc handler")
+	}
+}
+
+// fakeMCPClient is a hand-rolled function-field test double for
+// tools.MCPClient (ADR-021). It is local to this test file because the
+// domain and mcp test doubles are unexported and tools_test is an external
+// test package.
+type fakeMCPClient struct {
+	listToolsFunc func(ctx context.Context) ([]domaintools.MCPToolDefinition, error)
+	callToolFunc  func(ctx context.Context, name string, args map[string]interface{}) (domaintools.ToolResult, error)
+}
+
+func (f *fakeMCPClient) ListTools(ctx context.Context) ([]domaintools.MCPToolDefinition, error) {
+	if f.listToolsFunc != nil {
+		return f.listToolsFunc(ctx)
+	}
+	return nil, nil
+}
+
+func (f *fakeMCPClient) CallTool(ctx context.Context, name string, args map[string]interface{}) (domaintools.ToolResult, error) {
+	if f.callToolFunc != nil {
+		return f.callToolFunc(ctx, name, args)
+	}
+	return domaintools.ToolResult{}, nil
+}
+
+func (f *fakeMCPClient) Close() error { return nil }
+
+var _ domaintools.MCPClient = (*fakeMCPClient)(nil)
+
+// TestRegisterAll_MCPTools verifies end-to-end registration of MCP-backed
+// tools through tools.RegisterAll: the mcp plugin discovers a tool from the
+// injected MCP client, namespaces it, and exposes it for execution through the
+// real registry.
+func TestRegisterAll_MCPTools(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeMCPClient{
+		listToolsFunc: func(ctx context.Context) ([]domaintools.MCPToolDefinition, error) {
+			return []domaintools.MCPToolDefinition{
+				{Name: "search", Description: "search the server"},
+			}, nil
+		},
+		callToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (domaintools.ToolResult, error) {
+			return domaintools.ToolResult{Text: "mcp-result"}, nil
+		},
+	}
+
+	params := newTestParams()
+	params.MCPClients = map[string]plugin.MCPServerDependency{
+		"github": {Client: fake, RequiresConsent: false, Serial: false},
+	}
+
+	if err := tools.RegisterAll(params); err != nil {
+		t.Fatalf("RegisterAll failed: %v", err)
+	}
+
+	var found *domaintools.ToolDeclaration
+	for _, d := range params.Registry.GetDeclarations() {
+		if d.Name == "mcp_github_search" {
+			found = d
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("mcp_github_search declaration not present in registry")
+	}
+	if found.RequiresConsent {
+		t.Error("mcp_github_search RequiresConsent = true, want false")
+	}
+
+	res, err := params.Registry.Execute(context.Background(), "mcp_github_search", map[string]interface{}{"q": "tell-me-go"}, nil)
+	if err != nil {
+		t.Fatalf("Execute(mcp_github_search) failed: %v", err)
+	}
+	if res.Text != "mcp-result" {
+		t.Errorf("Execute(mcp_github_search) Text = %q, want %q", res.Text, "mcp-result")
 	}
 }

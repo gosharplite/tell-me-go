@@ -220,6 +220,9 @@ func TestPluginDependencies_ZeroValue(t *testing.T) {
 	if deps.AssetsDir != "" {
 		t.Errorf("zero-value AssetsDir = %q, want empty", deps.AssetsDir)
 	}
+	if deps.MCPClients != nil {
+		t.Error("zero-value MCPClients should be nil")
+	}
 }
 
 func TestRegister_InsertionOrder(t *testing.T) {

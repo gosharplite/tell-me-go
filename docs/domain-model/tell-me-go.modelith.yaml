@@ -350,6 +350,12 @@ entities:
           Per-model cost rates from the built-in pricing table, overridable per
           model via the MODELS section. Realized in code as `Config.Models`
           (`map[string]ModelConfig`, each entry embedding `pricing.ModelPricing`).
+      - entity: MCPServer
+        cardinality: "1:n"
+        ownership: owned
+        note: >
+          Configured external MCP servers (YAML key MCP_SERVERS). Realized in
+          code as Config.MCPServers (map[string]MCPServerConfig).
     attributes:
       - name: selectedProvider
         type: string
@@ -469,6 +475,42 @@ entities:
     invariants:
       - id: tool-unique-name
         statement: "Each `Tool` has a unique name."
+
+  MCPServer:
+    definition: >
+      An external Model Context Protocol (MCP) server providing dynamic tool
+      capabilities to the agent over Streamable HTTP.
+    relationships:
+      - entity: Tool
+        cardinality: "1:n"
+        ownership: owned
+        note: Tools discovered from this MCP server.
+    attributes:
+      - name: name
+        type: string
+        description: The unique server identifier (map key in Config.MCPServers).
+      - name: url
+        type: string
+        description: Base URL of the remote MCP server endpoint.
+      - name: auth
+        type: string
+        description: "Authentication mode: auto, gh, bearer, or none."
+      - name: requiresConsent
+        type: boolean
+        description: Whether tools from this server require user approval before execution.
+      - name: serial
+        type: boolean
+        description: Whether tools from this server must execute sequentially.
+      - name: timeout
+        type: integer
+        description: Per-tool-call execution timeout in seconds.
+    invariants:
+      - id: mcp-server-key-format
+        statement: "MCP server keys must be 1 to 24 characters matching `^[a-z0-9-]+$`."
+      - id: mcp-token-not-logged
+        statement: "Authentication tokens for `MCPServer`s must never be logged or serialized into diagnostics."
+      - id: mcp-readonly-defaults
+        statement: "An `MCPServer` targeting a read-only endpoint defaults to `requiresConsent: false` and concurrent execution (`serial: false`)."
 
   Skill:
     definition: >
@@ -857,6 +899,22 @@ scenarios:
       - "The `Orchestrator` begins a fresh `Session` loop with the recovered prompt."
       - "The new `Turn` begins with the rolled-back `History` as context."
     invariants_touched: [history-persisted-after-turn, turn-belongs-to-one-session]
+
+  - name: MCP tool discovery and execution
+    description: >
+      The agent initializes external tools from configured MCP servers over
+      Streamable HTTP, normalizes their schemas, and executes tool calls with
+      in-turn error recovery.
+    actors: [Orchestrator, Config, MCPServer, Tool, ToolCall, Session]
+    steps:
+      - "`Orchestrator` initializes `Session` with configured `MCPServer`s from `Config`."
+      - "Dynamic tool discovery queries `MCPServer` for available tools."
+      - "Tools are normalized, namespaced, and registered as `Tool` entities with appropriate consent and serial flags."
+      - "Unsupported schema combinators gracefully degrade to freeform arguments."
+      - "LLM requests an MCP tool execution via `ToolCall`."
+      - "`ToolCall` delegates execution to the remote `MCPServer` over Streamable HTTP."
+      - "Non-terminal MCP tool errors (isError: true) return error text with nil Go error for in-turn LLM recovery."
+    invariants_touched: [mcp-server-key-format, mcp-readonly-defaults, tool-timeout, tool-unique-name]
 
 invariants:
   - id: deterministic-cost-audit

@@ -194,6 +194,8 @@ func (m *mockToolchainFactory) BuildHealthChecker() ports.HealthChecker {
 	return nil
 }
 
+func (m *mockToolchainFactory) CloseMCPClients() error { return nil }
+
 // stubHealthChecker is a minimal ports.HealthChecker for tests.
 type stubHealthChecker struct{}
 

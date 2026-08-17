@@ -47,6 +47,7 @@ The YAML configuration loaded at startup. Defines the active `Provider`, the ful
 **Relationships**
 
 - `Pricing` — 1:n — owned — Per-model cost rates from the built-in pricing table, overridable per model via the MODELS section. Realized in code as `Config.Models` (`map[string]ModelConfig`, each entry embedding `pricing.ModelPricing`).
+- `MCPServer` — 1:n — owned — Configured external MCP servers (YAML key MCP_SERVERS). Realized in code as Config.MCPServers (map[string]MCPServerConfig).
 
 **Attributes**
 
@@ -117,6 +118,31 @@ The persisted record of a `Session`'s `Turn`s, stored as an append-only JSON Lin
 **Invariants**
 
 - **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
+
+### `MCPServer`
+
+An external Model Context Protocol (MCP) server providing dynamic tool capabilities to the agent over Streamable HTTP.
+
+**Relationships**
+
+- `Tool` — 1:n — owned — Tools discovered from this MCP server.
+
+**Attributes**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `name` | string | The unique server identifier (map key in Config.MCPServers). |
+| `url` | string | Base URL of the remote MCP server endpoint. |
+| `auth` | string | Authentication mode: auto, gh, bearer, or none. |
+| `requiresConsent` | boolean | Whether tools from this server require user approval before execution. |
+| `serial` | boolean | Whether tools from this server must execute sequentially. |
+| `timeout` | integer | Per-tool-call execution timeout in seconds. |
+
+**Invariants**
+
+- **mcp-server-key-format** — MCP server keys must be 1 to 24 characters matching `^[a-z0-9-]+$`.
+- **mcp-token-not-logged** — Authentication tokens for `MCPServer`s must never be logged or serialized into diagnostics.
+- **mcp-readonly-defaults** — An `MCPServer` targeting a read-only endpoint defaults to `requiresConsent: false` and concurrent execution (`serial: false`).
 
 ### `Pricing`
 
@@ -319,6 +345,7 @@ erDiagram
     Config {}
     Context {}
     History {}
+    MCPServer {}
     Pricing {}
     Provider {}
     SafePath {}
@@ -329,6 +356,8 @@ erDiagram
     ToolCall {}
     Turn {}
     Config ||--o{ Pricing : ""
+    Config ||--o{ MCPServer : ""
+    MCPServer ||--o{ Tool : ""
     Session ||--o{ Turn : ""
     Session }o..|| Config : ""
     Session }o..|| Provider : ""
@@ -661,4 +690,27 @@ The user invokes `--retry` after an unsatisfactory response. Before the session 
 
 - **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
 - **turn-belongs-to-one-session** — A `Turn` belongs to exactly one `Session`.
+
+### MCP tool discovery and execution
+
+The agent initializes external tools from configured MCP servers over Streamable HTTP, normalizes their schemas, and executes tool calls with in-turn error recovery.
+
+**Actors:** Orchestrator, Config, MCPServer, Tool, ToolCall, Session
+
+**Steps**
+
+1. `Orchestrator` initializes `Session` with configured `MCPServer`s from `Config`.
+2. Dynamic tool discovery queries `MCPServer` for available tools.
+3. Tools are normalized, namespaced, and registered as `Tool` entities with appropriate consent and serial flags.
+4. Unsupported schema combinators gracefully degrade to freeform arguments.
+5. LLM requests an MCP tool execution via `ToolCall`.
+6. `ToolCall` delegates execution to the remote `MCPServer` over Streamable HTTP.
+7. Non-terminal MCP tool errors (isError: true) return error text with nil Go error for in-turn LLM recovery.
+
+**Invariants touched**
+
+- **mcp-server-key-format** — MCP server keys must be 1 to 24 characters matching `^[a-z0-9-]+$`.
+- **mcp-readonly-defaults** — An `MCPServer` targeting a read-only endpoint defaults to `requiresConsent: false` and concurrent execution (`serial: false`).
+- **tool-timeout** — Execution duration must not exceed `Config.toolTimeout` seconds.
+- **tool-unique-name** — Each `Tool` has a unique name.
 

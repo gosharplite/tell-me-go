@@ -32,7 +32,7 @@ ifeq ($(OS),Windows_NT)
     endif
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-tools-toolchain-import verify-tools-infrastructure-import verify-no-test-sleep verify-architecture verify-exit-query verify-transitive-gate verify-nonfix-catalog verify-ports-registry verify-adr-index verify-no-context-window-cache lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-tools-toolchain-import verify-tools-infrastructure-import verify-mcp-sdk-confinement verify-no-test-sleep verify-architecture verify-exit-query verify-transitive-gate verify-nonfix-catalog verify-ports-registry verify-adr-index verify-no-context-window-cache lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -48,6 +48,7 @@ help:
 	@echo "  make verify-tools-adapter-import - Verify tools adapter imports are confined to default_fs.go (ADR-055)"
 	@echo "  make verify-tools-toolchain-import - Verify no infrastructure/toolchain imports in tools production files (issue #1325)"
 	@echo "  make verify-tools-infrastructure-import - Verify no internal/infrastructure imports in tools production files (ADR-062)"
+	@echo "  make verify-mcp-sdk-confinement - Verify MCP Go SDK imports are confined to internal/infrastructure/mcp/ (ADR-067)"
 	@echo "  make verify-no-context-window-cache - Verify no context window cache references (ADR-057; part of make check/check-full)"
 	@echo "  make test-coverage - Run tests with coverage (excludes mocks/generated)"
 	@echo "  make tidy       - Tidy and vendor dependencies"
@@ -70,7 +71,7 @@ help:
 build:
 	go build -ldflags="-X 'main.version=$(VERSION)'" -o tell-me-go ./cmd/tell-me-go
 
-test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-tools-toolchain-import verify-tools-infrastructure-import
+test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-tools-toolchain-import verify-tools-infrastructure-import verify-mcp-sdk-confinement
 	go test ./...
 
 # Verify ADR-021: no testutil packages (centralized test-double dump).
@@ -590,6 +591,64 @@ else
 	@echo "  ✓ No infrastructure imports in tools production files."
 endif
 
+# Verify ADR-067: the github.com/modelcontextprotocol/go-sdk import is
+# strictly confined to internal/infrastructure/mcp/ (production and test
+# files). The MCP adapter is the only package allowed to know the wire
+# protocol; every other layer consumes the tools.MCPClient domain port
+# (internal/domain/tools/mcp_client.go) with zero third-party dependencies.
+# This is the ADR-055/060 injection pattern applied to MCP.
+verify-mcp-sdk-confinement:
+ifeq ($(IS_POSIX),true)
+	@echo "Checking MCP Go SDK import confinement (ADR-067)..."
+	@VIOLATIONS="$$( grep -rn 'github.com/modelcontextprotocol/go-sdk' --include='*.go' --exclude-dir=vendor --exclude-dir=.git . \
+		| grep -v '^\./internal/infrastructure/mcp/' )"; \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ ADR-067 violation: MCP Go SDK import outside internal/infrastructure/mcp/."; \
+		echo "   The github.com/modelcontextprotocol/go-sdk import is strictly confined"; \
+		echo "   to internal/infrastructure/mcp/ (production and test files)."; \
+		echo "   No other package may import the SDK — consume tools.MCPClient instead."; \
+		echo "   See: docs/adr/2026-08-mcp-client-architecture.md"; \
+		echo ""; \
+		echo "Violating files:"; \
+		echo "$$VIOLATIONS"; \
+		echo ""; \
+		echo "Fix: move the MCP SDK adapter code into internal/infrastructure/mcp/ and"; \
+		echo "have other layers consume the tools.MCPClient domain port"; \
+		echo "(internal/domain/tools/mcp_client.go)."; \
+		exit 1; \
+	fi
+	@echo "  ✓ MCP Go SDK imports strictly confined to internal/infrastructure/mcp/ (ADR-067)."
+else
+	@echo "Checking MCP Go SDK import confinement (ADR-067)..."
+	@powershell -Command " \
+		$$ErrorActionPreference = 'Stop'; \
+		$$violations = @(); \
+		Get-ChildItem -Path . -Recurse -Filter '*.go' | Where-Object { \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/infrastructure/mcp/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch '.git/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'vendor/' \
+		} | ForEach-Object { \
+			$$matches = Select-String -Path $$_.FullName -Pattern 'github\.com/modelcontextprotocol/go-sdk' -SimpleMatch:$$false; \
+			if ($$matches) { foreach ($$m in $$matches) { $$violations += ('{0}:{1}' -f $$m.Path, $$m.LineNumber) } } \
+		}; \
+		if ($$violations.Count -gt 0) { \
+			Write-Host ''; \
+			Write-Host '❌ ADR-067 violation: MCP Go SDK import outside internal/infrastructure/mcp/.'; \
+			Write-Host '   The github.com/modelcontextprotocol/go-sdk import is strictly confined'; \
+			Write-Host '   to internal/infrastructure/mcp/ (production and test files).'; \
+			Write-Host '   See: docs/adr/2026-08-mcp-client-architecture.md'; \
+			Write-Host ''; \
+			$$violations | Sort-Object -Unique | ForEach-Object { Write-Host $$_ }; \
+			Write-Host ''; \
+			Write-Host 'Fix: move the MCP SDK adapter code into internal/infrastructure/mcp/ and'; \
+			Write-Host 'have other layers consume the tools.MCPClient domain port.'; \
+			exit 1 \
+		}; \
+		Write-Host '  ✓ MCP Go SDK imports strictly confined to internal/infrastructure/mcp/ (ADR-067).' \
+	"
+endif
+
 # Verify no time.Sleep for synchronization in test files (Issue #580 / ADR-036).
 # Legitimate I/O simulation and hardware observation sleeps are explicitly allow-listed.
 verify-no-test-sleep:
@@ -880,6 +939,8 @@ check: fmt tidy build
 	@$(MAKE) verify-tools-toolchain-import
 	@echo "=== verify-tools-infrastructure-import ==="
 	@$(MAKE) verify-tools-infrastructure-import
+	@echo "=== verify-mcp-sdk-confinement ==="
+	@$(MAKE) verify-mcp-sdk-confinement
 	@echo "=== verify-no-test-sleep ==="
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="
@@ -926,6 +987,8 @@ check-full: fmt tidy build
 	@$(MAKE) verify-tools-toolchain-import
 	@echo "=== verify-tools-infrastructure-import ==="
 	@$(MAKE) verify-tools-infrastructure-import
+	@echo "=== verify-mcp-sdk-confinement ==="
+	@$(MAKE) verify-mcp-sdk-confinement
 	@echo "=== verify-no-test-sleep ==="
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="

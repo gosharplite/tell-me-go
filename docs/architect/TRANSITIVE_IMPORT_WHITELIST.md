@@ -129,6 +129,9 @@ allowed: llm, persistence, security, tools
 ## consumer: internal/tools/integrations/atlassian
 allowed: llm, persistence, security, tools
 # P2+P3: tool deps
+## consumer: internal/tools/integrations/mcp
+allowed: llm, persistence, security, tools
+# P2+P3: tool deps (via plugin.MCPServerDependency + tools.MCPClient port)
 ## consumer: internal/tools/workspace
 allowed: events, llm, persistence, security, services, telemetry, tools
 # P1+P2: llm/telemetry
@@ -153,8 +156,8 @@ allowed: config, events, llm, persistence, pricing, security, services, skills, 
 # TD-1 (issue #1364): app construction seam (chatter/chat-service/suggestions); full hub surface
 
 ## infra-root: di
-allowed: config, exec, factory, history, llm, logging, persistence, registry, security, skills, telemetry, toolchain
-# infra-lateral composition: di composes infra adapters (config added for P1 config watcher injection — issue #1369); no application-layer imports (ADR-066)
+allowed: config, exec, factory, history, llm, logging, mcp, persistence, registry, security, skills, telemetry, toolchain
+# infra-lateral composition: di composes infra adapters (config added for P1 config watcher injection — issue #1369; mcp added for the MCP client factory — issue #1373); no application-layer imports (ADR-066)
 
 ## infra-sanctioned: llm → auth
 # llm/factory.go constructs auth (issue #1350 item 4, ADR-055 confinement)

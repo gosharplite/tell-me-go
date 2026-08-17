@@ -246,7 +246,7 @@ func TestRegister(t *testing.T) {
 	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 	r := registry.New()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
-	if err := RegisterAll(r, nil, sm, nil, ""); err != nil {
+	if err := RegisterAll(r, nil, sm, nil, "", nil); err != nil {
 		t.Fatalf("RegisterAll failed: %v", err)
 	}
 
