@@ -17,6 +17,7 @@ import (
 	// same-package in filename lexical order).
 	_ "github.com/gosharplite/tell-me-go/internal/tools/integrations/ado"
 	_ "github.com/gosharplite/tell-me-go/internal/tools/integrations/atlassian"
+	_ "github.com/gosharplite/tell-me-go/internal/tools/integrations/mcp"
 
 	"github.com/gosharplite/tell-me-go/internal/tools/integrations/plugin"
 )
@@ -27,12 +28,13 @@ import (
 // 2. Adding a blank import above (for the init() side effect)
 //
 // No other changes to this file are needed.
-func RegisterAll(r tools.Registry, fs persistence.FileSystem, sm domain_security.Manager, client llm.LLMClient, assetsDir string) error {
+func RegisterAll(r tools.Registry, fs persistence.FileSystem, sm domain_security.Manager, client llm.LLMClient, assetsDir string, mcpClients map[string]plugin.MCPServerDependency) error {
 	deps := plugin.PluginDependencies{
 		FileSystem:  fs,
 		SecurityMgr: sm,
 		LLMClient:   client,
 		AssetsDir:   assetsDir,
+		MCPClients:  mcpClients,
 	}
 
 	for _, p := range plugin.All() {

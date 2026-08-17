@@ -33,6 +33,10 @@ type TerminalController interface {
 
 type PolicyEvaluator interface {
 	IsCommandAllowed(command string) bool
+	// IsToolAllowed reports whether a tool name may be dispatched: exact
+	// allowlist membership OR membership in an allowed namespace prefix
+	// (e.g. "mcp_" for MCP-discovered tools). Fail-closed for everything else.
+	IsToolAllowed(name string) bool
 	IsBypassActive() bool
 }
 

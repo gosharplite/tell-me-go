@@ -57,8 +57,9 @@ func (m *MockSecurityProvider) IsBypassActive() bool {
 func (m *MockSecurityProvider) IsCommandAllowed(command string) bool {
 	return true
 }
-func (m *MockSecurityProvider) Prompt(message string) {}
-func (m *MockSecurityProvider) Warn(message string)   {}
+func (m *MockSecurityProvider) IsToolAllowed(name string) bool { return true }
+func (m *MockSecurityProvider) Prompt(message string)          {}
+func (m *MockSecurityProvider) Warn(message string)            {}
 func (m *MockSecurityProvider) LogAudit(action string, args ...any) {
 }
 func (m *MockSecurityProvider) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {

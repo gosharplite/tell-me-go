@@ -25,6 +25,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **System & Dev**: Shell execution (`execute_command`, `pipe_commands`), testing, linting, and vulnerability scanning (`govulncheck`).
     *   **State & History**: Task tracking, `summarize_history`, `manage_history` (pinning/unpinning turns to protect them from pruning), and **Interactive History Browser** (`tell-me-go browse`) with full-text search and O(1) archive navigation.
     *   **Media**: Imagen 3 image generation and Vision analysis.
+    *   **Model Context Protocol (MCP)**: Native consumption of remote MCP servers (GitHub Copilot, custom endpoints) over streamable HTTP with automatic credential resolution.
 *   **Safety Guardrails**: 
     *   **Context Control**: Automatic "self-healing" summarization and turn pinning to prevent overflow without losing intent.
     *   **Runaway Protection**: Hallucination loop detection (SHA-256 response hashing), tool repetition guards, and recursion limits.
@@ -308,6 +309,16 @@ MODELS:
       HIT: 0.50
       MISS: 6.25
       COMP: 25.00
+
+# --- Model Context Protocol (MCP) Servers ---
+# Server keys must match ^[a-z0-9-]{1,24}$ (1-24 lowercase letters, digits, hyphens).
+MCP_SERVERS:
+  github:
+    URL: "https://api.githubcopilot.com/mcp/readonly"
+    AUTH: "auto"                # auto (default), gh, bearer, or none
+    # TOKEN: "${GITHUB_TOKEN}"  # Optional: auto-resolved via gh auth token if omitted
+    # TIMEOUT: 300              # Seconds (default: 300)
+    # REQUIRES_CONSENT: false   # Optional override (default: false for /readonly)
 ```
 
 ## ⌨️ Shell Integration (Recommended)
@@ -476,6 +487,7 @@ Significant architectural decisions are documented in our [Architecture Decision
 *   **[ADR-060](docs/adr/2026-08-toolchain-runner-injection.md)** — inject the Go toolchain runner into the tools layer (ToolchainRunner domain port).
 *   **[ADR-061](docs/adr/2026-08-per-turn-turn-lifecycle.md)** — per-turn Turn lifecycle (constructor-is-the-reset).
 *   **[ADR-066](docs/adr/2026-08-infrastructure-application-dependency-inversion.md)** — infrastructure→application dependency inversion: six-type port relocation, `internal/app` construction seam, factory slim, and the ADR-carved `di → ui` exception (issue #1364).
+*   **[ADR-067](docs/adr/2026-08-mcp-client-architecture.md)** — MCP client architecture: remote MCP server consumption via streamable HTTP and `tools.MCPClient` domain port (issue #1373).
 
 For the evolution of the shell-based environment management tooling — from simple bash aliases through Toby, Dobby, Porter, Sprawl, Winky, Flopsy, and Niffler — see [Evolution of Environment Management](docs/architect/environments/environment-management-evolution.md).
 

@@ -83,6 +83,7 @@ type mockServiceSecurityManager struct {
 	PromptFunc           func(message string)
 	WarnFunc             func(message string)
 	IsCommandAllowedFunc func(command string) bool
+	IsToolAllowedFunc    func(name string) bool
 	IsBypassActiveFunc   func() bool
 	CloseFunc            func() error
 
@@ -96,6 +97,7 @@ type mockServiceSecurityManager struct {
 	calledPrompt           int
 	calledWarn             int
 	calledIsCommandAllowed int
+	calledIsToolAllowed    int
 	calledIsBypassActive   int
 	calledClose            int
 
@@ -108,6 +110,7 @@ type mockServiceSecurityManager struct {
 	lastPrompt          string
 	lastWarn            string
 	lastCommand         string
+	lastTool            string
 }
 
 // snapshot returns a race-safe copy of all call counts.
@@ -124,6 +127,7 @@ func (m *mockServiceSecurityManager) snapshot() map[string]int {
 		"Prompt":           m.calledPrompt,
 		"Warn":             m.calledWarn,
 		"IsCommandAllowed": m.calledIsCommandAllowed,
+		"IsToolAllowed":    m.calledIsToolAllowed,
 		"IsBypassActive":   m.calledIsBypassActive,
 		"Close":            m.calledClose,
 	}
@@ -227,6 +231,18 @@ func (m *mockServiceSecurityManager) IsCommandAllowed(command string) bool {
 	m.mu.Unlock()
 	if fn != nil {
 		return fn(command)
+	}
+	return false
+}
+
+func (m *mockServiceSecurityManager) IsToolAllowed(name string) bool {
+	m.mu.Lock()
+	m.calledIsToolAllowed++
+	m.lastTool = name
+	fn := m.IsToolAllowedFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(name)
 	}
 	return false
 }

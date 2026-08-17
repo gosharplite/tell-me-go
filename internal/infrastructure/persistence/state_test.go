@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -540,4 +541,63 @@ func TestSessionState_Close_WALCheckpointError(t *testing.T) {
 	// the WAL checkpoint failure being logged.
 
 	assert.Contains(t, buf.String(), "WAL checkpoint on close failed")
+}
+
+// TestNewSessionState_ConcurrentFirstTimeInit is a race smoke for the
+// acceptance-criterion-2 scenario (issue #1383): 8 goroutines concurrently
+// first-time-initialize session state in one fresh directory. The interleaving
+// is nondeterministic; the outcome is not — every init must succeed, the
+// tables must exist, and the migrated row count must be exactly N. This is a
+// smoke test, not a mechanism pin: it documents the convergent behavior that
+// the deterministic busy-retry tests (TestCreateTables_*, TestMigrateFromJSON_*)
+// pin at the unit level.
+func TestNewSessionState_ConcurrentFirstTimeInit(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	fs := NewOSFileSystem()
+	const n = 3
+	writeNTasks(t, ctx, fs, filepath.Join(dir, "tasks.json"), n)
+
+	const goroutines = 8
+	var (
+		wg     sync.WaitGroup
+		errsMu sync.Mutex
+		errs   []error
+	)
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			state, err := newSessionState(ctx, dir)
+			if err != nil {
+				errsMu.Lock()
+				errs = append(errs, err)
+				errsMu.Unlock()
+				return
+			}
+			// Close exercises the (now real) WAL checkpoint path too.
+			if cerr := state.Close(); cerr != nil {
+				errsMu.Lock()
+				errs = append(errs, cerr)
+				errsMu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+
+	require.Emptyf(t, errs, "all 8 concurrent inits must succeed, got %d errors: %v", len(errs), errs)
+
+	// Postcondition: tables exist and migration converged to exactly N rows.
+	db, err := sql.Open("sqlite", filepath.Join(dir, "tellmego.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	for _, table := range []string{"tasks", "settings"} {
+		var count int
+		require.NoErrorf(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table).Scan(&count),
+			"table %s must exist and be queryable", table)
+	}
+	var taskCount int
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tasks").Scan(&taskCount))
+	assert.Equal(t, n, taskCount, "migration must converge to exactly N rows")
 }

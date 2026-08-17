@@ -19,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools/analysis"
 	"github.com/gosharplite/tell-me-go/internal/tools/developer"
 	"github.com/gosharplite/tell-me-go/internal/tools/integrations"
+	"github.com/gosharplite/tell-me-go/internal/tools/integrations/plugin"
 	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
@@ -41,6 +42,7 @@ type ToolRegistrationParams struct {
 	FileSystem       persistence.FileSystem
 	WorkspacePolicy  services.WorkspacePolicy
 	HealthManager    ports.HealthCheckManager
+	MCPClients       map[string]plugin.MCPServerDependency
 }
 
 // validateRegistrationParams checks required fields in ToolRegistrationParams
@@ -93,7 +95,7 @@ func RegisterAll(params ToolRegistrationParams) error {
 	if err := developer.Register(params.Registry, params.SecurityManager, params.ToolchainRunner, params.CommandValidator, params.FileSystem, params.WorkspacePolicy, archVerify, params.EventBus); err != nil {
 		return fmt.Errorf("developer.Register: %w", err)
 	}
-	if err := integrations.RegisterAll(params.Registry, params.FileSystem, params.SecurityManager, params.Client, params.AssetsDir); err != nil {
+	if err := integrations.RegisterAll(params.Registry, params.FileSystem, params.SecurityManager, params.Client, params.AssetsDir, params.MCPClients); err != nil {
 		return fmt.Errorf("integrations.RegisterAll: %w", err)
 	}
 	return nil

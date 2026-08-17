@@ -105,6 +105,11 @@ func (sm *SecurityManager) IsCommandAllowed(command string) bool {
 	return sm.domainPolicy.IsCommandAllowed(command)
 }
 
+// IsToolAllowed checks if a tool name is allowed for dispatch (exact or allowed-prefix).
+func (sm *SecurityManager) IsToolAllowed(name string) bool {
+	return sm.domainPolicy.IsToolAllowed(name)
+}
+
 // TerminalLock locks the terminal.
 func (sm *SecurityManager) TerminalLock() {
 	sm.interaction.TerminalLock()

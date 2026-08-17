@@ -890,6 +890,7 @@ func (*noopSecurityManager) Warn(string)                                   {}
 func (*noopSecurityManager) Confirm(context.Context, string) (bool, error) { return true, nil }
 func (*noopSecurityManager) ReadLine(context.Context) (string, error)      { return "", nil }
 func (*noopSecurityManager) IsCommandAllowed(string) bool                  { return true }
+func (*noopSecurityManager) IsToolAllowed(string) bool                     { return true }
 func (*noopSecurityManager) IsBypassActive() bool                          { return false }
 
 func TestExecutionStep_PayloadValidation_GuardBranches(t *testing.T) {

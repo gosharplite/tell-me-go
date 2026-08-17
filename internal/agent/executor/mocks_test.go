@@ -5,6 +5,7 @@ package executor
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -95,6 +96,7 @@ func (m *mockEventBus) WaitStarted() {}
 type mockSecurityManager struct {
 	domain_security.Manager
 	AllowedCommands map[string]bool
+	AllowedPrefixes []string
 	AllowAll        bool
 }
 
@@ -103,6 +105,25 @@ func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
 		return true
 	}
 	return m.AllowedCommands[command]
+}
+
+func (m *mockSecurityManager) IsToolAllowed(name string) bool {
+	if m.AllowAll {
+		return true
+	}
+	if m.AllowedCommands[name] {
+		return true
+	}
+	prefixes := m.AllowedPrefixes
+	if len(prefixes) == 0 {
+		prefixes = []string{"mcp_"}
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *mockSecurityManager) Close() error { return nil }
@@ -119,6 +140,11 @@ func (m *mockConsentSecurityManager) TerminalUnlock()      {}
 func (m *mockConsentSecurityManager) Confirm(ctx context.Context, msg string) (bool, error) {
 	return m.ConfirmResult, nil
 }
+
+// IsToolAllowed is consent-focused: this mock is only used to exercise
+// consent flows (RequestBatchConsent / IdentifyConsentItems); Authorize is
+// never exercised with it, so tool authorization is always denied.
+func (m *mockConsentSecurityManager) IsToolAllowed(name string) bool { return false }
 
 func (m *mockConsentSecurityManager) Close() error { return nil }
 

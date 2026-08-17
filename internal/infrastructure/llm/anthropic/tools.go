@@ -22,6 +22,15 @@ func (c *client) toAnthropicTools(decls []*tools.ToolDeclaration) []tool {
 				"type":       "object",
 				"properties": map[string]interface{}{},
 			}
+		} else if m, ok := schema.(map[string]interface{}); ok {
+			if _, hasType := m["type"]; !hasType {
+				// Non-nil root with empty Type (untyped ANY): Anthropic's API
+				// mandates "type":"object" on the root input_schema. Force the
+				// object type while PRESERVING converted content — do not
+				// collapse to an empty object (that discards expressible
+				// properties/description/enum).
+				m["type"] = "object"
+			}
 		}
 		res = append(res, tool{
 			Name:        d.Name,
@@ -36,8 +45,9 @@ func toAnthropicSchema(s *tools.Schema) interface{} {
 	if s == nil {
 		return nil
 	}
-	res := map[string]interface{}{
-		"type": strings.ToLower(s.Type),
+	res := map[string]interface{}{}
+	if s.Type != "" {
+		res["type"] = strings.ToLower(s.Type)
 	}
 	setSchemaDescription(res, s.Description)
 	setSchemaEnum(res, s.Enum)

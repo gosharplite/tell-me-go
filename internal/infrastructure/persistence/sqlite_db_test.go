@@ -13,12 +13,15 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"modernc.org/sqlite"
 )
 
 func TestSQLiteMigrations(t *testing.T) {
@@ -238,6 +241,93 @@ func TestInitSQLiteDB_PragmaFailure(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for invalid db path, got nil")
 	}
+}
+
+// TestInitSQLiteDB_Pragmas is the regression test for the DSN pragma fix
+// (issue #1383): the _pragma= DSN parameters must be applied to every
+// connection. This test fails against the old inert DSN
+// (?_journal_mode=WAL&_busy_timeout=5000), which modernc.org/sqlite strips.
+func TestInitSQLiteDB_Pragmas(t *testing.T) {
+	t.Parallel()
+
+	db, err := initSQLiteDB(context.Background(), filepath.Join(t.TempDir(), "pragmas.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	var journalMode string
+	require.NoError(t, db.QueryRowContext(context.Background(), "PRAGMA journal_mode").Scan(&journalMode))
+	assert.Equal(t, "wal", journalMode)
+
+	var busyTimeout int
+	require.NoError(t, db.QueryRowContext(context.Background(), "PRAGMA busy_timeout").Scan(&busyTimeout))
+	assert.GreaterOrEqual(t, busyTimeout, 5000)
+}
+
+// TestIsBusyErr_RealBusy verifies the true branch of isBusyErr with a genuine
+// driver SQLITE_BUSY error — no mocks, no string fixtures. A raw driver
+// connection holds the RESERVED lock (BEGIN IMMEDIATE) while a database/sql
+// handle with busy_timeout 0 (bare-path DSN) attempts a write; the driver
+// returns a real *sqlite.Error with result code 5.
+func TestIsBusyErr_RealBusy(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "busy.db")
+
+	// Lock holder: raw driver connection (bare path, busy_timeout 0).
+	lockConn, err := sqliteDriver.Open(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = lockConn.Close() })
+
+	// BEGIN IMMEDIATE acquires the RESERVED lock immediately. (A driver.Tx
+	// from Begin() is deferred and takes no lock — ExecContext is required.)
+	_, err = lockConn.(driver.ExecerContext).ExecContext(context.Background(), "BEGIN IMMEDIATE", nil)
+	require.NoError(t, err)
+
+	// SUT connection: bare path → busy_timeout 0 → immediate SQLITE_BUSY.
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.ExecContext(context.Background(), "CREATE TABLE t (id INTEGER)")
+	require.Error(t, err)
+	assert.True(t, isBusyErr(err), "expected SQLITE_BUSY, got: %v", err)
+}
+
+// TestIsBusyErr_NonBusy verifies the false branch of isBusyErr with two
+// genuine non-busy driver errors: a READONLY (code 8) error and a plain
+// closed-DB error.
+func TestIsBusyErr_NonBusy(t *testing.T) {
+	t.Parallel()
+
+	t.Run("readonly code 8", func(t *testing.T) {
+		t.Parallel()
+		db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "ro.db"))
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = db.Close() })
+
+		_, err = db.Exec("PRAGMA query_only = 1")
+		require.NoError(t, err)
+
+		_, err = db.ExecContext(context.Background(), "CREATE TABLE t (id INTEGER)")
+		require.Error(t, err)
+		assert.False(t, isBusyErr(err))
+		// Sanity: it really is a READONLY (code 8) error, not something else.
+		var se *sqlite.Error
+		if errors.As(err, &se) {
+			assert.Equal(t, 8, se.Code())
+		}
+	})
+
+	t.Run("closed db", func(t *testing.T) {
+		t.Parallel()
+		db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "closed.db"))
+		require.NoError(t, err)
+		_ = db.Close() // closed before any query → non-busy driver error
+
+		_, err = db.ExecContext(context.Background(), "CREATE TABLE t (id INTEGER)")
+		require.Error(t, err)
+		assert.False(t, isBusyErr(err))
+	})
 }
 
 func TestCreateTables_SecondQueryFailure(t *testing.T) {
@@ -887,4 +977,419 @@ func TestMigrateTasks_RollbackWarning(t *testing.T) {
 			}
 		})
 	}
+}
+
+// =============================================================================
+// Task 3 (issue #1383): withBusyRetry — bounded, ctx-honoring, fail-fast
+// backoff for SQLITE_BUSY. Both tests are fully deterministic per ADR-036:
+// no time.Sleep, no timing assertions. Cancellation and fail-fast are proven
+// structurally (by ctx state and invocation count), never by waiting.
+// =============================================================================
+
+// TestWithBusyRetry_NonBusyFailsFast verifies that a non-busy error (READONLY,
+// code 8) fails immediately: fn is invoked exactly once and the error chain is
+// returned unchanged (code 8 detectable via errors.As).
+func TestWithBusyRetry_NonBusyFailsFast(t *testing.T) {
+	t.Parallel()
+
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "ff.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.Exec("PRAGMA query_only = 1")
+	require.NoError(t, err)
+
+	var calls atomic.Int32
+	err = withBusyRetry(context.Background(), func() error {
+		calls.Add(1)
+		_, e := db.ExecContext(context.Background(), "CREATE TABLE t (id INTEGER)")
+		return e
+	}, 3)
+
+	require.Error(t, err)
+	assert.Equal(t, int32(1), calls.Load(), "non-busy error must fail fast: fn invoked exactly once")
+	var se *sqlite.Error
+	if errors.As(err, &se) {
+		assert.Equal(t, 8, se.Code(), "error chain must be unchanged (READONLY)")
+	}
+}
+
+// TestCreateTables_BusyCancellation verifies that cancellation during backoff
+// surfaces as ctx.Err() and fn is never retried. Deterministic by ctx state:
+// the fn itself cancels the ctx on the first (busy) invocation, so
+// withBusyRetry's backoff select sees an already-closed ctx.Done().
+func TestCreateTables_BusyCancellation(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "cancel.db")
+
+	// Lock holder (bare path → busy_timeout 0 → immediate genuine busy).
+	lockConn, err := sqliteDriver.Open(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = lockConn.Close() })
+	_, err = lockConn.(driver.ExecerContext).ExecContext(context.Background(), "BEGIN IMMEDIATE", nil)
+	require.NoError(t, err)
+
+	// SUT connection: bare path, no busy_timeout.
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var calls atomic.Int32
+	err = withBusyRetry(ctx, func() error {
+		if calls.Add(1) == 1 {
+			cancel() // cancel during backoff: deterministic by ctx state
+		}
+		return createTables(ctx, db)
+	}, 3)
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, context.Canceled), "cancellation must surface as ctx.Err(), got: %v", err)
+	assert.Equal(t, int32(1), calls.Load(), "fn must not be retried after cancellation")
+}
+
+// =============================================================================
+// Task 5 (issue #1383): deterministic createTables SQLITE_BUSY retry tests
+// with a real-busy lock harness. The release→ack handshake (ROLLBACK's
+// ExecContext return is the ack) sequences the release before the next
+// attempt with no timing window — zero time.Sleep, zero timing assertions,
+// zero require.Eventually (ADR-036 determinism).
+// =============================================================================
+
+// holdBusyLock acquires a real SQLITE_BUSY lock on dbPath via a raw driver
+// connection (bare path → busy_timeout 0 → contended statements fail
+// immediately with a genuine *sqlite.Error{code:5}). The returned release
+// func executes ROLLBACK synchronously: the lock is guaranteed released when
+// release returns (ExecContext's return is the ack), so a caller can sequence
+// the release before withBusyRetry's next attempt with no timing window.
+func holdBusyLock(t *testing.T, dbPath string) (release func()) {
+	t.Helper()
+
+	conn, err := sqliteDriver.Open(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	ec, ok := conn.(driver.ExecerContext)
+	require.True(t, ok, "raw sqlite conn must implement driver.ExecerContext")
+	if _, err := ec.ExecContext(context.Background(), "BEGIN IMMEDIATE", nil); err != nil {
+		t.Fatalf("BEGIN IMMEDIATE failed: %v", err)
+	}
+
+	return func() {
+		if _, err := ec.ExecContext(context.Background(), "ROLLBACK", nil); err != nil {
+			t.Fatalf("release (ROLLBACK) failed: %v", err)
+		}
+	}
+}
+
+// TestCreateTables_RetriesOnRealBusy proves the retry behavior end-to-end at
+// the withBusyRetry + createTables level: attempt 1 hits a genuine SQLITE_BUSY
+// (real RESERVED lock held by holdBusyLock), the release→ack handshake fires
+// INSIDE the retried fn, and attempt 2 succeeds. Attempt counter == 2 proves
+// the retry fired exactly once.
+func TestCreateTables_RetriesOnRealBusy(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "retry.db")
+	release := holdBusyLock(t, dbPath)
+
+	// SUT connection: bare path → busy_timeout 0 → immediate genuine busy.
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	var attempts atomic.Int32
+	err = withBusyRetry(context.Background(), func() error {
+		n := attempts.Add(1)
+		err := createTables(context.Background(), db)
+		// Release→ack handshake INSIDE the retried fn: the lock is released
+		// (and the release acked by ExecContext's return) before the busy
+		// error is handed to withBusyRetry, so the 50 ms backoff can never
+		// race the release.
+		if n == 1 && isBusyErr(err) {
+			release()
+		}
+		return err
+	}, createTablesAttempts)
+
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), attempts.Load(), "transient busy must succeed on attempt 2")
+
+	// Tables exist.
+	var n int
+	require.NoError(t, db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM tasks").Scan(&n))
+	require.NoError(t, db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM settings").Scan(&n))
+}
+
+// TestCreateTables_PersistentBusyBounded proves the retry budget is honored
+// with a persistent (never-released) lock: exactly createTablesAttempts (2)
+// invocations, and the returned error is the last real busy error (code 5 via
+// errors.As, wrap string intact).
+func TestCreateTables_PersistentBusyBounded(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "persist.db")
+	_ = holdBusyLock(t, dbPath) // never released
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	var attempts atomic.Int32
+	err = withBusyRetry(context.Background(), func() error {
+		attempts.Add(1)
+		return createTables(context.Background(), db)
+	}, createTablesAttempts)
+
+	require.Error(t, err)
+	assert.Equal(t, int32(2), attempts.Load(), "persistent busy must exhaust exactly createTablesAttempts (2)")
+
+	var se *sqlite.Error
+	require.True(t, errors.As(err, &se), "exhaustion must return the real busy error, got: %v", err)
+	assert.Equal(t, sqliteBusyCode, se.Code())
+	assert.Contains(t, err.Error(), "executing schema query")
+}
+
+// =============================================================================
+// Task 6 (issue #1383): deterministic migrateFromJSON SQLITE_BUSY retry +
+// convergence tests. Real-busy via the T5 holdBusyLock harness (RESERVED lock
+// from BEGIN IMMEDIATE), release→ack handshake inside the retried fn —
+// zero time.Sleep, zero timing assertions (ADR-036). queryLoggingConnector
+// pins the exact query sequence for the winner-commits convergence proof.
+// =============================================================================
+
+// writeNTasks writes a valid N-task JSON file (IDs 1..N, distinct content,
+// RFC3339 created_at) via fs — the shared seeder for the migrate busy tests.
+func writeNTasks(t *testing.T, ctx context.Context, fs persistence.FileSystem, tasksPath string, n int) {
+	t.Helper()
+
+	tasksJSON := "["
+	for i := 1; i <= n; i++ {
+		if i > 1 {
+			tasksJSON += ","
+		}
+		tasksJSON += fmt.Sprintf(`{"id": %d, "content": "Migrated Task %d", "status": "pending", "created_at": "2025-01-01T00:00:00Z"}`, i, i)
+	}
+	tasksJSON += "]"
+
+	if err := fs.WriteFile(ctx, tasksPath, []byte(tasksJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// queryLoggingConnector wraps a raw sqlite connection and appends every
+// ExecContext/QueryContext SQL string to a mutex-guarded log, so tests can
+// pin the exact query sequence (ADR-036 race-safety: database/sql pool
+// goroutines append concurrently).
+type queryLoggingConnector struct {
+	dbPath string
+	log    *[]string
+	logMu  *sync.Mutex
+}
+
+func (c *queryLoggingConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	realConn, err := sqliteDriver.Open(c.dbPath)
+	if err != nil {
+		return nil, err
+	}
+	return &queryLoggingConn{conn: realConn, log: c.log, logMu: c.logMu}, nil
+}
+
+func (c *queryLoggingConnector) Driver() driver.Driver { return sqliteDriver }
+
+type queryLoggingConn struct {
+	conn  driver.Conn
+	log   *[]string
+	logMu *sync.Mutex
+}
+
+func (c *queryLoggingConn) logQuery(query string) {
+	c.logMu.Lock()
+	defer c.logMu.Unlock()
+	*c.log = append(*c.log, query)
+}
+
+func (c *queryLoggingConn) Prepare(query string) (driver.Stmt, error) { return c.conn.Prepare(query) }
+func (c *queryLoggingConn) Close() error                              { return c.conn.Close() }
+func (c *queryLoggingConn) Begin() (driver.Tx, error) {
+	return c.BeginTx(context.Background(), driver.TxOptions{})
+}
+
+func (c *queryLoggingConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	if bc, ok := c.conn.(driver.ConnBeginTx); ok {
+		return bc.BeginTx(ctx, opts)
+	}
+	return c.conn.Begin() //nolint:staticcheck // SA1019: fallback for older drivers
+}
+
+func (c *queryLoggingConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	c.logQuery(query)
+	if qc, ok := c.conn.(driver.QueryerContext); ok {
+		return qc.QueryContext(ctx, query, args)
+	}
+	return nil, driver.ErrSkip
+}
+
+func (c *queryLoggingConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	c.logQuery(query)
+	if ec, ok := c.conn.(driver.ExecerContext); ok {
+		return ec.ExecContext(ctx, query, args)
+	}
+	return nil, driver.ErrSkip
+}
+
+// TestMigrateFromJSON_RetriesOnRealBusy proves migrateFromJSON retries on a
+// genuine SQLITE_BUSY at the batch INSERT (the COUNT read passes the RESERVED
+// lock; only the write contends). Attempt 1 releases the lock inside the
+// retried fn (T5 release→ack pattern); attempt 2 migrates fully; final
+// COUNT == N proves single-transaction atomicity + INSERT OR REPLACE
+// idempotency made the retry safe.
+func TestMigrateFromJSON_RetriesOnRealBusy(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dir := t.TempDir()
+	tasksPath := filepath.Join(dir, "tasks.json")
+	dbPath := filepath.Join(dir, "test.db")
+	fs := NewOSFileSystem()
+	writeNTasks(t, ctx, fs, tasksPath, 5)
+
+	// SUT connection: bare path → busy_timeout 0 → immediate genuine busy.
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	// Create the tasks table BEFORE taking the lock: a held RESERVED lock
+	// busy-fails the CREATE TABLE (write), which would break the premise
+	// that only the batch INSERT contends.
+	require.NoError(t, createTables(ctx, db))
+
+	release := holdBusyLock(t, dbPath)
+
+	var attempts atomic.Int32
+	err = withBusyRetry(ctx, func() error {
+		n := attempts.Add(1)
+		err := migrateFromJSON(ctx, db, fs, tasksPath, slog.Default())
+		if n == 1 && isBusyErr(err) {
+			release() // release→ack inside the retried fn (T5 pattern)
+		}
+		return err
+	}, migrateAttempts)
+
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), attempts.Load(), "transient busy must succeed on attempt 2")
+
+	var count int
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tasks").Scan(&count))
+	assert.Equal(t, 5, count)
+}
+
+// TestMigrateFromJSON_PersistentBusyBounded proves the retry budget is
+// honored with a persistent (never-released) lock: exactly migrateAttempts
+// (3) invocations, and the exhaustion error is the last real busy error
+// (code 5 via errors.As) wrapped through both migrateFromJSON layers.
+func TestMigrateFromJSON_PersistentBusyBounded(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dir := t.TempDir()
+	tasksPath := filepath.Join(dir, "tasks.json")
+	dbPath := filepath.Join(dir, "test.db")
+	fs := NewOSFileSystem()
+	writeNTasks(t, ctx, fs, tasksPath, 5)
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, createTables(ctx, db))
+
+	_ = holdBusyLock(t, dbPath) // never released
+
+	var attempts atomic.Int32
+	err = withBusyRetry(ctx, func() error {
+		attempts.Add(1)
+		return migrateFromJSON(ctx, db, fs, tasksPath, slog.Default())
+	}, migrateAttempts)
+
+	require.Error(t, err)
+	assert.Equal(t, int32(3), attempts.Load(), "persistent busy must exhaust exactly migrateAttempts (3)")
+
+	var se *sqlite.Error
+	require.True(t, errors.As(err, &se), "exhaustion must return the real busy error, got: %v", err)
+	assert.Equal(t, sqliteBusyCode, se.Code())
+	assert.Contains(t, err.Error(), "migrating legacy tasks from")
+	assert.Contains(t, err.Error(), "bulk inserting legacy tasks")
+}
+
+// TestMigrateFromJSON_WinnerCommitsBetweenAttempts pins the convergence
+// behavior: B's attempt 1 hits genuine busy at the INSERT; the lock is
+// released and a third bare-path connection C migrates + commits all N rows
+// while B is between attempts (migrateFromJSON returns only after COMMIT, so
+// attempt 2 deterministically sees COUNT == N). Attempt 2 takes the
+// fast-path skip (count > 0 → nil), so the query log is exactly
+// [COUNT, INSERT(busy)] → [COUNT] with zero ExecContexts on attempt 2.
+func TestMigrateFromJSON_WinnerCommitsBetweenAttempts(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dir := t.TempDir()
+	tasksPath := filepath.Join(dir, "tasks.json")
+	dbPath := filepath.Join(dir, "test.db")
+	fs := NewOSFileSystem()
+	writeNTasks(t, ctx, fs, tasksPath, 5)
+
+	var log []string
+	var logMu sync.Mutex
+	db := sql.OpenDB(&queryLoggingConnector{dbPath: dbPath, log: &log, logMu: &logMu})
+	t.Cleanup(func() { _ = db.Close() })
+
+	// Create the tasks table on the SUT connection BEFORE taking the lock
+	// (a held RESERVED lock would busy-fail the CREATE TABLE). The two
+	// CREATE TABLE ExecContexts land in the query log, so reset the log
+	// before the migrate attempts — the pin below must see exactly
+	// [COUNT, INSERT(busy)] → [COUNT].
+	require.NoError(t, createTables(ctx, db))
+	logMu.Lock()
+	log = log[:0]
+	logMu.Unlock()
+
+	release := holdBusyLock(t, dbPath)
+
+	var attempts atomic.Int32
+	err := withBusyRetry(ctx, func() error {
+		n := attempts.Add(1)
+		err := migrateFromJSON(ctx, db, fs, tasksPath, slog.Default())
+		if n == 1 && isBusyErr(err) {
+			release()
+			// Winner: a third bare-path connection migrates and commits N rows
+			// while B is between attempts; migrateFromJSON returns only after
+			// COMMIT completes, so attempt 2 deterministically sees COUNT == N.
+			dbC, cerr := sql.Open("sqlite", dbPath)
+			require.NoError(t, cerr)
+			cerr = migrateFromJSON(ctx, dbC, fs, tasksPath, slog.Default())
+			require.NoError(t, cerr)
+			require.NoError(t, dbC.Close())
+		}
+		return err
+	}, migrateAttempts)
+
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), attempts.Load())
+
+	// Query-log pin: [COUNT, INSERT(busy)] -> [COUNT]; zero INSERTs on attempt 2.
+	// NOTE: explicit Unlock (not defer) — the convergence COUNT below
+	// re-enters the logging connector and would self-deadlock on a held logMu.
+	logMu.Lock()
+	require.Len(t, log, 3, "log = %v", log)
+	assert.Equal(t, "SELECT COUNT(*) FROM tasks", log[0])
+	assert.Contains(t, log[1], "INSERT OR REPLACE INTO tasks")
+	assert.Equal(t, "SELECT COUNT(*) FROM tasks", log[2])
+	logMu.Unlock()
+
+	// Convergence: exactly N rows, committed by the winner, observed by B's skip.
+	var count int
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tasks").Scan(&count))
+	assert.Equal(t, 5, count)
 }

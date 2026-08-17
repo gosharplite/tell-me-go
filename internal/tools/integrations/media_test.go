@@ -717,7 +717,7 @@ func TestRegisterAll_ErrorPropagation(t *testing.T) {
 	// First plugin (ado) first call fails immediately
 	t.Run("first plugin (ado) fails", func(t *testing.T) {
 		r := newFaultyRegistry(registry.New(), 0)
-		err := RegisterAll(r, fs, sm, client, t.TempDir())
+		err := RegisterAll(r, fs, sm, client, t.TempDir(), nil)
 		if err == nil {
 			t.Fatal("expected error from RegisterAll when ado registration fails")
 		}
@@ -730,7 +730,7 @@ func TestRegisterAll_ErrorPropagation(t *testing.T) {
 	t.Run("atlassian plugin fails", func(t *testing.T) {
 		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 		r := newFaultyRegistry(registry.New(), 20)
-		err := RegisterAll(r, fs, sm, client, t.TempDir())
+		err := RegisterAll(r, fs, sm, client, t.TempDir(), nil)
 		if err == nil {
 			t.Fatal("expected error from RegisterAll when atlassian registration fails")
 		}
@@ -789,7 +789,7 @@ func TestRegisterAll_ErrorWrapping(t *testing.T) {
 				t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 			}
 			r := newFaultyRegistry(registry.New(), tt.failAfter)
-			err := RegisterAll(r, fs, sm, client, tmpDir)
+			err := RegisterAll(r, fs, sm, client, tmpDir, nil)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}

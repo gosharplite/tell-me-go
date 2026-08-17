@@ -19,12 +19,14 @@ import (
 
 func setupSQLite(t *testing.T) *sql.DB {
 	t.Helper()
-	// Mirror the production initSQLiteDB DSN parameters (WAL journal mode
-	// and busy_timeout) so that tests exercise the same connection behavior.
-	// While in-memory databases are single-connection and don't benefit from
-	// WAL, this keeps the pattern consistent and prevents accidental
-	// regressions if future tests switch to file-backed databases.
-	db, err := sql.Open("sqlite", ":memory:?_journal_mode=WAL&_busy_timeout=5000")
+	// Mirror the production initSQLiteDB DSN parameters so that tests
+	// exercise the same connection behavior. Only busy_timeout is mirrored:
+	// journal_mode(WAL) is a silent no-op on in-memory databases — the
+	// journal mode is fixed at "memory"; the pragma succeeds and returns
+	// "memory". Therefore only the _pragma=busy_timeout(5000) parameter is
+	// included. If a future test moves to a file-backed database, the
+	// _pragma=journal_mode(WAL) parameter must be added back.
+	db, err := sql.Open("sqlite", ":memory:?_pragma=busy_timeout(5000)")
 	if err != nil {
 		t.Fatalf("Failed to open test database: %v", err)
 	}

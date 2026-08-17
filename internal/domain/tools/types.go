@@ -29,7 +29,16 @@ type ToolDeclaration struct {
 // Schema represents the JSON Schema for a tool's parameters.
 // It follows a subset of JSON Schema Draft 2020-12.
 type Schema struct {
-	// Type is the JSON type: "object", "string", "number", "boolean", "array".
+	// Type is the canonical JSON Schema type, written in UPPERCASE:
+	// "OBJECT", "STRING", "INTEGER", "BOOLEAN", "ARRAY", or "NUMBER".
+	// The empty string "" is the canonical "ANY" representation: the node
+	// matches any JSON value (used by the MCP converter for nested
+	// combinators/unions/"null"/absent-type nodes). Provider wire adapters
+	// must OMIT the "type" key for "" — never emit "type":"" — and may
+	// force "object" on a tool root when the provider API mandates it
+	// (Anthropic input_schema). See ADR-067 §6 (amended 2026-09, #1378).
+	// Provider adapters treat the value case-insensitively when mapping
+	// to their wire formats.
 	Type string `json:"type"`
 	// Description provides a natural-language explanation of this parameter.
 	Description string `json:"description,omitempty"`

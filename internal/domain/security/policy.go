@@ -3,9 +3,12 @@
 
 package security
 
+import "strings"
+
 // Policy defines the security rules for the agent.
 type Policy struct {
 	AllowedCommands        map[string]bool
+	AllowedCommandPrefixes []string
 	AutoApprovableCommands map[string]bool
 	ForbiddenPatterns      []string
 	RestrictedPaths        []string
@@ -183,6 +186,7 @@ func DefaultPolicy() *Policy {
 			"read_video":    true,
 			"read_document": true,
 		},
+		AllowedCommandPrefixes: []string{"mcp_"},
 		AutoApprovableCommands: map[string]bool{
 			"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,
 			"head": true, "tail": true, "wc": true, "stat": true, "date": true,
@@ -221,6 +225,21 @@ func DefaultPolicy() *Policy {
 // IsCommandAllowed checks if a command is allowed.
 func (p *Policy) IsCommandAllowed(cmd string) bool {
 	return p.AllowedCommands[cmd]
+}
+
+// IsToolAllowed reports whether a tool name may be dispatched: exact
+// allowlist membership OR membership in an allowed namespace prefix
+// (e.g. "mcp_" for MCP-discovered tools). Fail-closed for everything else.
+func (p *Policy) IsToolAllowed(name string) bool {
+	if p.AllowedCommands[name] {
+		return true
+	}
+	for _, prefix := range p.AllowedCommandPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // isAutoApprovable checks if a command is auto-approvable.

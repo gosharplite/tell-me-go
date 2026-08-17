@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -195,6 +196,7 @@ type mockConfigurableSecurityManager struct {
 	confirmCalls              int
 	readLineCalls             int
 	isCommandAllowedCalls     int
+	isToolAllowedCalls        int
 	isBypassActiveCalls       int
 }
 
@@ -278,6 +280,11 @@ func (m *mockConfigurableSecurityManager) ReadLine(ctx context.Context) (string,
 
 func (m *mockConfigurableSecurityManager) IsCommandAllowed(command string) bool {
 	m.isCommandAllowedCalls++
+	return true
+}
+
+func (m *mockConfigurableSecurityManager) IsToolAllowed(command string) bool {
+	m.isToolAllowedCalls++
 	return true
 }
 
@@ -1730,6 +1737,60 @@ func TestWireToolRegistry(t *testing.T) {
 	assert.NotNil(t, reg)
 }
 
+// captureToolchainFactory records the toolchainParams passed to
+// BuildRegistry so tests can assert the container hop wires Config.MCPServers
+// into the toolchain factory.
+type captureToolchainFactory struct {
+	params toolchainParams
+}
+
+func (f *captureToolchainFactory) BuildRegistry(p toolchainParams) (tools.Registry, error) {
+	f.params = p
+	return registry.New(), nil
+}
+
+func (f *captureToolchainFactory) BuildHealthChecker() ports.HealthChecker { return nil }
+
+func (f *captureToolchainFactory) CloseMCPClients() error { return nil }
+
+func TestWireToolRegistry_PopulatesMCPServers(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	capture := &captureToolchainFactory{}
+	b := &Bootstrapper{
+		cfg:              BootstrapperConfig{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))},
+		toolchainFactory: capture,
+	}
+
+	paths := &persistence.Paths{LogPath: filepath.Join(tempDir, "test.log"), TracePath: filepath.Join(tempDir, "test.trace.jsonl")}
+	mockSP := &testfixtures.MockSessionProvider{
+		GetSettingsFn: func() ports.KVStore {
+			return &mockKVStore{}
+		},
+	}
+
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
+	eventstest.CleanupBus(t, bus)
+
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
+		return new(mockLLMClient), nil
+	})
+
+	mcpServers := map[string]config.MCPServerConfig{
+		"github": {URL: "https://api.githubcopilot.com/mcp/"},
+	}
+	cfg := &config.Config{Model: "test-model", Mode: "assistant", MCPServers: mcpServers}
+
+	lr := b.wireToolRegistry(paths, mockSP, &mockHealthCheckManager{}, lc, bus, cfg, nil, nil, nil)
+
+	assert.NotNil(t, lr)
+	reg, err := lr.get()
+	assert.NoError(t, err)
+	assert.NotNil(t, reg)
+	assert.Equal(t, mcpServers, capture.params.MCPServers)
+}
+
 func TestLogBuildStart(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -1859,4 +1920,56 @@ func TestFinalizeSession_RecordCostError(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to record final session cost")
+}
+
+func TestBuildSessionDependencies_CleanupClosesMCPClients(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	sm := new(mockConfigurableSecurityManager)
+
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	bcfg.ClientFactory = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+		return new(mockLLMClient), nil
+	})
+
+	b := NewBootstrapper(bcfg)
+
+	// Replace the MCP client constructor so session teardown can be observed
+	// without contacting a live MCP endpoint.
+	tf := b.toolchainFactory.(*defaultToolchainFactory)
+	var constructed []*closeCountingMCPClient
+	tf.mcpFactory.newClient = func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+		c := &closeCountingMCPClient{}
+		constructed = append(constructed, c)
+		return c, nil
+	}
+
+	testCfg := &config.Config{
+		Mode:  "assistant",
+		Model: "test-model",
+		MCPServers: map[string]config.MCPServerConfig{
+			"github": {URL: "https://example.com/mcp"},
+		},
+	}
+
+	deps, _, cleanup, err := b.BuildSessionDependencies(ctx, testCfg, "config.yaml", false, nil)
+	require.NoError(t, err)
+	require.NotNil(t, cleanup)
+
+	// Registry (and therefore MCP client) construction is lazy; force it now.
+	_, err = deps.GetRegistry()
+	require.NoError(t, err)
+	require.NotEmpty(t, constructed, "expected at least one MCP client to be constructed")
+
+	// Executing the returned cleanup must close every constructed client.
+	require.NoError(t, cleanup(ctx))
+	for i, c := range constructed {
+		assert.Equal(t, 1, c.closeCalls, "client[%d] Close calls", i)
+	}
 }
