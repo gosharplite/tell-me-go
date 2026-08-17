@@ -109,8 +109,8 @@ func (mcpPlugin) Register(r tools.Registry, deps plugin.PluginDependencies) erro
 // into r under deterministic, namespaced names.
 func registerServerTools(r tools.Registry, serverName string, dep plugin.MCPServerDependency, toolsList []tools.MCPToolDefinition) error {
 	for _, t := range toolsList {
-		namespacedName := FormatToolName(serverName, t.Name)
-		paramSchema := ConvertSchema(t.InputSchema, namespacedName)
+		namespacedName := formatToolName(serverName, t.Name)
+		paramSchema := convertSchema(t.InputSchema, namespacedName)
 
 		decl := &tools.ToolDeclaration{
 			Name:            namespacedName,
@@ -135,12 +135,12 @@ func registerServerTools(r tools.Registry, serverName string, dep plugin.MCPServ
 	return nil
 }
 
-// FormatToolName builds a deterministic, namespaced tool name from an MCP
+// formatToolName builds a deterministic, namespaced tool name from an MCP
 // server name and a tool name. The result is "mcp_<server>_<tool>"; when that
 // exceeds 64 bytes, the tool name is truncated (by runes, capped at 40) and a
 // stable 8-hex-char SHA-256 prefix of the full tool name is appended to
 // preserve uniqueness.
-func FormatToolName(server, tool string) string {
+func formatToolName(server, tool string) string {
 	base := fmt.Sprintf("mcp_%s_%s", server, tool)
 	if len(base) <= 64 {
 		return base

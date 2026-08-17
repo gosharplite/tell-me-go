@@ -10,7 +10,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// ConvertSchema converts a raw MCP tool input schema (JSON Schema) into the
+// convertSchema converts a raw MCP tool input schema (JSON Schema) into the
 // canonical tools.Schema representation used by the LLM tool-calling layer.
 //
 // The conversion is intentionally lossy and conservative:
@@ -29,7 +29,7 @@ import (
 //   - Unsupported JSON Schema keywords are dropped silently.
 //
 // toolName is used only for structured logging when a root schema is degraded.
-func ConvertSchema(raw json.RawMessage, toolName string) *tools.Schema {
+func convertSchema(raw json.RawMessage, toolName string) *tools.Schema {
 	if len(raw) == 0 {
 		return nil
 	}
@@ -53,7 +53,7 @@ func ConvertSchema(raw json.RawMessage, toolName string) *tools.Schema {
 }
 
 // hasCombinators reports whether a schema map uses any construct the
-// canonical tools.Schema cannot express. When true, ConvertSchema degrades
+// canonical tools.Schema cannot express. When true, convertSchema degrades
 // the schema to nil so the LLM tool call is not rejected by schema
 // validation against an incomplete schema.
 func hasCombinators(m map[string]interface{}) bool {
