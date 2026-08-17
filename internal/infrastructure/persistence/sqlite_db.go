@@ -14,12 +14,22 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	_ "modernc.org/sqlite"
+	sqlite "modernc.org/sqlite"
 )
 
 // sqlOpenFn is a package-level variable for sql.Open, allowing tests to inject
 // failures into the database-open path without modifying the global driver registry.
 var sqlOpenFn = sql.Open
+
+// sqliteBusyCode is the SQLITE_BUSY result code (database is locked).
+const sqliteBusyCode = 5
+
+// isBusyErr reports whether err is a SQLITE_BUSY error, using typed
+// detection (errors.As + result code) rather than string matching.
+func isBusyErr(err error) bool {
+	var se *sqlite.Error
+	return errors.As(err, &se) && se.Code() == sqliteBusyCode
+}
 
 // initSQLiteDB opens the SQLite database and runs migrations.
 func initSQLiteDB(ctx context.Context, dbPath string) (*sql.DB, error) {

@@ -19,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"modernc.org/sqlite"
 )
 
 func TestSQLiteMigrations(t *testing.T) {
@@ -258,6 +259,73 @@ func TestInitSQLiteDB_Pragmas(t *testing.T) {
 	var busyTimeout int
 	require.NoError(t, db.QueryRowContext(context.Background(), "PRAGMA busy_timeout").Scan(&busyTimeout))
 	assert.GreaterOrEqual(t, busyTimeout, 5000)
+}
+
+// TestIsBusyErr_RealBusy verifies the true branch of isBusyErr with a genuine
+// driver SQLITE_BUSY error — no mocks, no string fixtures. A raw driver
+// connection holds the RESERVED lock (BEGIN IMMEDIATE) while a database/sql
+// handle with busy_timeout 0 (bare-path DSN) attempts a write; the driver
+// returns a real *sqlite.Error with result code 5.
+func TestIsBusyErr_RealBusy(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "busy.db")
+
+	// Lock holder: raw driver connection (bare path, busy_timeout 0).
+	lockConn, err := sqliteDriver.Open(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = lockConn.Close() })
+
+	// BEGIN IMMEDIATE acquires the RESERVED lock immediately. (A driver.Tx
+	// from Begin() is deferred and takes no lock — ExecContext is required.)
+	_, err = lockConn.(driver.ExecerContext).ExecContext(context.Background(), "BEGIN IMMEDIATE", nil)
+	require.NoError(t, err)
+
+	// SUT connection: bare path → busy_timeout 0 → immediate SQLITE_BUSY.
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.ExecContext(context.Background(), "CREATE TABLE t (id INTEGER)")
+	require.Error(t, err)
+	assert.True(t, isBusyErr(err), "expected SQLITE_BUSY, got: %v", err)
+}
+
+// TestIsBusyErr_NonBusy verifies the false branch of isBusyErr with two
+// genuine non-busy driver errors: a READONLY (code 8) error and a plain
+// closed-DB error.
+func TestIsBusyErr_NonBusy(t *testing.T) {
+	t.Parallel()
+
+	t.Run("readonly code 8", func(t *testing.T) {
+		t.Parallel()
+		db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "ro.db"))
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = db.Close() })
+
+		_, err = db.Exec("PRAGMA query_only = 1")
+		require.NoError(t, err)
+
+		_, err = db.ExecContext(context.Background(), "CREATE TABLE t (id INTEGER)")
+		require.Error(t, err)
+		assert.False(t, isBusyErr(err))
+		// Sanity: it really is a READONLY (code 8) error, not something else.
+		var se *sqlite.Error
+		if errors.As(err, &se) {
+			assert.Equal(t, 8, se.Code())
+		}
+	})
+
+	t.Run("closed db", func(t *testing.T) {
+		t.Parallel()
+		db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "closed.db"))
+		require.NoError(t, err)
+		_ = db.Close() // closed before any query → non-busy driver error
+
+		_, err = db.ExecContext(context.Background(), "CREATE TABLE t (id INTEGER)")
+		require.Error(t, err)
+		assert.False(t, isBusyErr(err))
+	})
 }
 
 func TestCreateTables_SecondQueryFailure(t *testing.T) {
