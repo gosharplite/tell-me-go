@@ -79,6 +79,7 @@ func (m *mockLocker) IsPathSafe(path string) (string, error)     { return path, 
 func (m *mockLocker) IsPathWritable(path string) (string, error) { return path, nil }
 func (m *mockLocker) IsBypassActive() bool                       { return false }
 func (m *mockLocker) IsCommandAllowed(command string) bool       { return true }
+func (m *mockLocker) IsToolAllowed(command string) bool          { return true }
 func (m *mockLocker) Prompt(message string)                      {}
 func (m *mockLocker) Warn(message string)                        {}
 func (m *mockLocker) ReadLine(ctx context.Context) (string, error) {

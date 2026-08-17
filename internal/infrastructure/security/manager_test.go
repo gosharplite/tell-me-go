@@ -53,6 +53,37 @@ func TestSecurityManager_IsCommandAllowed(t *testing.T) {
 	}
 }
 
+func TestSecurityManager_IsToolAllowed(t *testing.T) {
+	t.Parallel()
+	sm := NewSecurityManager(nil)
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{"mcp_github_list_issues", true},
+		{"mcp_github_run_secret_scanning", true},
+		{"read_files", true},
+		{"unknown_tool", false},
+		{"mcp", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := sm.IsToolAllowed(tt.name); got != tt.want {
+				t.Errorf("IsToolAllowed(%q) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
+	}
+
+	// Exact-gate pin: IsCommandAllowed must remain exact-match and must NOT
+	// inherit the mcp_ prefix allowance granted by IsToolAllowed.
+	if sm.IsCommandAllowed("mcp_github_list_issues") {
+		t.Error("IsCommandAllowed must remain exact-match (no prefix allowance)")
+	}
+}
+
 func assertAuthorization(t *testing.T, name string, ok bool, err error, expectedOk bool) {
 	t.Helper()
 	if (err != nil) || (ok != expectedOk) {

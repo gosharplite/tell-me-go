@@ -196,6 +196,7 @@ type mockConfigurableSecurityManager struct {
 	confirmCalls              int
 	readLineCalls             int
 	isCommandAllowedCalls     int
+	isToolAllowedCalls        int
 	isBypassActiveCalls       int
 }
 
@@ -279,6 +280,11 @@ func (m *mockConfigurableSecurityManager) ReadLine(ctx context.Context) (string,
 
 func (m *mockConfigurableSecurityManager) IsCommandAllowed(command string) bool {
 	m.isCommandAllowedCalls++
+	return true
+}
+
+func (m *mockConfigurableSecurityManager) IsToolAllowed(command string) bool {
+	m.isToolAllowedCalls++
 	return true
 }
 
