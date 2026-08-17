@@ -35,12 +35,12 @@ func TestFormatToolName_Short(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := FormatToolName(tc.server, tc.tool)
+			got := formatToolName(tc.server, tc.tool)
 			if got != tc.want {
-				t.Errorf("FormatToolName() = %q, want %q", got, tc.want)
+				t.Errorf("formatToolName() = %q, want %q", got, tc.want)
 			}
 			if len(got) > 64 {
-				t.Errorf("FormatToolName() length = %d, exceeds 64", len(got))
+				t.Errorf("formatToolName() length = %d, exceeds 64", len(got))
 			}
 		})
 	}
@@ -50,23 +50,23 @@ func TestFormatToolName_Long(t *testing.T) {
 	t.Parallel()
 
 	longTool := repeat("a", 100)
-	got := FormatToolName("github", longTool)
+	got := formatToolName("github", longTool)
 
 	if len(got) > 64 {
-		t.Errorf("FormatToolName() length = %d, exceeds 64: %q", len(got), got)
+		t.Errorf("formatToolName() length = %d, exceeds 64: %q", len(got), got)
 	}
 	if len(got) < len("mcp_github__")+8 {
-		t.Errorf("FormatToolName() = %q, missing hash suffix", got)
+		t.Errorf("formatToolName() = %q, missing hash suffix", got)
 	}
 
 	// Deterministic: same inputs produce the same name.
-	if again := FormatToolName("github", longTool); again != got {
-		t.Errorf("FormatToolName() not deterministic: %q vs %q", got, again)
+	if again := formatToolName("github", longTool); again != got {
+		t.Errorf("formatToolName() not deterministic: %q vs %q", got, again)
 	}
 
 	// Distinct tools produce distinct names (hash disambiguation).
 	other := repeat("b", 100)
-	if FormatToolName("github", other) == got {
+	if formatToolName("github", other) == got {
 		t.Errorf("distinct long tools collided")
 	}
 }
@@ -76,17 +76,17 @@ func TestFormatToolName_PrefixCap(t *testing.T) {
 
 	// A very short server name leaves a budget > 40, which must be capped at 40.
 	longTool := repeat("x", 200)
-	got := FormatToolName("a", longTool)
+	got := formatToolName("a", longTool)
 
 	// "mcp_a_" (6) + prefix(40) + "_" (1) + hash8 (8) = 55.
 	if len(got) != 55 {
-		t.Errorf("FormatToolName() length = %d, want 55: %q", len(got), got)
+		t.Errorf("formatToolName() length = %d, want 55: %q", len(got), got)
 	}
 	if got[:6] != "mcp_a_" {
-		t.Errorf("FormatToolName() prefix = %q, want %q", got[:6], "mcp_a_")
+		t.Errorf("formatToolName() prefix = %q, want %q", got[:6], "mcp_a_")
 	}
 	if got[6:46] != repeat("x", 40) {
-		t.Errorf("FormatToolName() tool prefix length = %d, want 40 runes", len(got[6:46]))
+		t.Errorf("formatToolName() tool prefix length = %d, want 40 runes", len(got[6:46]))
 	}
 }
 
@@ -96,9 +96,9 @@ func TestFormatToolName_LongServerClamped(t *testing.T) {
 	// A very long server name can exhaust the entire budget; the helper must
 	// not panic and must not slice out of range.
 	longServer := repeat("s", 100)
-	got := FormatToolName(longServer, "tool")
+	got := formatToolName(longServer, "tool")
 	if len(got) <= 0 {
-		t.Error("FormatToolName() returned empty string")
+		t.Error("formatToolName() returned empty string")
 	}
 	_ = got
 }

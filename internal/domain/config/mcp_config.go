@@ -13,13 +13,13 @@ import (
 // mcpServerKeyRegex enforces the valid server key format: 1 to 24 lowercase
 // alphanumeric characters and hyphens. The 24-character upper bound is a
 // hard guarantee that every generated tool name stays within 64 bytes (see
-// FormatToolName): the fixed segments "mcp_" (4) + server (≤24) + "_" (1) +
+// formatToolName): the fixed segments "mcp_" (4) + server (≤24) + "_" (1) +
 // hash8 (8) leave a tool-prefix budget that shrinks as the server name grows,
 // so the total never exceeds 64 bytes.
 var mcpServerKeyRegex = regexp.MustCompile(`^[a-z0-9-]{1,24}$`)
 
-// DefaultMCPTimeoutSeconds is the default timeout for MCP tool calls (5 minutes).
-const DefaultMCPTimeoutSeconds = 300
+// defaultMCPTimeoutSeconds is the default timeout for MCP tool calls (5 minutes).
+const defaultMCPTimeoutSeconds = 300
 
 // MCP auth mode constants. The effective auth mode of a server determines how
 // its bearer token is resolved at client-construction time.
@@ -39,9 +39,9 @@ type MCPServerConfig struct {
 	Timeout         int    `yaml:"TIMEOUT"` // Seconds (0 = default 300s)
 }
 
-// IsReadOnly reports whether the server URL targets a read-only endpoint.
+// isReadOnly reports whether the server URL targets a read-only endpoint.
 // A URL whose path ends with a "/readonly" segment is considered read-only.
-func (c *MCPServerConfig) IsReadOnly() bool {
+func (c *MCPServerConfig) isReadOnly() bool {
 	return strings.HasSuffix(strings.TrimRight(c.URL, "/"), "/readonly")
 }
 
@@ -53,14 +53,14 @@ func (c *MCPServerConfig) EffectiveRequiresConsent() bool {
 	if c.RequiresConsent != nil {
 		return *c.RequiresConsent
 	}
-	return !c.IsReadOnly()
+	return !c.isReadOnly()
 }
 
 // EffectiveSerial reports whether tool calls against this server must execute
 // serially. "/readonly" endpoints may execute concurrently (false); mutating
 // endpoints execute serially (true).
 func (c *MCPServerConfig) EffectiveSerial() bool {
-	return !c.IsReadOnly()
+	return !c.isReadOnly()
 }
 
 // EffectiveAuth returns the effective auth mode for this server, normalizing
@@ -74,12 +74,12 @@ func (c *MCPServerConfig) EffectiveAuth() string {
 }
 
 // EffectiveTimeout resolves the per-operation timeout for this server. A
-// positive Timeout wins; zero falls back to DefaultMCPTimeoutSeconds.
+// positive Timeout wins; zero falls back to defaultMCPTimeoutSeconds.
 func (c *MCPServerConfig) EffectiveTimeout() time.Duration {
 	if c.Timeout > 0 {
 		return time.Duration(c.Timeout) * time.Second
 	}
-	return DefaultMCPTimeoutSeconds * time.Second
+	return defaultMCPTimeoutSeconds * time.Second
 }
 
 // validate reports hard configuration errors for a single MCP server.

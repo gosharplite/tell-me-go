@@ -29,8 +29,8 @@ func TestConvertSchema_NilOrEmpty(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := ConvertSchema(tc.raw, "test_tool"); got != nil {
-				t.Errorf("ConvertSchema() = %+v, want nil", got)
+			if got := convertSchema(tc.raw, "test_tool"); got != nil {
+				t.Errorf("convertSchema() = %+v, want nil", got)
 			}
 		})
 	}
@@ -53,8 +53,8 @@ func TestConvertSchema_CombinatorDegradation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := ConvertSchema(tc.raw, "test_tool"); got != nil {
-				t.Errorf("ConvertSchema() = %+v, want nil for combinator schema", got)
+			if got := convertSchema(tc.raw, "test_tool"); got != nil {
+				t.Errorf("convertSchema() = %+v, want nil for combinator schema", got)
 			}
 		})
 	}
@@ -79,9 +79,9 @@ func TestConvertSchema_TypeNormalization(t *testing.T) {
 		t.Run(tc.want, func(t *testing.T) {
 			t.Parallel()
 			raw := json.RawMessage(`{"type":` + tc.rawType + `}`)
-			got := ConvertSchema(raw, "test_tool")
+			got := convertSchema(raw, "test_tool")
 			if got == nil {
-				t.Fatal("ConvertSchema() returned nil")
+				t.Fatal("convertSchema() returned nil")
 			}
 			if got.Type != tc.want {
 				t.Errorf("Type = %q, want %q", got.Type, tc.want)
@@ -107,9 +107,9 @@ func TestConvertSchema_FullObject(t *testing.T) {
 		"default": {"name": "x"}
 	}`)
 
-	got := ConvertSchema(raw, "test_tool")
+	got := convertSchema(raw, "test_tool")
 	if got == nil {
-		t.Fatal("ConvertSchema() returned nil")
+		t.Fatal("convertSchema() returned nil")
 	}
 
 	assertFullObjectRoot(t, got)
@@ -185,9 +185,9 @@ func TestConvertSchema_RequiredAndEnumStringSlices(t *testing.T) {
 	// pre-decoded []string. The former is the production path; the latter is
 	// exercised through direct map construction.
 	raw := json.RawMessage(`{"type":"object","required":["a","b"],"enum":["x","y"]}`)
-	got := ConvertSchema(raw, "test_tool")
+	got := convertSchema(raw, "test_tool")
 	if got == nil {
-		t.Fatal("ConvertSchema() returned nil")
+		t.Fatal("convertSchema() returned nil")
 	}
 	if len(got.Required) != 2 || got.Required[0] != "a" || got.Required[1] != "b" {
 		t.Errorf("Required = %v, want [a b]", got.Required)
@@ -201,9 +201,9 @@ func TestConvertSchema_DropsNonStringEnumEntries(t *testing.T) {
 	t.Parallel()
 
 	raw := json.RawMessage(`{"type":"string","enum":["x",1,true]}`)
-	got := ConvertSchema(raw, "test_tool")
+	got := convertSchema(raw, "test_tool")
 	if got == nil {
-		t.Fatal("ConvertSchema() returned nil")
+		t.Fatal("convertSchema() returned nil")
 	}
 	if len(got.Enum) != 1 || got.Enum[0] != "x" {
 		t.Errorf("Enum = %v, want [x]", got.Enum)
@@ -220,9 +220,9 @@ func TestConvertSchema_UnsupportedType_BecomesUntypedAny(t *testing.T) {
 	t.Parallel()
 
 	raw := json.RawMessage(`{"type":"null"}`)
-	got := ConvertSchema(raw, "test_tool")
+	got := convertSchema(raw, "test_tool")
 	if got == nil {
-		t.Fatal("ConvertSchema() returned nil")
+		t.Fatal("convertSchema() returned nil")
 	}
 	if got.Type != "" {
 		t.Errorf("Type = %q, want empty", got.Type)
@@ -306,9 +306,9 @@ func TestConvertSchema_NestedUnrepresentable_BecomesUntypedAny(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := ConvertSchema(tc.raw, "test_tool")
+			got := convertSchema(tc.raw, "test_tool")
 			if got == nil {
-				t.Fatal("ConvertSchema() returned nil")
+				t.Fatal("convertSchema() returned nil")
 			}
 			if got.Type != "OBJECT" {
 				t.Errorf("root Type = %q, want OBJECT", got.Type)

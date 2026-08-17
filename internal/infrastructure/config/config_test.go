@@ -723,6 +723,30 @@ func TestLoad_IntegerOverflowIsDetected(t *testing.T) {
 	}
 }
 
+// TestLoad_IntOverflowHook_HappyPath covers the final return in
+// intOverflowHook (config.go:212): an integral, in-range float64 YAML
+// value flowing into an int field passes the hook's guards and decodes
+// successfully. The error paths are covered by
+// TestLoad_IntegerOverflowIsDetected.
+func TestLoad_IntOverflowHook_HappyPath(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "") // neutralize ambient env pollution
+
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.yaml")
+	content := "MAX_TURNS: 5.0\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := load(path)
+	if err != nil {
+		t.Fatalf("load() unexpected error: %v", err)
+	}
+	if cfg.MaxToolTurns != 5 {
+		t.Fatalf("MaxToolTurns = %d, want 5", cfg.MaxToolTurns)
+	}
+}
+
 // TestLoad_ValidateBoundsError verifies that load() propagates ValidateBounds
 // errors for values that pass intOverflowHook (e.g., negative integers within
 // float64 range) but fail domain-level bounds checks. This covers the error
@@ -755,6 +779,54 @@ func TestLoad_ValidateBoundsError(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tt.errFrag) {
 				t.Errorf("expected error containing %q, got %q", tt.errFrag, err.Error())
+			}
+		})
+	}
+}
+
+// TestLoad_ValidateMCPServersError verifies that load() propagates
+// ValidateMCPServers errors (config.go:89-91) for invalid MCP_SERVERS
+// entries: a server key that violates ^[a-z0-9-]{1,24}$ (uppercase and
+// underscore), and a valid key whose server fails
+// (*MCPServerConfig).validate (empty URL).
+func TestLoad_ValidateMCPServersError(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "") // neutralize ambient env pollution
+
+	tests := []struct {
+		name        string
+		fileContent string
+		wantErrSub  string
+	}{
+		{
+			name: "InvalidKeyFormat",
+			fileContent: "MCP_SERVERS:\n" +
+				"  \"Bad_Key\":\n" + // uppercase + underscore violates ^[a-z0-9-]{1,24}$
+				"    URL: \"https://example.com/mcp\"\n",
+			wantErrSub: "MCP_SERVERS key",
+		},
+		{
+			name: "ValidKeyEmptyURL",
+			fileContent: "MCP_SERVERS:\n" +
+				"  \"good-key\":\n" + // valid key; empty URL fails (*MCPServerConfig).validate
+				"    URL: \"\"\n",
+			wantErrSub: "URL must not be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			path := filepath.Join(tmpDir, "test.yaml")
+			if err := os.WriteFile(path, []byte(tt.fileContent), 0644); err != nil {
+				t.Fatalf("failed to write test config: %v", err)
+			}
+
+			_, err := load(path)
+			if err == nil {
+				t.Fatalf("load() expected error containing %q, got nil", tt.wantErrSub)
+			}
+			if !strings.Contains(err.Error(), tt.wantErrSub) {
+				t.Fatalf("load() error = %q, want substring %q", err.Error(), tt.wantErrSub)
 			}
 		})
 	}

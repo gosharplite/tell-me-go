@@ -91,7 +91,7 @@ func TestNewClient(t *testing.T) {
 
 	t.Run("default timeout and option", func(t *testing.T) {
 		custom := &http.Client{}
-		c, err := NewClient("http://example.com/mcp", "tok", 0, WithHTTPClient(custom))
+		c, err := NewClient("http://example.com/mcp", "tok", 0, withHTTPClient(custom))
 		if err != nil {
 			t.Fatalf("NewClient() error = %v", err)
 		}
@@ -607,7 +607,7 @@ func TestCloseConnectedNoGoroutineLeak(t *testing.T) {
 	// Disable keep-alives so no idle http.Transport connections survive past
 	// server shutdown, keeping the leak check deterministic.
 	c, err := NewClient(ts.URL, "", 5*time.Second,
-		WithHTTPClient(&http.Client{Transport: &http.Transport{DisableKeepAlives: true}}),
+		withHTTPClient(&http.Client{Transport: &http.Transport{DisableKeepAlives: true}}),
 	)
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)

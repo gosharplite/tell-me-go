@@ -465,3 +465,27 @@ func TestMCPFactory_AuthAuto_ExplicitTokenWins(t *testing.T) {
 		t.Errorf("client token = %q, want %q", got, "explicit-token")
 	}
 }
+
+// TestIsGitHubHostname covers the url.Parse error / empty-hostname branch
+// at mcp_factory.go:195-197 plus the github-host match behavior.
+func TestIsGitHubHostname(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{"invalid URL", "://bad", false},
+		{"empty string", "", false},
+		{"no hostname", "https://", false},
+		{"github host", "https://github.com", true},
+		{"github enterprise host", "https://api.github.example.com", true},
+		{"non-github host", "https://example.com", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isGitHubHostname(tt.raw); got != tt.want {
+				t.Errorf("isGitHubHostname(%q) = %v, want %v", tt.raw, got, tt.want)
+			}
+		})
+	}
+}

@@ -100,7 +100,7 @@ func TestMCPServerConfig_ConsentAndSerial(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tt.wantReadOnly, tt.cfg.IsReadOnly())
+			assert.Equal(t, tt.wantReadOnly, tt.cfg.isReadOnly())
 			assert.Equal(t, tt.wantConsent, tt.cfg.EffectiveRequiresConsent())
 			assert.Equal(t, tt.wantSerial, tt.cfg.EffectiveSerial())
 		})
@@ -108,7 +108,7 @@ func TestMCPServerConfig_ConsentAndSerial(t *testing.T) {
 }
 
 // TestMCPServerConfig_EffectiveTimeout pins timeout defaulting: zero falls
-// back to DefaultMCPTimeoutSeconds (300s); a positive value is honored.
+// back to defaultMCPTimeoutSeconds (300s); a positive value is honored.
 func TestMCPServerConfig_EffectiveTimeout(t *testing.T) {
 	t.Parallel()
 
@@ -225,7 +225,7 @@ MCP_SERVERS:
 	assert.Equal(t, "ghs_secret", gh.Token)
 	assert.Equal(t, 120, gh.Timeout)
 	assert.Nil(t, gh.RequiresConsent, "unset REQUIRES_CONSENT must stay nil")
-	assert.True(t, gh.IsReadOnly())
+	assert.True(t, gh.isReadOnly())
 	assert.False(t, gh.EffectiveRequiresConsent())
 	assert.False(t, gh.EffectiveSerial())
 

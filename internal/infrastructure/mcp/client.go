@@ -44,13 +44,13 @@ type Client struct {
 // Compile-time assertion that Client satisfies the domain port.
 var _ tools.MCPClient = (*Client)(nil)
 
-// Option configures a Client.
-type Option func(*Client)
+// option configures a Client.
+type option func(*Client)
 
-// WithHTTPClient overrides the *http.Client used by the underlying transport.
+// withHTTPClient overrides the *http.Client used by the underlying transport.
 // It is useful for injecting a custom transport (for example, deterministic
 // testing with httptest.Server or a keep-alive-free client).
-func WithHTTPClient(c *http.Client) Option {
+func withHTTPClient(c *http.Client) option {
 	return func(cl *Client) {
 		cl.httpClient = c
 	}
@@ -60,7 +60,7 @@ func WithHTTPClient(c *http.Client) Option {
 //
 // When token is non-empty, requests carry an "Authorization: Bearer <token>"
 // header. When timeout is <= 0, it defaults to defaultTimeout.
-func NewClient(endpoint, token string, timeout time.Duration, opts ...Option) (*Client, error) {
+func NewClient(endpoint, token string, timeout time.Duration, opts ...option) (*Client, error) {
 	if strings.TrimSpace(endpoint) == "" {
 		return nil, errors.New("mcp: endpoint must not be empty")
 	}
