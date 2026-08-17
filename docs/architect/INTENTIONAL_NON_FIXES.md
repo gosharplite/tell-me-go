@@ -333,7 +333,7 @@ catalog a new gap no one reviewed. Policy:
   interface constraint. They contain no branches and no business logic.
   Testing them would test Go struct field access. Same acceptance class as
   the interface-satisfying stubs in `agenttest/helpers.go`.
-- **See**: `internal/domain/ports/repository.go:112,116`
+- **See**: `internal/domain/ports/repository.go:108,112,116`
 
 ### agent/orchestrator/engine_phases.go — default case in RecoveryStep switch
 
@@ -674,7 +674,7 @@ catalog a new gap no one reviewed. Policy:
   no value. Same acceptance class as `AppendTask`, `domainFS.Chmod`,
   `mockFileSystem.Chmod`, `plainOSFS.Chmod`, and `HasBareNewline` — all
   delegation wrappers already documented in this file.
-- **See**: `internal/agent/service.go:221-223`
+- **See**: `internal/agent/service.go:189-191`
 
 ### persistence/state.go — NewSessionStateFromEnv thin entry point at 0%
 
@@ -845,7 +845,7 @@ catalog a new gap no one reviewed. Policy:
   are empty because the hook only needs `OnPhaseTransition`. The empty methods
   exist solely to satisfy the interface contract. Same acceptance class as
   the `agenttest/helpers.go` interface-satisfying stubs.
-- **See**: `internal/agent/agent.go:382-383`
+- **See**: `internal/agent/agent.go:383-384`
 
 ### agent/session/internal_tools.go — prodHeartbeatHooks.onTick() no-op at 0%
 

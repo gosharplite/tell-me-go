@@ -135,6 +135,9 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"provider_health.go getPingEndpoint panic", "internal/infrastructure/llm/provider_health.go", 238, 238},
 		{"types.go NewID", "internal/domain/llm/types.go", 234, 236},
 		{"repository.go Task accessors", "internal/domain/ports/repository.go", 112, 116},
+		{"service.go EditLastTurn body", "internal/agent/service.go", 189, 191},
+		{"repository.go GetID accessor", "internal/domain/ports/repository.go", 108, 108},
+		{"agent.go configRefreshHook no-op stubs", "internal/agent/agent.go", 383, 384},
 	}
 
 	for _, tt := range tests {
@@ -243,4 +246,44 @@ func TestDetailedCoverageReport_ContextPackageCataloged(t *testing.T) {
 	// ... and the High/Medium buckets are empty.
 	require.Contains(t, report, "- High Priority (Architectural): 0")
 	require.Contains(t, report, "- Medium Priority (Technical Debt): 0")
+}
+
+// TestDetailedCoverageReport_AgentPackageCataloged is the end-to-end
+// regression for the re-anchored EditLastTurn pin: the formerly-HIGH
+// service.go:189-191 gap must appear under [CATALOGED GAPS (ACCEPTED)]
+// with the delegation-wrapper title, and never under [HIGH PRIORITY GAPS].
+func TestDetailedCoverageReport_AgentPackageCataloged(t *testing.T) {
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	// The report path shells out to the real `go` binary; run it from the
+	// module root so the coverage profile records repo-relative paths (catalog
+	// refs are repo-relative). Restore on cleanup (all arch-tagged tests are
+	// sequential, so the chdir cannot race a parallel test).
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoRoot))
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	// Mirror production wiring (manager.go newAnalysisManager).
+	executor := &exec.RealExecutor{}
+	m := &healthManager{
+		SP:          &mockSecurityProvider{},
+		Exec:        executor,
+		Runner:      toolchain.NewGoRunner(executor),
+		clk:         clock.RealClock{},
+		catalogPath: defaultNonFixCatalogPath,
+	}
+
+	report, err := m.getDetailedCoverageReport(context.Background(), "./internal/agent", nil, nil)
+	require.NoError(t, err)
+
+	// The re-anchored EditLastTurn gap must be cataloged, not actionable: it
+	// must never surface in the High bucket ...
+	require.NotContains(t, report, "[HIGH PRIORITY GAPS]")
+	// ... and must be reported as an ACCEPTED cataloged gap with its
+	// delegation-wrapper title.
+	require.Contains(t, report, "[CATALOGED GAPS (ACCEPTED)]")
+	require.Contains(t, report, "service.go (Lines 189-191)")
+	require.Contains(t, report, "EditLastTurn")
 }
