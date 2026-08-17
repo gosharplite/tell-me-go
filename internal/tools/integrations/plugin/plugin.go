@@ -35,6 +35,14 @@ type Plugin interface {
 	Register(r tools.Registry, deps PluginDependencies) error
 }
 
+// MCPServerDependency encapsulates a configured MCP client adapter and its
+// execution policy (consent and serialization).
+type MCPServerDependency struct {
+	Client          tools.MCPClient
+	RequiresConsent bool
+	Serial          bool
+}
+
 // PluginDependencies provides the injectable dependencies needed by
 // plugin implementations during registration.
 //
@@ -64,6 +72,11 @@ type PluginDependencies struct {
 	// AssetsDir is the path to the assets directory for serving
 	// static resources (e.g., media tool assets).
 	AssetsDir string
+
+	// MCPClients maps MCP server names to their configured client
+	// adapters and execution policies. Plugins exposing MCP-backed tools
+	// use these to register dynamic tool handlers.
+	MCPClients map[string]MCPServerDependency
 }
 
 var (

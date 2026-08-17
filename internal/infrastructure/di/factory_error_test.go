@@ -452,7 +452,7 @@ func TestBuildRegistry_FailurePaths(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sm := new(mockConfigurableSecurityManager)
 
-			factory := newToolchainFactory(tempDir, nil, sm, nil, nil, nil).(*defaultToolchainFactory)
+			factory := newToolchainFactory(tempDir, nil, sm, nil, nil, nil, nil).(*defaultToolchainFactory)
 			if tt.setup != nil {
 				tt.setup(factory, sm)
 			}

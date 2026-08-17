@@ -7,6 +7,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -24,7 +25,7 @@ func TestBuildRegistry_PopulatesToolchainRunner(t *testing.T) {
 	sm := new(mockConfigurableSecurityManager)
 	sm.RegisterPolicyToolsFunc = func(r tools.Registry, kv ports.KVStore) error { return nil }
 
-	factory := newToolchainFactory(t.TempDir(), nil, sm, nil, nil, nil).(*defaultToolchainFactory)
+	factory := newToolchainFactory(t.TempDir(), nil, sm, nil, nil, nil, nil).(*defaultToolchainFactory)
 
 	var captured infra_tools.ToolRegistrationParams
 	factory.RegisterAllTools = func(params infra_tools.ToolRegistrationParams) error {
@@ -65,4 +66,52 @@ func TestBuildRegistry_PopulatesToolchainRunner(t *testing.T) {
 		}()
 		_ = captured.ToolchainRunner.CheckGovulncheck(context.Background())
 	}()
+}
+
+// TestBuildRegistry_PopulatesMCPClients verifies the toolchain-factory hop:
+// toolchainParams.MCPServers is resolved by the MCP factory and attached to
+// ToolRegistrationParams.MCPClients (issue #1373).
+func TestBuildRegistry_PopulatesMCPClients(t *testing.T) {
+	sm := new(mockConfigurableSecurityManager)
+	sm.RegisterPolicyToolsFunc = func(r tools.Registry, kv ports.KVStore) error { return nil }
+
+	factory := newToolchainFactory(t.TempDir(), nil, sm, nil, nil, nil, nil).(*defaultToolchainFactory)
+
+	var captured infra_tools.ToolRegistrationParams
+	factory.RegisterAllTools = func(params infra_tools.ToolRegistrationParams) error {
+		captured = params
+		return nil
+	}
+	factory.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile, model, mode string, pricingOverrides map[string]pricing.ModelPricing) error {
+		return nil
+	}
+
+	mockSP := &testfixtures.MockSessionProvider{
+		GetSettingsFn: func() ports.KVStore { return &mockKVStore{} },
+	}
+	params := toolchainParams{
+		Paths:           &persistence.Paths{},
+		SessionProvider: mockSP,
+		MCPServers: map[string]config.MCPServerConfig{
+			"readonly": {URL: "https://example.com/mcp/readonly"},
+		},
+	}
+
+	if _, err := factory.BuildRegistry(params); err != nil {
+		t.Fatalf("BuildRegistry failed: %v", err)
+	}
+
+	dep, ok := captured.MCPClients["readonly"]
+	if !ok {
+		t.Fatal("MCPClients did not contain 'readonly'")
+	}
+	if dep.Client == nil {
+		t.Error("MCP client was not constructed")
+	}
+	if dep.RequiresConsent {
+		t.Error("readonly endpoint should not require consent")
+	}
+	if dep.Serial {
+		t.Error("readonly endpoint should not be serial")
+	}
 }

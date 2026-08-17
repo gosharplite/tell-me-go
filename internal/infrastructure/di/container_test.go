@@ -1730,6 +1730,58 @@ func TestWireToolRegistry(t *testing.T) {
 	assert.NotNil(t, reg)
 }
 
+// captureToolchainFactory records the toolchainParams passed to
+// BuildRegistry so tests can assert the container hop wires Config.MCPServers
+// into the toolchain factory.
+type captureToolchainFactory struct {
+	params toolchainParams
+}
+
+func (f *captureToolchainFactory) BuildRegistry(p toolchainParams) (tools.Registry, error) {
+	f.params = p
+	return registry.New(), nil
+}
+
+func (f *captureToolchainFactory) BuildHealthChecker() ports.HealthChecker { return nil }
+
+func TestWireToolRegistry_PopulatesMCPServers(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	capture := &captureToolchainFactory{}
+	b := &Bootstrapper{
+		cfg:              BootstrapperConfig{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))},
+		toolchainFactory: capture,
+	}
+
+	paths := &persistence.Paths{LogPath: filepath.Join(tempDir, "test.log"), TracePath: filepath.Join(tempDir, "test.trace.jsonl")}
+	mockSP := &testfixtures.MockSessionProvider{
+		GetSettingsFn: func() ports.KVStore {
+			return &mockKVStore{}
+		},
+	}
+
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
+	eventstest.CleanupBus(t, bus)
+
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
+		return new(mockLLMClient), nil
+	})
+
+	mcpServers := map[string]config.MCPServerConfig{
+		"github": {URL: "https://api.githubcopilot.com/mcp/"},
+	}
+	cfg := &config.Config{Model: "test-model", Mode: "assistant", MCPServers: mcpServers}
+
+	lr := b.wireToolRegistry(paths, mockSP, &mockHealthCheckManager{}, lc, bus, cfg, nil, nil, nil)
+
+	assert.NotNil(t, lr)
+	reg, err := lr.get()
+	assert.NoError(t, err)
+	assert.NotNil(t, reg)
+	assert.Equal(t, mcpServers, capture.params.MCPServers)
+}
+
 func TestLogBuildStart(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))

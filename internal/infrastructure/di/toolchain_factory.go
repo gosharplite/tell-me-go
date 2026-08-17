@@ -3,11 +3,13 @@ package di
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -42,6 +44,7 @@ type toolchainParams struct {
 	PricingOverrides map[string]pricing.ModelPricing
 	Capturer         ports.CapturerInteractor
 	SkillRepo        domain_skills.SkillRepository
+	MCPServers       map[string]config.MCPServerConfig
 }
 
 type defaultToolchainFactory struct {
@@ -49,16 +52,18 @@ type defaultToolchainFactory struct {
 	FileSystem       infra_persistence.FileSystem
 	SM               ConfigurableSecurityManager
 	WorkspacePolicy  services.WorkspacePolicy
+	Logger           *slog.Logger
 	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
 	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error
 }
 
-func newToolchainFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, wp services.WorkspacePolicy, registerAll func(params infra_tools.ToolRegistrationParams) error, registerMetrics func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error) toolchainFactory {
+func newToolchainFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, wp services.WorkspacePolicy, logger *slog.Logger, registerAll func(params infra_tools.ToolRegistrationParams) error, registerMetrics func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error) toolchainFactory {
 	return &defaultToolchainFactory{
 		HomeDir:          homeDir,
 		FileSystem:       fs,
 		SM:               sm,
 		WorkspacePolicy:  wp,
+		Logger:           logger,
 		RegisterAllTools: registerAll,
 		RegisterMetrics:  registerMetrics,
 	}
@@ -66,6 +71,8 @@ func newToolchainFactory(homeDir string, fs infra_persistence.FileSystem, sm Con
 
 func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.Registry, error) {
 	reg := registry.New()
+
+	mcpClients := newMCPFactory(f.Logger).Build(params.MCPServers)
 
 	regParams := infra_tools.ToolRegistrationParams{
 		Registry:         reg,
@@ -84,6 +91,7 @@ func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.R
 		FileSystem:       infra_persistence.NewDomainFS(f.FileSystem),
 		HealthManager:    params.HealthManager,
 		WorkspacePolicy:  f.WorkspacePolicy,
+		MCPClients:       mcpClients,
 	}
 
 	// Single production construction of the runner (issue #1325, ADR-060):

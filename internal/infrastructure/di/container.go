@@ -62,7 +62,7 @@ func NewBootstrapper(cfg BootstrapperConfig) *Bootstrapper {
 		cfg.RotateSession, cfg.NewSessionState,
 	)
 	b.toolchainFactory = newToolchainFactory(
-		cfg.HomeDir, cfg.FileSystem, cfg.SM, b.cfg.WorkspacePolicy,
+		cfg.HomeDir, cfg.FileSystem, cfg.SM, b.cfg.WorkspacePolicy, cfg.Logger,
 		cfg.RegisterAllTools, cfg.RegisterMetrics,
 	)
 	b.telemetryFactory = newTelemetryFactory(cfg.HomeDir, cfg.FileSystem, cfg.SM, cfg.Logger)
@@ -199,6 +199,7 @@ func (b *Bootstrapper) wireToolRegistry(paths *persistence.Paths, sessionProvide
 			PricingOverrides: pricingOverrides,
 			Capturer:         capturer,
 			SkillRepo:        skillRepo,
+			MCPServers:       cfg.MCPServers,
 		})
 	}, telemetry.NewSlogLogger(b.cfg.Logger))
 }
