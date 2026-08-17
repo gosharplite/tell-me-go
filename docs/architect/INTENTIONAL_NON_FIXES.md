@@ -1285,4 +1285,26 @@ to reason about.
 - **See**: `internal/tools/integrations/mcp/schema_test.go:241`
 ---
 
+## Coverage Gaps (ACCEPTED — 2026-09 di triage batch)
+
+### di/mcp_factory.go — resolveServerToken default case
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: the inline comment documents it: unknown auth modes are rejected by config validation before Build runs, so the default treats them defensively as "none". Defensive guard on internal pipeline state — same acceptance class as the 2026-07 Batch Triage defensive nil/empty guards.
+- **See**: `internal/infrastructure/di/mcp_factory.go:148-151`
+
+### di/mcp_factory.go — gh auth token resolver
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: the tokenResolver closure shells out to `gh auth token` via exec.Command at the composition root; triggering the error requires `gh` to be missing or failing mid-resolution — environment fault injection disproportionate to the value. Same acceptance class as the 2026-07 fault-injection gaps.
+- **See**: `internal/infrastructure/di/mcp_factory.go:60-65`
+
+### di/toolchain_factory.go — registerSkillsShTools error
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: the branch requires a SkillRepo failure (unreadable skills directory) — same filesystem fault-injection class as the cataloged di/container.go skills repository init error paths entry.
+- **See**: `internal/infrastructure/di/toolchain_factory.go:124-126`
+
+---
+
 *Last Updated: 2026-09 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment); 2026-09 factory seams triage: coverage pin for llm/factory.go createAuthenticator default-case; 2026-09 catalog hygiene: coverage pins for llm/failover.go ExtractDocument delegation wrapper + llm/provider_health.go getPingEndpoint panic and buildRequest error branch (structurally unreachable); re-anchored NewID (222-224 → 234-236) and Task accessors (105,108,111 → 112,116); coverage test for BuildSuggestionService tracker fallback; 2026-09 #1378: four test-complexity catalog additions (TestToSDKSchema_EmptyType_OmitsTypeKey CC=19, TestToOpenAISchema_EmptyTypeOmitsKey CC=11, TestToOpenAITools_EmptyTypeNested_OmitsEmptyTypeKey CC=16, TestConvertSchema_NestedUnrepresentable_BecomesUntypedAny CC=12) — MCP empty-type schema tests)*
