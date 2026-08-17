@@ -98,6 +98,43 @@ MCP input schemas (JSON Schema) are normalized into the canonical
 schema cannot faithfully express them and an incomplete schema would fail
 validation at call time.
 
+**Amendment (2026-09, issue #1378 — empty-type schema serialization):**
+
+1. **Root vs nested (unchanged root rule):** Root-level combinators
+   (`oneOf`/`anyOf`/`allOf`/`$ref`) and root union types still degrade to
+   `Parameters=nil` freeform args with a `slog.Warn` — per the original §6.
+2. **Nested unrepresentable nodes → untyped ANY:** Nested combinators, union
+   types, `"null"`, or absent `type` inside `properties`/`items` are **not
+   dropped** — `convertObject` keeps them as untyped ANY nodes
+   (`tools.Schema{Type: "", Description: ..., Enum: ...}`). `required` is
+   never pruned (nothing is dropped, so it never dangles).
+3. **Empty `Type` is the seventh "ANY" representation:** wire adapters must
+   **omit the `type` key**, never emit `""`. OpenAI
+   (`internal/infrastructure/llm/openai/client.go` — `json:"type,omitempty"`
+   on the `schema` wire struct) and Gemini (the genai SDK's own
+   `json:"type,omitempty"` on `genai.Schema.Type`) omit via `omitempty`. The
+   **Anthropic root** — whose API mandates `"type":"object"` on
+   `input_schema` (always emitted) — forces the object type while
+   **preserving** converted content (properties/description/enum); the
+   nil-`Parameters` fallback `{"type":"object","properties":{}}` is a pure
+   API-contract shim for genuinely-absent schemas. The root/nested asymmetry
+   is principled: nested nodes sit inside a typed container (untyped-any
+   children are valid JSON Schema), while the root *is* the tool's parameter
+   contract.
+4. **Accepted cost:** nested combinator branches flatten to ANY, branch-level
+   validation is lost, and call-time server errors for required params are
+   possible — but the LLM can still attempt them (vs. today: zero inference
+   with MCP enabled).
+5. **Gemini note:** `genai.Type("")` is the empty string; the SDK's
+   `omitempty` omits the key. `TYPE_UNSPECIFIED` must **never** be set
+   explicitly (it would serialize as a non-empty
+   `"type":"TYPE_UNSPECIFIED"`).
+6. **Open-question resolutions (recorded per the issue):** (a) issue
+   verification includes an actual `run_secret_scanning` call, not merely
+   discovery + inference; (b) the redundant Gemini T2 guard was dropped —
+   the pinning test (`TestToSDKSchema_EmptyType_OmitsTypeKey`) is the
+   documentation.
+
 ### 7. Three-Way Error Split
 
 Tool results follow a three-way split (ADR-022 / issue #1373):
@@ -144,7 +181,9 @@ aborting the whole turn. Schema normalization keeps MCP tool schemas callable
 by the existing validation path.
 
 **Negative:** the truncation scheme means very long tool names lose their
-human-readable tail (replaced by a hash), and combinator-heavy MCP schemas
-degrade to freeform args, losing validation for those tools. A server whose
-credentials cannot be resolved is silently skipped at startup (warned, not
-fatal) — operators must watch logs to notice a misconfigured MCP server.
+human-readable tail (replaced by a hash), root combinator-heavy MCP schemas
+degrade to freeform args, losing validation for those tools, and nested
+combinators flatten to untyped ANY (branch-level validation lost, but the
+tool stays callable). A server whose credentials cannot be resolved is
+silently skipped at startup (warned, not fatal) — operators must watch logs
+to notice a misconfigured MCP server.

@@ -381,7 +381,7 @@ type functionDeclaration struct {
 }
 
 type schema struct {
-	Type        string             `json:"type"`
+	Type        string             `json:"type,omitempty"`
 	Description string             `json:"description,omitempty"`
 	Properties  map[string]*schema `json:"properties,omitempty"`
 	Required    []string           `json:"required,omitempty"`

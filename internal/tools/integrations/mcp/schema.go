@@ -15,12 +15,20 @@ import (
 //
 // The conversion is intentionally lossy and conservative:
 //   - An empty or absent schema returns nil (the tool accepts freeform args).
-//   - Any schema that uses combinators (oneOf/anyOf/allOf/$ref) or a union
-//     type degrades to nil, because the canonical schema cannot faithfully
-//     express them and an incomplete schema would fail validation at call time.
+//   - A schema whose ROOT node uses combinators (oneOf/anyOf/allOf/$ref) or a
+//     root union type ("type": ["string", "null"]) degrades to nil
+//     (Parameters=nil freeform args) per ADR-067 §6: the canonical schema
+//     cannot faithfully express them, and an incomplete ROOT schema would fail
+//     validation at call time.
+//   - Nested unrepresentable nodes are NOT dropped: combinators, union types,
+//     a "null" type, or an absent type inside properties/items are kept by
+//     convertObject as untyped ANY nodes (Type == "" with Description/Enum
+//     preserved). The empty Type string is the canonical "ANY" representation;
+//     provider wire adapters omit the type key (OpenAI/Anthropic/Gemini),
+//     producing a valid JSON Schema "any" node.
 //   - Unsupported JSON Schema keywords are dropped silently.
 //
-// toolName is used only for structured logging when a schema is degraded.
+// toolName is used only for structured logging when a root schema is degraded.
 func ConvertSchema(raw json.RawMessage, toolName string) *tools.Schema {
 	if len(raw) == 0 {
 		return nil
