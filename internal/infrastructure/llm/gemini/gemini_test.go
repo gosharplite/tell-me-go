@@ -459,6 +459,19 @@ func TestGenerateImages(t *testing.T) {
 	}
 }
 
+// TestGemini_ExtractDocument_NotImplemented pins the contract that Gemini
+// document extraction is deliberately unsupported: the stub at gemini.go:
+// 208-210 returns llm.ErrNotImplemented.
+func TestGemini_ExtractDocument_NotImplemented(t *testing.T) {
+	// Use a Vertex AI style URL to avoid the SDK's mandatory API key check
+	// for the Google AI backend, matching the file's construction idiom.
+	client, _ := NewClient("https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models", "test-model", &auth.BearerAuth{Token: "test"})
+	_, err := client.ExtractDocument(context.Background(), []byte("data"), "doc.pdf")
+	if err == nil {
+		t.Error("expected error for ExtractDocument")
+	}
+}
+
 func runGenerateImagesTest(t *testing.T, tt generateImagesTestCase) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handleGenerateImagesMock(t, w, r, tt)
