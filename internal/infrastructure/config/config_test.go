@@ -723,6 +723,30 @@ func TestLoad_IntegerOverflowIsDetected(t *testing.T) {
 	}
 }
 
+// TestLoad_IntOverflowHook_HappyPath covers the final return in
+// intOverflowHook (config.go:212): an integral, in-range float64 YAML
+// value flowing into an int field passes the hook's guards and decodes
+// successfully. The error paths are covered by
+// TestLoad_IntegerOverflowIsDetected.
+func TestLoad_IntOverflowHook_HappyPath(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "") // neutralize ambient env pollution
+
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.yaml")
+	content := "MAX_TURNS: 5.0\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := load(path)
+	if err != nil {
+		t.Fatalf("load() unexpected error: %v", err)
+	}
+	if cfg.MaxToolTurns != 5 {
+		t.Fatalf("MaxToolTurns = %d, want 5", cfg.MaxToolTurns)
+	}
+}
+
 // TestLoad_ValidateBoundsError verifies that load() propagates ValidateBounds
 // errors for values that pass intOverflowHook (e.g., negative integers within
 // float64 range) but fail domain-level bounds checks. This covers the error
