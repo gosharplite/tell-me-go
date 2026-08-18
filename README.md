@@ -342,7 +342,7 @@ config:
 MCP_SERVERS:
   github:
     URL: "https://api.githubcopilot.com/mcp/readonly"
-    AUTH: "auto"                # auto (default), gh, bearer, or none
+    AUTH: "auto"                # auto (default), gh, bearer, basic, or none
     # TOKEN: "${GITHUB_TOKEN}"  # Optional: auto-resolved via gh auth token if omitted
     # TIMEOUT: 300              # Seconds (default: 300)
     # REQUIRES_CONSENT: false   # Optional override (default: false for /readonly)
