@@ -253,6 +253,7 @@ func TestMCPServerConfig_EffectiveAuth(t *testing.T) {
 		{"explicit auto", "auto", MCPAuthAuto},
 		{"explicit gh", "gh", MCPAuthGH},
 		{"explicit bearer", "bearer", MCPAuthBearer},
+		{"explicit basic", "basic", MCPAuthBasic},
 		{"explicit none", "none", MCPAuthNone},
 		{"mixed case normalized", "Bearer", MCPAuthBearer},
 		{"surrounding whitespace trimmed", "  gh  ", MCPAuthGH},
@@ -268,12 +269,14 @@ func TestMCPServerConfig_EffectiveAuth(t *testing.T) {
 }
 
 // TestMCPServerConfig_Validate_AuthModes pins the auth-mode validation
-// contract: the four canonical modes (including mixed case) are accepted;
-// unknown modes are rejected.
+// contract: the canonical modes (including mixed case) are accepted; unknown
+// modes are rejected. NOTE: "basic" was intentionally migrated from the
+// invalid set to the valid set (issue #1389, C1 scope) — previously rejected
+// as unknown, it is now a first-class auth mode requiring USERNAME + TOKEN.
 func TestMCPServerConfig_Validate_AuthModes(t *testing.T) {
 	t.Parallel()
 
-	valid := []string{"auto", "gh", "bearer", "none", "Bearer", "GH", "NONE", " AUTO "}
+	valid := []string{"auto", "gh", "bearer", "basic", "none", "Bearer", "GH", "NONE", " AUTO "}
 	for _, auth := range valid {
 		auth := auth
 		t.Run("valid_"+auth, func(t *testing.T) {
@@ -282,11 +285,15 @@ func TestMCPServerConfig_Validate_AuthModes(t *testing.T) {
 			if cfg.EffectiveAuth() == MCPAuthBearer {
 				cfg.Token = "tok"
 			}
+			if cfg.EffectiveAuth() == MCPAuthBasic {
+				cfg.Username = "user"
+				cfg.Token = "tok"
+			}
 			require.NoError(t, cfg.validate("server"))
 		})
 	}
 
-	invalid := []string{"basic", "oauth", "gh-token", "token"}
+	invalid := []string{"oauth", "gh-token", "token"}
 	for _, auth := range invalid {
 		auth := auth
 		t.Run("invalid_"+auth, func(t *testing.T) {
@@ -297,6 +304,38 @@ func TestMCPServerConfig_Validate_AuthModes(t *testing.T) {
 			assert.Contains(t, err.Error(), "AUTH")
 		})
 	}
+}
+
+// TestMCPServerConfig_Validate_BasicCredentialsRequired pins that AUTH:
+// "basic" with an empty (or whitespace-only) USERNAME or TOKEN is
+// hard-rejected during config validation; both must be non-empty.
+func TestMCPServerConfig_Validate_BasicCredentialsRequired(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		username string
+		token    string
+	}{
+		{"empty username", "", "tok"},
+		{"empty token", "user", ""},
+		{"whitespace username", "   ", "tok"},
+		{"whitespace token", "user", "   "},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := MCPServerConfig{URL: "https://example.com/mcp", Auth: "basic", Username: tt.username, Token: tt.token}
+			err := cfg.validate("server")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "MCP_SERVERS.server.USERNAME and TOKEN must not be empty when AUTH is basic")
+		})
+	}
+
+	// Non-empty basic credentials are valid.
+	cfg := MCPServerConfig{URL: "https://example.com/mcp", Auth: "basic", Username: "user", Token: "tok"}
+	require.NoError(t, cfg.validate("server"))
 }
 
 // TestMCPServerConfig_Validate_BearerTokenRequired pins that AUTH: "bearer"
@@ -328,8 +367,9 @@ func TestMCPServerConfig_Validate_BearerTokenRequired(t *testing.T) {
 	require.NoError(t, cfg.validate("server"))
 }
 
-// TestConfig_UnmarshalYAML_MCPServers_AuthField pins the yaml:"AUTH" binding:
-// the AUTH field unmarshals from YAML and flows into EffectiveAuth.
+// TestConfig_UnmarshalYAML_MCPServers_AuthField pins the yaml:"AUTH" and
+// yaml:"USERNAME" bindings: the AUTH field unmarshals from YAML and flows
+// into EffectiveAuth; USERNAME binds for basic-auth servers.
 func TestConfig_UnmarshalYAML_MCPServers_AuthField(t *testing.T) {
 	t.Parallel()
 
@@ -342,12 +382,17 @@ MCP_SERVERS:
     URL: "https://example.com/mcp"
     AUTH: "bearer"
     TOKEN: "explicit-token"
+  rovo:
+    URL: "https://mcp.atlassian.com/v1/mcp"
+    AUTH: "basic"
+    USERNAME: "user@example.com"
+    TOKEN: "tok"
 `
 
 	var cfg Config
 	err := yaml.Unmarshal([]byte(input), &cfg)
 	require.NoError(t, err)
-	require.Len(t, cfg.MCPServers, 2)
+	require.Len(t, cfg.MCPServers, 3)
 
 	gh, ok := cfg.MCPServers["github"]
 	require.True(t, ok, "github server must be bound")
@@ -357,4 +402,10 @@ MCP_SERVERS:
 	require.True(t, ok, "local server must be bound")
 	assert.Equal(t, MCPAuthBearer, local.EffectiveAuth())
 	assert.Equal(t, "explicit-token", local.Token)
+
+	rovo, ok := cfg.MCPServers["rovo"]
+	require.True(t, ok, "rovo server must be bound")
+	assert.Equal(t, MCPAuthBasic, rovo.EffectiveAuth())
+	assert.Equal(t, "user@example.com", rovo.Username)
+	assert.Equal(t, "tok", rovo.Token)
 }

@@ -49,9 +49,9 @@ the infrastructure layer.
 
 ### 4. Authentication & Caching
 
-Each server declares an explicit `AUTH` mode — `"auto"`, `"gh"`, `"bearer"`, or
-`"none"` (default `"auto"`) — that controls how its bearer token is resolved at
-client-construction time:
+Each server declares an explicit `AUTH` mode — `"auto"`, `"gh"`, `"bearer"`,
+`"basic"`, or `"none"` (default `"auto"`) — that controls how its bearer token
+is resolved at client-construction time:
 
 - `auto` — an explicit `TOKEN` wins; otherwise a GitHub-hosted endpoint
   resolves via `gh auth token` / `GITHUB_TOKEN`, and any other endpoint uses no
@@ -60,6 +60,11 @@ client-construction time:
   `gh auth token`, then the `GITHUB_TOKEN` environment variable.
 - `bearer` — the explicit `TOKEN` is required (an empty `TOKEN` is rejected at
   config validation).
+- `basic` — `USERNAME` and `TOKEN` are both required (an empty either is
+  rejected at config validation); every request carries
+  `Authorization: Basic base64(username:token)`. Credentials support
+  `${ENV_VAR}` interpolation via the config loader's `expandEnvHook`;
+  plaintext credentials must never be committed to configs.
 - `none` — no authentication is attached.
 
 Across all token-resolving modes, resolution uses a hierarchy: an **explicit
@@ -68,6 +73,33 @@ servers so `gh` is not spawned repeatedly), then `gh auth token`, then the
 `GITHUB_TOKEN` environment variable. The DI layer resolves credentials during
 client construction and skips (with a warning) a server whose credentials
 cannot be resolved, rather than failing startup for the whole agent.
+
+**Amendment (2026-08, issue #1389 — Basic auth mode):**
+
+1. **Single factory-owned normalization.** The mode→credentials mapping is
+   owned entirely by `resolveServerToken` in the DI factory, which returns
+   a credential triple `(username, token, ok)`. Stray `USERNAME` under
+   non-basic modes is silently normalized away (username is `""` unless the
+   mode is `basic`), matching the existing `TOKEN`-under-`none` tolerance —
+   validation is positive-rule only, with no negative rules.
+2. **Unresolvable-under-basic is a config-load error, not a factory state.**
+   `validate()` hard-rejects `AUTH: basic` with an empty `USERNAME` or
+   `TOKEN` before the factory runs; the `basic` arm of `resolveServerToken`
+   is an unconditional pass-through. The warn-and-skip path
+   (`mcp_token_resolution_skipped`) remains reachable only from `gh`/`auto`
+   resolution failures.
+3. **Config-loader debug-dump exception (tracked follow-up #1390).** The
+   config loader's debug dumps (config.go raw-content dump and viper
+   parsed-key dump with `slog.Any`) serialize all config values — including
+   live environment secrets — when debug logging is enabled. This is
+   pre-existing, debug-gated, and MCP-unaware; it is recorded here as a
+   known exception to the `mcp-token-not-logged` scope and is **not** fixed
+   in this change. The invariant's scope is the MCP credential plumbing
+   (config validation, DI factory, client transport), which never logs or
+   serializes credentials or derived headers.
+4. **Hot-reload boundary unchanged.** `MCP_SERVERS` remains excluded from
+   hot-reload (§10): changing Basic credentials (or any server
+   configuration) requires starting a new session.
 
 ### 5. Namespacing & Shortening
 

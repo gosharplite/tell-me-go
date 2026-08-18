@@ -1944,7 +1944,7 @@ func TestBuildSessionDependencies_CleanupClosesMCPClients(t *testing.T) {
 	// without contacting a live MCP endpoint.
 	tf := b.toolchainFactory.(*defaultToolchainFactory)
 	var constructed []*closeCountingMCPClient
-	tf.mcpFactory.newClient = func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+	tf.mcpFactory.newClient = func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
 		c := &closeCountingMCPClient{}
 		constructed = append(constructed, c)
 		return c, nil

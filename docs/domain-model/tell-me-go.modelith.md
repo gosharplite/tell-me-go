@@ -133,7 +133,8 @@ An external Model Context Protocol (MCP) server providing dynamic tool capabilit
 | --- | --- | --- |
 | `name` | string | The unique server identifier (map key in Config.MCPServers). |
 | `url` | string | Base URL of the remote MCP server endpoint. |
-| `auth` | string | Authentication mode: auto, gh, bearer, or none. |
+| `auth` | string | Authentication mode: auto, gh, bearer, basic, or none. |
+| `username` | string | Username for Basic authentication (AUTH: basic); sent as the Basic user with TOKEN as the password. |
 | `requiresConsent` | boolean | Whether tools from this server require user approval before execution. |
 | `serial` | boolean | Whether tools from this server must execute sequentially. |
 | `timeout` | integer | Per-tool-call execution timeout in seconds. |
@@ -141,7 +142,7 @@ An external Model Context Protocol (MCP) server providing dynamic tool capabilit
 **Invariants**
 
 - **mcp-server-key-format** — MCP server keys must be 1 to 24 characters matching `^[a-z0-9-]+$`.
-- **mcp-token-not-logged** — Authentication tokens for `MCPServer`s must never be logged or serialized into diagnostics.
+- **mcp-token-not-logged** — Credentials and derived Authorization headers for `MCPServer`s must never be logged or serialized by the MCP credential plumbing (config validation, DI factory, client transport).
 - **mcp-readonly-defaults** — An `MCPServer` targeting a read-only endpoint defaults to `requiresConsent: false` and concurrent execution (`serial: false`).
 
 ### `Pricing`

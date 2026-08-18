@@ -10,6 +10,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,6 +33,7 @@ const defaultTimeout = 300 * time.Second
 type Client struct {
 	endpoint   string
 	token      string
+	username   string
 	timeout    time.Duration
 	httpClient *http.Client
 
@@ -53,6 +55,16 @@ type option func(*Client)
 func withHTTPClient(c *http.Client) option {
 	return func(cl *Client) {
 		cl.httpClient = c
+	}
+}
+
+// WithBasicAuth configures the client to attach an "Authorization: Basic
+// base64(username:token)" header to every request, using the token passed
+// positionally to NewClient as the Basic password. Exported because the DI
+// factory (internal/infrastructure/di) is the production consumer.
+func WithBasicAuth(username string) option {
+	return func(cl *Client) {
+		cl.username = username
 	}
 }
 
@@ -193,11 +205,17 @@ func (c *Client) connect(ctx context.Context) (*sdkmcp.ClientSession, error) {
 		httpClient = &http.Client{}
 	}
 
+	if c.username != "" {
+		httpClient = withBasicAuthHeader(httpClient, c.username, c.token)
+	} else {
+		httpClient = withBearerToken(httpClient, c.token)
+	}
+
 	// A fresh transport per connect attempt: the SDK's transport may only be
 	// connected once, so a failed handshake must not poison a later retry.
 	transport := &sdkmcp.StreamableClientTransport{
 		Endpoint:             c.endpoint,
-		HTTPClient:           withBearerToken(httpClient, c.token),
+		HTTPClient:           httpClient,
 		DisableStandaloneSSE: true,
 	}
 
@@ -325,5 +343,37 @@ func withBearerToken(c *http.Client, token string) *http.Client {
 		base = http.DefaultTransport
 	}
 	cc.Transport = &bearerTokenTransport{base: base, token: token}
+	return &cc
+}
+
+// basicAuthTransport injects an "Authorization: Basic base64(user:token)"
+// header into every request.
+type basicAuthTransport struct {
+	base     http.RoundTripper
+	username string
+	token    string
+}
+
+func (t *basicAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	if t.username != "" && t.token != "" {
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(t.username+":"+t.token)))
+	}
+	return t.base.RoundTrip(req)
+}
+
+// withBasicAuthHeader returns a client that attaches the Basic credentials
+// to every request. When username or token is empty, the original client is
+// returned unchanged.
+func withBasicAuthHeader(c *http.Client, username, token string) *http.Client {
+	if username == "" || token == "" {
+		return c
+	}
+	cc := *c
+	base := c.Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	cc.Transport = &basicAuthTransport{base: base, username: username, token: token}
 	return &cc
 }

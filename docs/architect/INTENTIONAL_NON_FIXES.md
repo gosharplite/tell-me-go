@@ -864,6 +864,12 @@ catalog a new gap no one reviewed. Policy:
   interface-satisfying stubs.
 - **See**: `internal/agent/session/internal_tools.go:23-26`
 
+### internal/infrastructure/mcp/client_test.go — TestBasicAuthTransport (CC=11)
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: Table-driven transport test pinning the Basic auth header contract across three subtest closures (header set with exact base64, no-header when username empty, no-header when token empty), each building its own roundTripFunc assertion closure. CC comes from subtest enumeration and assertion boilerplate, not branching business logic. Same acceptance class as `TestMediaBlocks` (CC=11) — assertion boilerplate across a coverage matrix.
+- **See**: `internal/infrastructure/mcp/client_test.go:645`
+
 ---
 
 ## Complexity Alerts (ACCEPTED)
@@ -1290,8 +1296,8 @@ to reason about.
 ### di/mcp_factory.go — resolveServerToken default case
 
 - **Status**: ACCEPTED (2026-09)
-- **Rationale**: the inline comment documents it: unknown auth modes are rejected by config validation before Build runs, so the default treats them defensively as "none". Defensive guard on internal pipeline state — same acceptance class as the 2026-07 Batch Triage defensive nil/empty guards.
-- **See**: `internal/infrastructure/di/mcp_factory.go:148-151`
+- **Rationale**: the inline comment documents it: unknown auth modes are rejected by config validation before Build runs, so the default treats them defensively as "none". Defensive guard on internal pipeline state — same acceptance class as the 2026-07 Batch Triage defensive nil/empty guards. Re-anchored 2026-08 (#1389): lines drifted 148-151 → 157-160 as the basic-auth DI resolution added the username parameter to the newClient closure.
+- **See**: `internal/infrastructure/di/mcp_factory.go:157-160`
 
 ### di/mcp_factory.go — gh auth token resolver
 
