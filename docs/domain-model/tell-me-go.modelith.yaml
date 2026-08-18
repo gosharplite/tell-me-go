@@ -479,7 +479,8 @@ entities:
   MCPServer:
     definition: >
       An external Model Context Protocol (MCP) server providing dynamic tool
-      capabilities to the agent over Streamable HTTP.
+      capabilities to the agent, reached over Streamable HTTP (URL) or spawned
+      as a local stdio child process (COMMAND).
     relationships:
       - entity: Tool
         cardinality: "1:n"
@@ -491,7 +492,19 @@ entities:
         description: The unique server identifier (map key in Config.MCPServers).
       - name: url
         type: string
-        description: Base URL of the remote MCP server endpoint.
+        description: Base URL of the remote MCP server endpoint (Streamable HTTP); mutually exclusive with command.
+      - name: command
+        type: string
+        description: Executable for a local stdio MCP server child process (COMMAND); mutually exclusive with url.
+      - name: args
+        type: "[]string"
+        description: Optional arguments passed to command (ARGS).
+      - name: dir
+        type: string
+        description: Optional working directory for the child process (DIR).
+      - name: env
+        type: object
+        description: Optional extra environment variables for the child process (ENV).
       - name: auth
         type: string
         description: "Authentication mode: auto, gh, bearer, basic, or none."
@@ -514,6 +527,8 @@ entities:
         statement: "Credentials and derived Authorization headers for `MCPServer`s must never be logged or serialized by the MCP credential plumbing (config validation, DI factory, client transport)."
       - id: mcp-readonly-defaults
         statement: "An `MCPServer` targeting a read-only endpoint defaults to `requiresConsent: false` and concurrent execution (`serial: false`)."
+      - id: mcp-stdio-trusted-defaults
+        statement: "A stdio `MCPServer` (command set) defaults to `requiresConsent: false` (trusted local spawn) and `serial: true`; an explicit `REQUIRES_CONSENT: true` opts back in."
 
   Skill:
     definition: >
@@ -915,9 +930,9 @@ scenarios:
       - "Tools are normalized, namespaced, and registered as `Tool` entities with appropriate consent and serial flags."
       - "Unsupported schema combinators gracefully degrade to freeform arguments."
       - "LLM requests an MCP tool execution via `ToolCall`."
-      - "`ToolCall` delegates execution to the remote `MCPServer` over Streamable HTTP."
+      - "`ToolCall` delegates execution to the `MCPServer` — over Streamable HTTP for URL-based servers, or to the local stdio child process for COMMAND-based servers."
       - "Non-terminal MCP tool errors (isError: true) return error text with nil Go error for in-turn LLM recovery."
-    invariants_touched: [mcp-server-key-format, mcp-readonly-defaults, tool-timeout, tool-unique-name]
+    invariants_touched: [mcp-server-key-format, mcp-readonly-defaults, mcp-stdio-trusted-defaults, tool-timeout, tool-unique-name]
 
 invariants:
   - id: deterministic-cost-audit
