@@ -278,9 +278,9 @@ func TestStdio_LauncherTreePassThrough(t *testing.T) {
 func TestStdio_ChildDeathMidSession(t *testing.T) {
 	c := newTestClient(t, []string{"serve"}, 0, slog.Default())
 
-	// The die tool exits the child process; the first call errors with
-	// EOF/connection-closed, possibly annotated with the child-exit wrap
-	// (accept either — the annotation races the reaper).
+	// The die tool exits the child process (os.Exit(0), no response); the
+	// first call errors with EOF/connection-closed, possibly annotated with
+	// the child-exit wrap (accept either — the annotation races the reaper).
 	_, err1 := c.CallTool(context.Background(), "die", nil)
 	if err1 == nil {
 		t.Fatal("CallTool(die) error = nil, want error")
@@ -290,21 +290,35 @@ func TestStdio_ChildDeathMidSession(t *testing.T) {
 		t.Errorf("first call error = %q, want a child-death indication (exited/EOF/closed)", err1.Error())
 	}
 
-	// The second call fails fast via the sticky pre-check: its error must
-	// carry the child-exit wrap.
-	_, err2 := c.CallTool(context.Background(), "echo", map[string]interface{}{"text": "x"})
-	if err2 == nil {
-		t.Fatal("CallTool after child death error = nil, want error")
-	}
-	if !strings.Contains(err2.Error(), "exited") {
-		t.Errorf("second call error = %q, want child-exit wrap", err2.Error())
+	// The reaper is asynchronous: calls racing ahead of it surface the raw
+	// SDK connection-closed error. With annotateIfDead returning the sticky
+	// error, the ONLY error carrying "exited" is c.exitErr itself — so poll
+	// until it appears: that deterministically closes the async-reap window
+	// and yields the sticky error value. Deadline-bounded, ADR-036 (no
+	// time.Sleep).
+	var sticky error
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		_, err := c.CallTool(context.Background(), "echo", map[string]interface{}{"text": "x"})
+		if err != nil && strings.Contains(err.Error(), "exited") {
+			sticky = err
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("sticky child-exit error not established within 5s (last err: %v)", err)
+		}
+		runtime.Gosched()
 	}
 
-	// The third call returns the identical sticky error value (pointer
-	// equality — the pre-check short-circuits on c.exitErr).
-	_, err3 := c.CallTool(context.Background(), "echo", map[string]interface{}{"text": "x"})
-	if err3 != err2 {
-		t.Error("third call error != second call error; expected the identical sticky error value")
+	// Once the sticky pre-check is established, every subsequent call fails
+	// at it (the SDK is never touched) and returns the identical error value.
+	_, errA := c.CallTool(context.Background(), "echo", map[string]interface{}{"text": "x"})
+	_, errB := c.CallTool(context.Background(), "echo", map[string]interface{}{"text": "x"})
+	if errA != sticky {
+		t.Errorf("post-sticky call error = %v, want the sticky child-exit error %v", errA, sticky)
+	}
+	if errB != errA {
+		t.Error("consecutive post-sticky calls returned different error values; want the identical sticky pointer")
 	}
 }
 

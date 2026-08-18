@@ -276,7 +276,11 @@ func (c *StdioClient) childExitErrLocked() error {
 	}
 	select {
 	case err := <-c.waitDone:
-		c.exitErr = fmt.Errorf("mcp: stdio child %q exited: %w", c.command, err)
+		if err == nil {
+			c.exitErr = fmt.Errorf("mcp: stdio child %q exited", c.command)
+		} else {
+			c.exitErr = fmt.Errorf("mcp: stdio child %q exited: %w", c.command, err)
+		}
 		return c.exitErr
 	default:
 		return nil
@@ -285,9 +289,13 @@ func (c *StdioClient) childExitErrLocked() error {
 
 // annotateIfDead annotates an in-flight operation error when it coincides with
 // the child having exited (io.EOF / sdkmcp.ErrConnectionClosed + reaper
-// confirms exit). A wedge surfaces as the plain context.DeadlineExceeded wrap
-// — the two failure modes stay distinguishable by error text and latency.
-// Takes c.mu internally; do NOT call while holding c.mu.
+// confirms exit). Once death is confirmed, the returned error IS the sticky
+// child-exit error (c.exitErr) — the same value the fast-death pre-check
+// returns — so the death representation is consistent across the race
+// boundary: an error containing "exited" is always c.exitErr itself. A wedge
+// surfaces as the plain context.DeadlineExceeded wrap — the two failure modes
+// stay distinguishable by error text and latency. Takes c.mu internally; do
+// NOT call while holding c.mu.
 func (c *StdioClient) annotateIfDead(err error) error {
 	if err == nil {
 		return nil
@@ -299,7 +307,7 @@ func (c *StdioClient) annotateIfDead(err error) error {
 		return err
 	}
 	if errors.Is(err, io.EOF) || errors.Is(err, sdkmcp.ErrConnectionClosed) {
-		return fmt.Errorf("%w: %v", childErr, err)
+		return childErr
 	}
 	return err
 }
