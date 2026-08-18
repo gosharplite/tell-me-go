@@ -894,6 +894,12 @@ catalog a new gap no one reviewed. Policy:
 - **Rationale**: Sequential launcher test (spawn → stderr poll for pid → ListTools → Close → deadline-bounded liveness poll with `syscall.Kill`). CC is the poll/assertion sequence, not branching business logic. Splitting would duplicate the child-process/launcher setup. Same acceptance class as `TestHistoryNavigation_CompleteWorkflow` (CC=15) — sequential workflow where steps depend on prior state.
 - **See**: `internal/infrastructure/mcp/stdio_client_integration_test.go:216`
 
+### internal/infrastructure/mcp/stdio_client_integration_test.go — TestStdio_ChildDeathMidSession (CC=11)
+
+- **Status**: ACCEPTED (2026-08, #1396)
+- **Rationale**: Sequential death-mid-session integration test over a real child process (die call → race-tolerant death-indication assertion → deadline-bounded poll loop that deterministically closes the async-reap window by waiting for the sticky child-exit error → post-sticky pointer-equality assertions). CC comes from the poll/branch structure (the poll's if/break, the deadline guard, and the two sticky assertions), not branching business logic — and the poll is the test's synchronization mechanism, not refactorable: splitting it would both duplicate the expensive child-process setup and destroy the deterministic reaper synchronization it provides. Same acceptance class as `TestStdio_RoundTrip` (CC=11) and `TestStdio_LauncherTreePassThrough` (CC=13) in the same file.
+- **See**: `internal/infrastructure/mcp/stdio_client_integration_test.go:278`
+
 ---
 
 ## Complexity Alerts (ACCEPTED)

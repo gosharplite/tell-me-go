@@ -103,6 +103,7 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"TestMCPFactory_ConcurrentBuild_FailingServerSkips":         {Line: 743, Complexity: 15, FilePath: "internal/infrastructure/di/mcp_factory_test.go"},
 		"TestStdio_RoundTrip":                                       {Line: 112, Complexity: 11, FilePath: "internal/infrastructure/mcp/stdio_client_integration_test.go"},
 		"TestStdio_LauncherTreePassThrough":                         {Line: 216, Complexity: 13, FilePath: "internal/infrastructure/mcp/stdio_client_integration_test.go"},
+		"TestStdio_ChildDeathMidSession":                            {Line: 278, Complexity: 11, FilePath: "internal/infrastructure/mcp/stdio_client_integration_test.go"},
 	}
 
 	require.Equal(t, expectedCataloged, cataloged)
