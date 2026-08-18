@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 // Package mcp implements the infrastructure adapter for the tools.MCPClient
-// domain port using the Model Context Protocol (MCP) Go SDK. It targets the
-// Streamable HTTP transport (the transport used by GitHub's hosted remote MCP
-// server) and keeps the SDK isolated behind the domain port so it remains
-// swappable (ADR-055/060 injection pattern).
+// domain port using the Model Context Protocol (MCP) Go SDK. It exposes two
+// transports: Streamable HTTP for remote servers (Client — the transport used
+// by GitHub's hosted remote MCP server) and local stdio child processes
+// (StdioClient — COMMAND + ARGS spawned as a subprocess). The SDK is isolated
+// behind the domain port so it remains swappable (ADR-055/060 injection
+// pattern).
 package mcp
 
 import (
@@ -127,6 +129,18 @@ func (c *Client) ListTools(ctx context.Context) ([]tools.MCPToolDefinition, erro
 	return defs, nil
 }
 
+// normalizeArguments ensures the SDK never receives a nil map in the
+// Arguments any-field. A nil map inside an interface defeats the SDK's
+// own nil guard (interface-nil vs typed-nil, go-sdk mcp/client.go:1281-1284,
+// "Avoid sending nil over the wire"), so the adapter — the only layer
+// confined to the SDK (ADR-067 §2) — must normalize before construction.
+func normalizeArguments(args map[string]interface{}) map[string]interface{} {
+	if args == nil {
+		return map[string]interface{}{}
+	}
+	return args
+}
+
 // CallTool executes a tool on the remote MCP server with the provided arguments.
 func (c *Client) CallTool(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 	ctx, cancel := c.operationContext(ctx)
@@ -139,7 +153,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]inte
 
 	res, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
 		Name:      name,
-		Arguments: args,
+		Arguments: normalizeArguments(args),
 	})
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("mcp call %s: %w", name, err)

@@ -121,7 +121,7 @@ The persisted record of a `Session`'s `Turn`s, stored as an append-only JSON Lin
 
 ### `MCPServer`
 
-An external Model Context Protocol (MCP) server providing dynamic tool capabilities to the agent over Streamable HTTP.
+An external Model Context Protocol (MCP) server providing dynamic tool capabilities to the agent, reached over Streamable HTTP (URL) or spawned as a local stdio child process (COMMAND).
 
 **Relationships**
 
@@ -132,7 +132,11 @@ An external Model Context Protocol (MCP) server providing dynamic tool capabilit
 | Name | Type | Description |
 | --- | --- | --- |
 | `name` | string | The unique server identifier (map key in Config.MCPServers). |
-| `url` | string | Base URL of the remote MCP server endpoint. |
+| `url` | string | Base URL of the remote MCP server endpoint (Streamable HTTP); mutually exclusive with command. |
+| `command` | string | Executable for a local stdio MCP server child process (COMMAND); mutually exclusive with url. |
+| `args` | []string | Optional arguments passed to command (ARGS). |
+| `dir` | string | Optional working directory for the child process (DIR). |
+| `env` | object | Optional extra environment variables for the child process (ENV). |
 | `auth` | string | Authentication mode: auto, gh, bearer, basic, or none. |
 | `username` | string | Username for Basic authentication (AUTH: basic); sent as the Basic user with TOKEN as the password. |
 | `requiresConsent` | boolean | Whether tools from this server require user approval before execution. |
@@ -144,6 +148,7 @@ An external Model Context Protocol (MCP) server providing dynamic tool capabilit
 - **mcp-server-key-format** — MCP server keys must be 1 to 24 characters matching `^[a-z0-9-]+$`.
 - **mcp-token-not-logged** — Credentials and derived Authorization headers for `MCPServer`s must never be logged or serialized by the MCP credential plumbing (config validation, DI factory, client transport).
 - **mcp-readonly-defaults** — An `MCPServer` targeting a read-only endpoint defaults to `requiresConsent: false` and concurrent execution (`serial: false`).
+- **mcp-stdio-trusted-defaults** — A stdio `MCPServer` (command set) defaults to `requiresConsent: false` (trusted local spawn) and `serial: true`; an explicit `REQUIRES_CONSENT: true` opts back in.
 
 ### `Pricing`
 
@@ -705,13 +710,14 @@ The agent initializes external tools from configured MCP servers over Streamable
 3. Tools are normalized, namespaced, and registered as `Tool` entities with appropriate consent and serial flags.
 4. Unsupported schema combinators gracefully degrade to freeform arguments.
 5. LLM requests an MCP tool execution via `ToolCall`.
-6. `ToolCall` delegates execution to the remote `MCPServer` over Streamable HTTP.
+6. `ToolCall` delegates execution to the `MCPServer` — over Streamable HTTP for URL-based servers, or to the local stdio child process for COMMAND-based servers.
 7. Non-terminal MCP tool errors (isError: true) return error text with nil Go error for in-turn LLM recovery.
 
 **Invariants touched**
 
 - **mcp-server-key-format** — MCP server keys must be 1 to 24 characters matching `^[a-z0-9-]+$`.
 - **mcp-readonly-defaults** — An `MCPServer` targeting a read-only endpoint defaults to `requiresConsent: false` and concurrent execution (`serial: false`).
+- **mcp-stdio-trusted-defaults** — A stdio `MCPServer` (command set) defaults to `requiresConsent: false` (trusted local spawn) and `serial: true`; an explicit `REQUIRES_CONSENT: true` opts back in.
 - **tool-timeout** — Execution duration must not exceed `Config.toolTimeout` seconds.
 - **tool-unique-name** — Each `Tool` has a unique name.
 

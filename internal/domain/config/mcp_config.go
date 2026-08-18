@@ -33,12 +33,16 @@ const (
 
 // MCPServerConfig defines configuration for an external Model Context Protocol server.
 type MCPServerConfig struct {
-	URL             string `yaml:"URL"`
-	Token           string `yaml:"TOKEN"`
-	Username        string `yaml:"USERNAME"`
-	Auth            string `yaml:"AUTH"` // "auto", "gh", "bearer", "basic", "none" (default: "auto")
-	RequiresConsent *bool  `yaml:"REQUIRES_CONSENT"`
-	Timeout         int    `yaml:"TIMEOUT"` // Seconds (0 = default 300s)
+	URL             string            `yaml:"URL"`
+	Token           string            `yaml:"TOKEN"`
+	Username        string            `yaml:"USERNAME"`
+	Auth            string            `yaml:"AUTH"` // "auto", "gh", "bearer", "basic", "none" (default: "auto")
+	RequiresConsent *bool             `yaml:"REQUIRES_CONSENT"`
+	Timeout         int               `yaml:"TIMEOUT"` // Seconds (0 = default 300s)
+	Command         string            `yaml:"COMMAND"` // executable for a stdio (local-process) MCP server; mutually exclusive with URL
+	Args            []string          `yaml:"ARGS"`    // optional arguments for COMMAND
+	Dir             string            `yaml:"DIR"`     // optional working directory for the child process
+	Env             map[string]string `yaml:"ENV"`     // optional extra environment variables for the child
 }
 
 // isReadOnly reports whether the server URL targets a read-only endpoint.
@@ -47,20 +51,31 @@ func (c *MCPServerConfig) isReadOnly() bool {
 	return strings.HasSuffix(strings.TrimRight(c.URL, "/"), "/readonly")
 }
 
+// IsStdio reports whether this server is configured as a local stdio child
+// process (COMMAND set) rather than a remote Streamable HTTP endpoint.
+func (c *MCPServerConfig) IsStdio() bool {
+	return strings.TrimSpace(c.Command) != ""
+}
+
 // EffectiveRequiresConsent resolves whether tool calls against this server
 // require user consent. An explicit REQUIRES_CONSENT wins; otherwise
 // "/readonly" endpoints default to false and mutating endpoints default to
-// true.
+// true. Stdio servers default to false: a local spawn is a trusted process
+// (maintainer decision, #1396).
 func (c *MCPServerConfig) EffectiveRequiresConsent() bool {
 	if c.RequiresConsent != nil {
 		return *c.RequiresConsent
+	}
+	if c.IsStdio() {
+		return false // trusted local spawn (maintainer decision, #1396)
 	}
 	return !c.isReadOnly()
 }
 
 // EffectiveSerial reports whether tool calls against this server must execute
 // serially. "/readonly" endpoints may execute concurrently (false); mutating
-// endpoints execute serially (true).
+// endpoints execute serially (true). Stdio servers have no URL, so
+// isReadOnly() is false and serial is true by construction.
 func (c *MCPServerConfig) EffectiveSerial() bool {
 	return !c.isReadOnly()
 }
@@ -86,14 +101,35 @@ func (c *MCPServerConfig) EffectiveTimeout() time.Duration {
 
 // validate reports hard configuration errors for a single MCP server.
 func (c *MCPServerConfig) validate(name string) error {
-	if strings.TrimSpace(c.URL) == "" {
-		return fmt.Errorf("MCP_SERVERS.%s.URL must not be empty", name)
+	// A server is either a local stdio child process (COMMAND) or a remote
+	// Streamable HTTP endpoint (URL) — never both, never neither.
+	if c.IsStdio() && strings.TrimSpace(c.URL) != "" {
+		return fmt.Errorf("MCP_SERVERS.%s.COMMAND and URL are mutually exclusive", name)
 	}
+	if !c.IsStdio() && strings.TrimSpace(c.URL) == "" {
+		return fmt.Errorf("MCP_SERVERS.%s.URL must not be empty (or set COMMAND for a stdio server)", name)
+	}
+
+	// ARGS/DIR/ENV are stdio-only knobs: without COMMAND they are inert
+	// configuration noise, so reject them.
+	if !c.IsStdio() && (len(c.Args) > 0 || strings.TrimSpace(c.Dir) != "" || len(c.Env) > 0) {
+		return fmt.Errorf("MCP_SERVERS.%s.ARGS/DIR/ENV require COMMAND", name)
+	}
+
+	auth := c.EffectiveAuth()
+
+	// Mode conflict: stdio servers transmit no credentials, so bearer/basic
+	// (which resolve credentials over HTTP) are invalid under COMMAND. This
+	// check precedes the positive credential rules so the mode conflict — the
+	// more specific diagnosis — wins over missing-TOKEN errors.
+	if c.IsStdio() && (auth == MCPAuthBearer || auth == MCPAuthBasic) {
+		return fmt.Errorf("MCP_SERVERS.%s.AUTH bearer/basic requires an HTTP endpoint; stdio (COMMAND) servers transmit no credentials", name)
+	}
+
 	if c.Timeout < 0 {
 		return fmt.Errorf("MCP_SERVERS.%s.TIMEOUT must be >= 0, got %d", name, c.Timeout)
 	}
 
-	auth := c.EffectiveAuth()
 	switch auth {
 	case MCPAuthAuto, MCPAuthGH, MCPAuthBearer, MCPAuthBasic, MCPAuthNone:
 		// valid

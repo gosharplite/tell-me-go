@@ -15,7 +15,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -1944,7 +1943,7 @@ func TestBuildSessionDependencies_CleanupClosesMCPClients(t *testing.T) {
 	// without contacting a live MCP endpoint.
 	tf := b.toolchainFactory.(*defaultToolchainFactory)
 	var constructed []*closeCountingMCPClient
-	tf.mcpFactory.newClient = func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
+	tf.mcpFactory.newClientFor = func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
 		c := &closeCountingMCPClient{}
 		constructed = append(constructed, c)
 		return c, nil

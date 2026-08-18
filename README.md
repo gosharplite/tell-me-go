@@ -25,7 +25,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **System & Dev**: Shell execution (`execute_command`, `pipe_commands`), testing, linting, and vulnerability scanning (`govulncheck`).
     *   **State & History**: Task tracking, `summarize_history`, `manage_history` (pinning/unpinning turns to protect them from pruning), and **Interactive History Browser** (`tell-me-go browse`) with full-text search and O(1) archive navigation.
     *   **Media**: Imagen 3 image generation and Vision analysis.
-    *   **Model Context Protocol (MCP)**: Native consumption of remote MCP servers (GitHub Copilot, custom endpoints) over streamable HTTP with automatic credential resolution.
+    *   **Model Context Protocol (MCP)**: Native consumption of MCP servers — remote endpoints over streamable HTTP with automatic credential resolution, and local stdio servers (COMMAND).
 *   **Safety Guardrails**: 
     *   **Context Control**: Automatic "self-healing" summarization and turn pinning to prevent overflow without losing intent.
     *   **Runaway Protection**: Hallucination loop detection (SHA-256 response hashing), tool repetition guards, and recursion limits.
@@ -346,6 +346,37 @@ MCP_SERVERS:
     # TOKEN: "${GITHUB_TOKEN}"  # Optional: auto-resolved via gh auth token if omitted
     # TIMEOUT: 300              # Seconds (default: 300)
     # REQUIRES_CONSENT: false   # Optional override (default: false for /readonly)
+```
+
+Local stdio servers spawn a child process and talk to it over stdin/stdout:
+
+```yaml
+# COMMAND is resolved via tell-me-go's PATH (parent process); use an absolute path or ${VAR} for venv/toolchain locations.
+MCP_SERVERS:
+  fs:
+    COMMAND: "npx"
+    ARGS: ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]
+  git:
+    COMMAND: "uvx"
+    ARGS: ["mcp-server-git"]
+```
+
+A bare `COMMAND` (no path separator) is resolved via `exec.LookPath` in
+tell-me-go's own process PATH — not `ENV.PATH`, not `DIR`; a separator-bearing
+`COMMAND` (`/abs`, `./rel`) is used as-is, with relative paths resolved
+against `DIR`. `ENV.PATH` governs the child only after exec (it does reach
+the server's own subprocess resolution, e.g. uvx finding `mcp-server-git`).
+`${VAR}` is expanded at config load in `COMMAND`, `ARGS`, `DIR`, and `ENV`
+values.
+
+For executables inside a venv or toolchain directory, use an absolute or
+`${VAR}`-expanded `COMMAND`:
+
+```yaml
+# Absolute path or ${VAR}-expanded COMMAND for venv/toolchain locations:
+venv-tools:
+  COMMAND: "${UVX_PATH}/uvx"
+  ARGS: ["mcp-server-git"]
 ```
 
 ## ⌨️ Shell Integration (Recommended)

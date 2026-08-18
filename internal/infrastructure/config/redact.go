@@ -15,8 +15,11 @@ const redactedValue = "[REDACTED]"
 // case-insensitive. `tokens?` is deliberately absent so max_tokens /
 // max_history_tokens (non-secret integer limits) never match; token$ singular
 // stays. NOTE: the trailing keys? alternative also matches any leaf ending in
-// "key"/"keys" (e.g. "monkey") — accepted fail-closed over-redaction.
-var secretKeyPattern = regexp.MustCompile(`(?i)(api[_-]?keys?|auth[_-]?tokens?|authorization|token|passwords?|secrets?|credentials?|usernames?|keys?)$`)
+// "key"/"keys" (e.g. "monkey") — accepted fail-closed over-redaction. The
+// args?/env alternatives cover MCP stdio ARGS/ENV config, over-redacting any
+// leaf ending in arg/args/env (e.g. an ARGS list that holds no secrets) —
+// same accepted fail-closed trade as keys?.
+var secretKeyPattern = regexp.MustCompile(`(?i)(api[_-]?keys?|auth[_-]?tokens?|authorization|token|passwords?|secrets?|credentials?|usernames?|keys?|args?|env)$`)
 
 // isSecretKey reports whether a config key is secret-bearing.
 // The regex is suffix-anchored and case-insensitive, so full viper paths
@@ -24,6 +27,20 @@ var secretKeyPattern = regexp.MustCompile(`(?i)(api[_-]?keys?|auth[_-]?tokens?|a
 // match on their leaf without pre-splitting.
 func isSecretKey(key string) bool {
 	return secretKeyPattern.MatchString(strings.TrimSpace(key))
+}
+
+// hasSecretAncestor reports whether any proper ancestor of key (split on the
+// viper "::" key delimiter) is deny-listed. Example: the parsed dump must drop
+// mcp_servers::fs::env::FOO because its ancestor mcp_servers::fs::env has the
+// deny-listed leaf "env" — a leaf-suffix match on FOO alone cannot see it.
+func hasSecretAncestor(key string) bool {
+	parts := strings.Split(key, "::")
+	for i := 1; i < len(parts); i++ {
+		if isSecretKey(strings.Join(parts[:i], "::")) {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeKeyToken normalizes a raw key token for deny-list comparison:

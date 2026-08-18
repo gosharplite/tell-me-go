@@ -7,12 +7,17 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/integrations/plugin"
 )
 
 // fakeMCPClient is a minimal tools.MCPClient double used to assert that a
@@ -85,8 +90,8 @@ func TestMCPFactory_ExplicitToken(t *testing.T) {
 			resolverCalls++
 			return "", errors.New("should not be called")
 		},
-		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
-			capturedToken = token
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+			capturedToken = cfg.Token
 			return &fakeMCPClient{}, nil
 		},
 	}
@@ -112,7 +117,8 @@ func TestMCPFactory_ExplicitToken(t *testing.T) {
 
 func TestMCPFactory_GhFallbackAndCaching(t *testing.T) {
 	resolverCalls := 0
-	var tokens []string
+	var mu sync.Mutex
+	tokens := map[string]string{}
 
 	f := &mcpFactory{
 		logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
@@ -120,8 +126,10 @@ func TestMCPFactory_GhFallbackAndCaching(t *testing.T) {
 			resolverCalls++
 			return "gh-token", nil
 		},
-		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
-			tokens = append(tokens, token)
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+			mu.Lock()
+			tokens[cfg.URL] = cfg.Token
+			mu.Unlock()
 			return &fakeMCPClient{}, nil
 		},
 	}
@@ -138,11 +146,11 @@ func TestMCPFactory_GhFallbackAndCaching(t *testing.T) {
 		t.Fatalf("deps count = %d, want 2", len(deps))
 	}
 	if len(tokens) != 2 {
-		t.Fatalf("client constructor called %d times, want 2", len(tokens))
+		t.Fatalf("client constructor called for %d servers, want 2", len(tokens))
 	}
-	for i, tok := range tokens {
-		if tok != "gh-token" {
-			t.Errorf("token[%d] = %q, want %q", i, tok, "gh-token")
+	for _, rawURL := range []string{"https://github.com/org/repo/mcp", "https://api.githubcopilot.com/mcp/"} {
+		if tokens[rawURL] != "gh-token" {
+			t.Errorf("client token for %q = %q, want %q", rawURL, tokens[rawURL], "gh-token")
 		}
 	}
 }
@@ -156,8 +164,8 @@ func TestMCPFactory_EnvFallback(t *testing.T) {
 		tokenResolver: func() (string, error) {
 			return "", errors.New("gh unavailable")
 		},
-		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
-			capturedToken = token
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+			capturedToken = cfg.Token
 			return &fakeMCPClient{}, nil
 		},
 	}
@@ -183,7 +191,7 @@ func TestMCPFactory_TokenResolutionFailureSkips(t *testing.T) {
 		tokenResolver: func() (string, error) {
 			return "", errors.New("gh unavailable")
 		},
-		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
 			return &fakeMCPClient{}, nil
 		},
 	}
@@ -204,7 +212,7 @@ func TestMCPFactory_ClientInitFailureSkips(t *testing.T) {
 	var buf bytes.Buffer
 	f := &mcpFactory{
 		logger: slog.New(slog.NewTextHandler(&buf, nil)),
-		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
 			return nil, errors.New("boom")
 		},
 	}
@@ -224,7 +232,7 @@ func TestMCPFactory_ClientInitFailureSkips(t *testing.T) {
 func TestMCPFactory_ConsentAndSerialPropagation(t *testing.T) {
 	f := &mcpFactory{
 		logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
-		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
 			return &fakeMCPClient{}, nil
 		},
 	}
@@ -273,8 +281,8 @@ func TestMCPFactory_AuthNone(t *testing.T) {
 			resolverCalls++
 			return "", errors.New("should not be called")
 		},
-		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
-			captured[endpoint] = token
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+			captured[cfg.URL] = cfg.Token
 			return &fakeMCPClient{}, nil
 		},
 	}
@@ -308,8 +316,8 @@ func TestMCPFactory_AuthBearer(t *testing.T) {
 			resolverCalls++
 			return "", errors.New("should not be called")
 		},
-		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
-			captured[endpoint] = token
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+			captured[cfg.URL] = cfg.Token
 			return &fakeMCPClient{}, nil
 		},
 	}
@@ -344,9 +352,9 @@ func TestMCPFactory_AuthBearer(t *testing.T) {
 				resolverCalls++
 				return "", errors.New("should not be called")
 			},
-			newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
-				capturedUsername = username
-				capturedToken = token
+			newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+				capturedUsername = cfg.Username
+				capturedToken = cfg.Token
 				return &fakeMCPClient{}, nil
 			},
 		}
@@ -380,9 +388,9 @@ func TestMCPFactory_AuthBasic(t *testing.T) {
 			resolverCalls++
 			return "", errors.New("should not be called")
 		},
-		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
-			capturedUsername = username
-			capturedToken = token
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+			capturedUsername = cfg.Username
+			capturedToken = cfg.Token
 			return &fakeMCPClient{}, nil
 		},
 	}
@@ -419,8 +427,8 @@ func TestMCPFactory_AuthGH(t *testing.T) {
 			resolverCalls++
 			return "gh-token", nil
 		},
-		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
-			captured[endpoint] = token
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+			captured[cfg.URL] = cfg.Token
 			return &fakeMCPClient{}, nil
 		},
 	}
@@ -455,8 +463,8 @@ func TestMCPFactory_AuthGH_ExplicitTokenWins(t *testing.T) {
 			resolverCalls++
 			return "gh-token", nil
 		},
-		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
-			captured[endpoint] = token
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+			captured[cfg.URL] = cfg.Token
 			return &fakeMCPClient{}, nil
 		},
 	}
@@ -478,6 +486,7 @@ func TestMCPFactory_AuthGH_ExplicitTokenWins(t *testing.T) {
 
 func TestMCPFactory_AuthAuto(t *testing.T) {
 	resolverCalls := 0
+	var mu sync.Mutex
 	captured := map[string]string{}
 
 	f := &mcpFactory{
@@ -486,8 +495,10 @@ func TestMCPFactory_AuthAuto(t *testing.T) {
 			resolverCalls++
 			return "gh-token", nil
 		},
-		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
-			captured[endpoint] = token
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+			mu.Lock()
+			captured[cfg.URL] = cfg.Token
+			mu.Unlock()
 			return &fakeMCPClient{}, nil
 		},
 	}
@@ -521,8 +532,8 @@ func TestMCPFactory_AuthAuto_ExplicitTokenWins(t *testing.T) {
 			resolverCalls++
 			return "gh-token", nil
 		},
-		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
-			captured[endpoint] = token
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+			captured[cfg.URL] = cfg.Token
 			return &fakeMCPClient{}, nil
 		},
 	}
@@ -539,6 +550,310 @@ func TestMCPFactory_AuthAuto_ExplicitTokenWins(t *testing.T) {
 	}
 	if got := captured["https://github.com/org/repo/mcp"]; got != "explicit-token" {
 		t.Errorf("client token = %q, want %q", got, "explicit-token")
+	}
+}
+
+// TestMCPFactory_StdioDispatch pins the transport dispatch: a stdio (COMMAND)
+// server and a URL server are both built, and each dep carries the correct
+// consent/serial policy for its transport class.
+func TestMCPFactory_StdioDispatch(t *testing.T) {
+	var mu sync.Mutex
+	stdioSeen := 0
+	urlSeen := 0
+
+	f := &mcpFactory{
+		logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			if cfg.IsStdio() {
+				stdioSeen++
+			} else {
+				urlSeen++
+			}
+			return &fakeMCPClient{}, nil
+		},
+	}
+
+	deps := f.Build(map[string]config.MCPServerConfig{
+		"fs":     {Command: "npx", Args: []string{"-y", "server"}},
+		"remote": {URL: "https://example.com/mcp"},
+	})
+
+	fs, ok := deps["fs"]
+	if !ok {
+		t.Fatal("expected 'fs' dependency")
+	}
+	if fs.RequiresConsent {
+		t.Error("stdio dep RequiresConsent = true, want false (trusted local spawn)")
+	}
+	if !fs.Serial {
+		t.Error("stdio dep Serial = false, want true (no URL → serial by construction)")
+	}
+
+	remote, ok := deps["remote"]
+	if !ok {
+		t.Fatal("expected 'remote' dependency")
+	}
+	if !remote.RequiresConsent {
+		t.Error("remote dep RequiresConsent = false, want true (mutating URL class)")
+	}
+	if !remote.Serial {
+		t.Error("remote dep Serial = false, want true (mutating URL class)")
+	}
+
+	if stdioSeen != 1 || urlSeen != 1 {
+		t.Errorf("fake saw stdio=%d url=%d, want exactly one of each", stdioSeen, urlSeen)
+	}
+}
+
+// TestMCPFactory_StdioSkipsTokenResolution pins that a stdio server under gh
+// auth short-circuits before token resolution: the resolver is never invoked
+// and no mcp_token_resolution_skipped warning is emitted.
+func TestMCPFactory_StdioSkipsTokenResolution(t *testing.T) {
+	var buf bytes.Buffer
+	resolverCalls := 0
+
+	f := &mcpFactory{
+		logger: slog.New(slog.NewTextHandler(&buf, nil)),
+		tokenResolver: func() (string, error) {
+			resolverCalls++
+			return "", errors.New("should not be called")
+		},
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+			return &fakeMCPClient{}, nil
+		},
+	}
+
+	deps := f.Build(map[string]config.MCPServerConfig{
+		"fs": {Command: "npx", Auth: config.MCPAuthGH},
+	})
+
+	if resolverCalls != 0 {
+		t.Errorf("token resolver called %d times, want 0 (stdio short-circuits before resolution)", resolverCalls)
+	}
+	if _, ok := deps["fs"]; !ok {
+		t.Fatal("expected 'fs' dependency")
+	}
+	if bytes.Contains(buf.Bytes(), []byte("mcp_token_resolution_skipped")) {
+		t.Error("stdio server must not emit mcp_token_resolution_skipped")
+	}
+}
+
+// TestMCPFactory_ConstructorError_NoArgsEnvLeak pins that constructor-failure
+// warning text carries the COMMAND at most — never ARGS elements or ENV
+// values — and that the failing servers are skipped.
+func TestMCPFactory_ConstructorError_NoArgsEnvLeak(t *testing.T) {
+	var buf bytes.Buffer
+
+	f := &mcpFactory{
+		logger: slog.New(slog.NewTextHandler(&buf, nil)),
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+			return nil, fmt.Errorf("init failed for %s", cfg.Command)
+		},
+	}
+
+	deps := f.Build(map[string]config.MCPServerConfig{
+		"fs":     {Command: "npx", Args: []string{"sk-args-leak"}, Env: map[string]string{"K": "sk-env-leak"}},
+		"remote": {URL: "https://example.com/mcp"},
+	})
+
+	if len(deps) != 0 {
+		t.Fatalf("deps count = %d, want 0 (both servers must be skipped)", len(deps))
+	}
+	out := buf.String()
+	if !strings.Contains(out, "npx") {
+		t.Error("log missing the COMMAND (npx); error text must carry the command name")
+	}
+	if strings.Contains(out, "sk-args-leak") {
+		t.Error("log leaked an ARGS value (sk-args-leak)")
+	}
+	if strings.Contains(out, "sk-env-leak") {
+		t.Error("log leaked an ENV value (sk-env-leak)")
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("mcp_client_init_failed")) {
+		t.Error("expected mcp_client_init_failed warning")
+	}
+}
+
+// TestMCPFactory_ConcurrentBuild proves phase-2 construction is concurrent:
+// each fake call blocks on its own release channel, so all N constructions
+// must have entered the fake before any completes. A deadline select bounds
+// the wait — no time.Sleep (ADR-036).
+func TestMCPFactory_ConcurrentBuild(t *testing.T) {
+	const n = 4
+
+	releases := make([]chan struct{}, n)
+	for i := range releases {
+		releases[i] = make(chan struct{})
+	}
+	entered := make(chan struct{}, n)
+	var started atomic.Int32
+
+	f := &mcpFactory{
+		logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+			idx := int(started.Add(1)) - 1
+			entered <- struct{}{}
+			<-releases[idx]
+			return &fakeMCPClient{}, nil
+		},
+	}
+
+	servers := make(map[string]config.MCPServerConfig, n)
+	for i := 0; i < n; i++ {
+		servers[fmt.Sprintf("server-%d", i)] = config.MCPServerConfig{URL: fmt.Sprintf("https://example.com/mcp/%d", i)}
+	}
+
+	done := make(chan map[string]plugin.MCPServerDependency)
+	go func() {
+		done <- f.Build(servers)
+	}()
+
+	for i := 0; i < n; i++ {
+		select {
+		case <-entered:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("only %d of %d constructions started; Build is not concurrent", i, n)
+		}
+	}
+	if got := started.Load(); got != n {
+		t.Fatalf("started counter = %d, want %d", got, n)
+	}
+
+	for _, ch := range releases {
+		close(ch)
+	}
+	deps := <-done
+
+	if len(deps) != n {
+		t.Fatalf("deps count = %d, want %d", len(deps), n)
+	}
+	for name := range servers {
+		if _, ok := deps[name]; !ok {
+			t.Errorf("missing dependency %q", name)
+		}
+	}
+}
+
+// TestMCPFactory_ConcurrentBuild_FailingServerSkips pins the per-server
+// failure path under concurrent construction: the failing server's dep is
+// absent, the others are present, and mcp_client_init_failed is logged
+// exactly once.
+func TestMCPFactory_ConcurrentBuild_FailingServerSkips(t *testing.T) {
+	const n = 4
+
+	releases := make([]chan struct{}, n)
+	for i := range releases {
+		releases[i] = make(chan struct{})
+	}
+	entered := make(chan struct{}, n)
+	var started atomic.Int32
+	var buf bytes.Buffer
+
+	f := &mcpFactory{
+		logger: slog.New(slog.NewTextHandler(&buf, nil)),
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+			idx := int(started.Add(1)) - 1
+			entered <- struct{}{}
+			<-releases[idx]
+			if strings.HasSuffix(cfg.URL, "/fail") {
+				return nil, errors.New("boom")
+			}
+			return &fakeMCPClient{}, nil
+		},
+	}
+
+	servers := make(map[string]config.MCPServerConfig, n)
+	for i := 0; i < n; i++ {
+		url := fmt.Sprintf("https://example.com/mcp/%d", i)
+		if i == 2 {
+			url = "https://example.com/mcp/fail"
+		}
+		servers[fmt.Sprintf("server-%d", i)] = config.MCPServerConfig{URL: url}
+	}
+
+	done := make(chan map[string]plugin.MCPServerDependency)
+	go func() {
+		done <- f.Build(servers)
+	}()
+
+	for i := 0; i < n; i++ {
+		select {
+		case <-entered:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("only %d of %d constructions started", i, n)
+		}
+	}
+	for _, ch := range releases {
+		close(ch)
+	}
+	deps := <-done
+
+	if len(deps) != n-1 {
+		t.Fatalf("deps count = %d, want %d (failing server skipped)", len(deps), n-1)
+	}
+	if _, ok := deps["server-2"]; ok {
+		t.Error("failing server 'server-2' must be absent from deps")
+	}
+	for i := 0; i < n; i++ {
+		if i == 2 {
+			continue
+		}
+		name := fmt.Sprintf("server-%d", i)
+		if _, ok := deps[name]; !ok {
+			t.Errorf("missing dependency %q", name)
+		}
+	}
+	if got := bytes.Count(buf.Bytes(), []byte("mcp_client_init_failed")); got != 1 {
+		t.Errorf("mcp_client_init_failed logged %d times, want exactly 1", got)
+	}
+}
+
+// TestMCPFactory_StdioAndHTTPMixed pins the mixed-transport pre-pass: one
+// stdio server (gh mode, resolved untouched) plus two gh HTTP servers
+// (single-flight token resolution). The stdio config reaches the constructor
+// with its token still empty even though gh mode is set.
+func TestMCPFactory_StdioAndHTTPMixed(t *testing.T) {
+	resolverCalls := 0
+	var mu sync.Mutex
+	stdioToken := "unset"
+	stdioSeen := false
+
+	f := &mcpFactory{
+		logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+		tokenResolver: func() (string, error) {
+			resolverCalls++
+			return "gh-token", nil
+		},
+		newClientFor: func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			if cfg.IsStdio() {
+				stdioSeen = true
+				stdioToken = cfg.Token
+			}
+			return &fakeMCPClient{}, nil
+		},
+	}
+
+	deps := f.Build(map[string]config.MCPServerConfig{
+		"fs":       {Command: "npx", Auth: config.MCPAuthGH},
+		"github-1": {URL: "https://github.com/org/repo/mcp", Auth: config.MCPAuthGH},
+		"github-2": {URL: "https://github.com/org/other/mcp", Auth: config.MCPAuthGH},
+	})
+
+	if resolverCalls != 1 {
+		t.Errorf("token resolver called %d times, want exactly 1 (single-flight pre-pass)", resolverCalls)
+	}
+	if len(deps) != 3 {
+		t.Fatalf("deps count = %d, want 3", len(deps))
+	}
+	if !stdioSeen {
+		t.Error("fake never saw a stdio config")
+	}
+	if stdioToken != "" {
+		t.Errorf("stdio cfg token = %q, want empty (stdio is resolved untouched; gh mode is inert under COMMAND)", stdioToken)
 	}
 }
 

@@ -870,6 +870,36 @@ catalog a new gap no one reviewed. Policy:
 - **Rationale**: Table-driven transport test pinning the Basic auth header contract across three subtest closures (header set with exact base64, no-header when username empty, no-header when token empty), each building its own roundTripFunc assertion closure. CC comes from subtest enumeration and assertion boilerplate, not branching business logic. Same acceptance class as `TestMediaBlocks` (CC=11) — assertion boilerplate across a coverage matrix.
 - **See**: `internal/infrastructure/mcp/client_test.go:645`
 
+### internal/infrastructure/di/mcp_factory_test.go — TestMCPFactory_ConcurrentBuild (CC=11)
+
+- **Status**: ACCEPTED (2026-08, #1396)
+- **Rationale**: Channel-gated concurrency proof for the factory's phase-2 construction: per-server fake calls block on release channels while a started-channel deadline select proves all N constructions entered before any completed. CC comes from harness/assertion boilerplate (deadline select, started-counter check, per-server dep assertions), not branching business logic. Splitting would duplicate the channel-gated harness. Same acceptance class as `TestGetModelTurn` (CC=16) and `TestFakeToolchainRunner_PresetValues` (CC=28).
+- **See**: `internal/infrastructure/di/mcp_factory_test.go:683`
+
+### internal/infrastructure/di/mcp_factory_test.go — TestMCPFactory_ConcurrentBuild_FailingServerSkips (CC=15)
+
+- **Status**: ACCEPTED (2026-08, #1396)
+- **Rationale**: Same channel-gated harness as `TestMCPFactory_ConcurrentBuild` plus sequential setup and per-server assertions over N servers (failing server absent, others present, exactly one `mcp_client_init_failed` log). CC is harness/assertion boilerplate, not branching business logic. Splitting would duplicate the expensive harness. Same acceptance class as `TestFakeToolchainRunner_PresetValues` (CC=28).
+- **See**: `internal/infrastructure/di/mcp_factory_test.go:743`
+
+### internal/infrastructure/mcp/stdio_client_integration_test.go — TestStdio_RoundTrip (CC=11)
+
+- **Status**: ACCEPTED (2026-08, #1396)
+- **Rationale**: Sequential integration test over a real child process (list tools → echo round-trip → stderr-capture poll → stderr tool call). CC is multi-step assertion boilerplate and the deadline-bounded stderr poll, not branching business logic. Splitting would duplicate the expensive child-process setup per subtest. Same acceptance class as `TestGetModelTurn` (CC=16) and `TestHistoryNavigation_CompleteWorkflow` (CC=15).
+- **See**: `internal/infrastructure/mcp/stdio_client_integration_test.go:112`
+
+### internal/infrastructure/mcp/stdio_client_integration_test.go — TestStdio_LauncherTreePassThrough (CC=13)
+
+- **Status**: ACCEPTED (2026-08, #1396)
+- **Rationale**: Sequential launcher test (spawn → stderr poll for pid → ListTools → Close → deadline-bounded liveness poll with `syscall.Kill`). CC is the poll/assertion sequence, not branching business logic. Splitting would duplicate the child-process/launcher setup. Same acceptance class as `TestHistoryNavigation_CompleteWorkflow` (CC=15) — sequential workflow where steps depend on prior state.
+- **See**: `internal/infrastructure/mcp/stdio_client_integration_test.go:216`
+
+### internal/infrastructure/mcp/stdio_client_integration_test.go — TestStdio_ChildDeathMidSession (CC=11)
+
+- **Status**: ACCEPTED (2026-08, #1396)
+- **Rationale**: Sequential death-mid-session integration test over a real child process (die call → race-tolerant death-indication assertion → deadline-bounded poll loop that deterministically closes the async-reap window by waiting for the sticky child-exit error → post-sticky pointer-equality assertions). CC comes from the poll/branch structure (the poll's if/break, the deadline guard, and the two sticky assertions), not branching business logic — and the poll is the test's synchronization mechanism, not refactorable: splitting it would both duplicate the expensive child-process setup and destroy the deterministic reaper synchronization it provides. Same acceptance class as `TestStdio_RoundTrip` (CC=11) and `TestStdio_LauncherTreePassThrough` (CC=13) in the same file.
+- **See**: `internal/infrastructure/mcp/stdio_client_integration_test.go:278`
+
 ---
 
 ## Complexity Alerts (ACCEPTED)
@@ -1035,6 +1065,12 @@ to reason about.
   `WrapWidth > 0` guard added to the markdown-renderer selection branch —
   the same structural-guard acceptance class as the rest of this function.
 - **See**: `internal/ui/history.go:26`
+
+### internal/domain/config/mcp_config.go — (*MCPServerConfig).validate (CC=20)
+
+- **Status**: ACCEPTED (2026-08, #1396)
+- **Rationale**: Sequential validation with structural guards only: the issue-mandated most-specific-error-wins check order (COMMAND/URL mutual exclusion, ARGS/DIR/ENV-require-COMMAND, bearer/basic mode conflict, TIMEOUT, the 6-case auth-mode switch, and the positive credential rules) — every branch is a one-line error return whose message is pinned by the T1 table tests. CC is driven by guard count + the auth switch, not branching business logic. Extracting helpers would fragment a coherent, message-pinned validation sequence for cosmetic CC reduction — same acceptance class as `renderHistory` (CC=12) and `(*HistoryEditor).Edit` (CC=10) in this section. A future extraction refactor is possible but is tracked, not this PR.
+- **See**: `internal/domain/config/mcp_config.go:103`
 
 ### ui/tui/browser.go — (*rootBrowserModel).handleActionKeys (CC=15) → RESOLVED
 
@@ -1296,14 +1332,14 @@ to reason about.
 ### di/mcp_factory.go — resolveServerToken default case
 
 - **Status**: ACCEPTED (2026-09)
-- **Rationale**: the inline comment documents it: unknown auth modes are rejected by config validation before Build runs, so the default treats them defensively as "none". Defensive guard on internal pipeline state — same acceptance class as the 2026-07 Batch Triage defensive nil/empty guards. Re-anchored 2026-08 (#1389): lines drifted 148-151 → 157-160 as the basic-auth DI resolution added the username parameter to the newClient closure.
-- **See**: `internal/infrastructure/di/mcp_factory.go:157-160`
+- **Rationale**: the inline comment documents it: unknown auth modes are rejected by config validation before Build runs, so the default treats them defensively as "none". Defensive guard on internal pipeline state — same acceptance class as the 2026-07 Batch Triage defensive nil/empty guards. Re-anchored 2026-08 (#1389): lines drifted 148-151 → 157-160 as the basic-auth DI resolution added the username parameter to the newClient closure. Re-anchored 2026-08 (#1396): lines drifted 157-160 → 223-227 as the stdio factory refactor replaced the newClient seam with newClientFor and split Build into a two-phase pre-pass + concurrent construction.
+- **See**: `internal/infrastructure/di/mcp_factory.go:223-227`
 
 ### di/mcp_factory.go — gh auth token resolver
 
 - **Status**: ACCEPTED (2026-09)
-- **Rationale**: the tokenResolver closure shells out to `gh auth token` via exec.Command at the composition root; triggering the error requires `gh` to be missing or failing mid-resolution — environment fault injection disproportionate to the value. Same acceptance class as the 2026-07 fault-injection gaps.
-- **See**: `internal/infrastructure/di/mcp_factory.go:60-65`
+- **Rationale**: the tokenResolver closure shells out to `gh auth token` via exec.Command at the composition root; triggering the error requires `gh` to be missing or failing mid-resolution — environment fault injection disproportionate to the value. Same acceptance class as the 2026-07 fault-injection gaps. Re-anchored 2026-08 (#1396): lines drifted 60-65 → 67-70 as the stdio factory refactor replaced the newClient seam with newClientFor.
+- **See**: `internal/infrastructure/di/mcp_factory.go:67-70`
 
 ### di/toolchain_factory.go — registerSkillsShTools error
 
