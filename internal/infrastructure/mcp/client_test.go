@@ -5,6 +5,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -103,6 +104,16 @@ func TestNewClient(t *testing.T) {
 		}
 		if c.token != "tok" {
 			t.Errorf("token = %q, want %q", c.token, "tok")
+		}
+	})
+
+	t.Run("basic auth option sets username", func(t *testing.T) {
+		c, err := NewClient("http://example.com/mcp", "tok", 0, WithBasicAuth("user"))
+		if err != nil {
+			t.Fatalf("NewClient() error = %v", err)
+		}
+		if c.username != "user" {
+			t.Errorf("username = %q, want %q", c.username, "user")
 		}
 	})
 }
@@ -629,4 +640,117 @@ func TestCloseConnectedNoGoroutineLeak(t *testing.T) {
 	}
 
 	ts.Close()
+}
+
+func TestBasicAuthTransport(t *testing.T) {
+	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("user:secret"))
+
+	t.Run("sets Basic header", func(t *testing.T) {
+		base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if got := req.Header.Get("Authorization"); got != want {
+				t.Errorf("Authorization = %q, want %q", got, want)
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok"))}, nil
+		})
+
+		tr := &basicAuthTransport{base: base, username: "user", token: "secret"}
+		req, err := http.NewRequest(http.MethodGet, "http://example.com", nil)
+		if err != nil {
+			t.Fatalf("NewRequest() error = %v", err)
+		}
+		resp, err := tr.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip() error = %v", err)
+		}
+		_ = resp.Body.Close()
+
+		// The original request must not be mutated.
+		if got := req.Header.Get("Authorization"); got != "" {
+			t.Errorf("original request Authorization = %q, want empty (request must be cloned)", got)
+		}
+	})
+
+	t.Run("no header when username empty", func(t *testing.T) {
+		base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if got := req.Header.Get("Authorization"); got != "" {
+				t.Errorf("Authorization = %q, want empty", got)
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok"))}, nil
+		})
+
+		tr := &basicAuthTransport{base: base, username: "", token: "secret"}
+		req, err := http.NewRequest(http.MethodGet, "http://example.com", nil)
+		if err != nil {
+			t.Fatalf("NewRequest() error = %v", err)
+		}
+		resp, err := tr.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip() error = %v", err)
+		}
+		_ = resp.Body.Close()
+	})
+
+	t.Run("no header when token empty", func(t *testing.T) {
+		base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if got := req.Header.Get("Authorization"); got != "" {
+				t.Errorf("Authorization = %q, want empty", got)
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok"))}, nil
+		})
+
+		tr := &basicAuthTransport{base: base, username: "user", token: ""}
+		req, err := http.NewRequest(http.MethodGet, "http://example.com", nil)
+		if err != nil {
+			t.Fatalf("NewRequest() error = %v", err)
+		}
+		resp, err := tr.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip() error = %v", err)
+		}
+		_ = resp.Body.Close()
+	})
+}
+
+func TestWithBasicAuthHeader(t *testing.T) {
+	c := &http.Client{}
+
+	if got := withBasicAuthHeader(c, "", "secret"); got != c {
+		t.Errorf("withBasicAuthHeader(empty username) = %p, want original %p", got, c)
+	}
+
+	if got := withBasicAuthHeader(c, "user", ""); got != c {
+		t.Errorf("withBasicAuthHeader(empty token) = %p, want original %p", got, c)
+	}
+
+	got := withBasicAuthHeader(c, "user", "secret")
+	if got == c {
+		t.Fatal("withBasicAuthHeader(non-empty) should wrap the client")
+	}
+	if _, ok := got.Transport.(*basicAuthTransport); !ok {
+		t.Errorf("Transport = %T, want *basicAuthTransport", got.Transport)
+	}
+}
+
+func TestConnect_BasicAuthHeader(t *testing.T) {
+	var captured string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	c, err := NewClient(ts.URL, "secret", 5*time.Second, WithBasicAuth("user"))
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	if _, err := c.ListTools(context.Background()); err == nil {
+		t.Fatal("ListTools() error = nil, want error")
+	}
+
+	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("user:secret"))
+	if captured != want {
+		t.Errorf("Authorization = %q, want %q", captured, want)
+	}
 }
