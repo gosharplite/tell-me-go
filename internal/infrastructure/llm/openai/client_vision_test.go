@@ -401,3 +401,18 @@ func TestPrepareMediaForTurn_SuccessAppliesParts(t *testing.T) {
 		t.Errorf("expected InlineData preserved, got %+v", history[0].Parts[0].InlineData)
 	}
 }
+
+func TestSendChat_MediaPrepError(t *testing.T) {
+	c := NewClient("", "test-model", &auth.BearerAuth{Token: "test"})
+	c.capabilities.SupportsVision = true
+
+	history := []*llm.Content{{Role: "user", Parts: []*llm.Part{{AssetID: "asset-1"}}}}
+
+	_, _, err := c.SendChat(context.Background(), history, nil, &testAssetResolver{data: map[string][]byte{}})
+	if err == nil {
+		t.Fatal("expected media-prep error, got nil")
+	}
+	if !strings.Contains(err.Error(), "asset not found") {
+		t.Errorf("expected 'asset not found' in error, got %q", err.Error())
+	}
+}
