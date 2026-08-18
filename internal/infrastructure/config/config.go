@@ -144,7 +144,7 @@ func readConfigFile(v *viper.Viper, path string) error {
 	}
 
 	if isDebug() {
-		slog.Debug("raw content", slog.String("content", string(data[:min(len(data), 1000)])))
+		slog.Debug("raw content", slog.String("content", redactRawContent(string(data[:min(len(data), 1000)]))))
 	}
 
 	v.SetConfigType("yaml")
@@ -155,7 +155,11 @@ func readConfigFile(v *viper.Viper, path string) error {
 	if isDebug() {
 		slog.Debug("viper parsed keys")
 		for _, key := range v.AllKeys() {
-			slog.Debug("parsed entry", slog.String("key", key), slog.Any("value", v.Get(key)))
+			if isSecretKey(key) {
+				slog.Debug("parsed entry", slog.String("key", key), slog.String("value", redactedValue))
+			} else {
+				slog.Debug("parsed entry", slog.String("key", key), slog.Any("value", v.Get(key)))
+			}
 		}
 	}
 	return nil
