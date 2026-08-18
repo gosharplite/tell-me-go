@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 // Package mcp implements the infrastructure adapter for the tools.MCPClient
-// domain port using the Model Context Protocol (MCP) Go SDK. It targets the
-// Streamable HTTP transport (the transport used by GitHub's hosted remote MCP
-// server) and keeps the SDK isolated behind the domain port so it remains
-// swappable (ADR-055/060 injection pattern).
+// domain port using the Model Context Protocol (MCP) Go SDK. It exposes two
+// transports: Streamable HTTP for remote servers (Client — the transport used
+// by GitHub's hosted remote MCP server) and local stdio child processes
+// (StdioClient — COMMAND + ARGS spawned as a subprocess). The SDK is isolated
+// behind the domain port so it remains swappable (ADR-055/060 injection
+// pattern).
 package mcp
 
 import (
