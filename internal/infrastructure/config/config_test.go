@@ -1063,3 +1063,102 @@ func TestRawContentDump_InvalidYAML_ColonlessSecretRedacted(t *testing.T) {
 		t.Error("debug output missing the colonless redaction (TOKEN [REDACTED])")
 	}
 }
+
+// TestLoad_ParsedDump_MCPStdioRedaction pins the #1396 parsed-dump redaction
+// contract for MCP stdio servers: neither the raw-content dump nor the
+// parsed-key dump may log an ARGS element or an ENV value. The parsed dump
+// must additionally drop innocuous-named ENV sub-keys (env::FOO) via
+// hasSecretAncestor, since their leaf alone is not deny-listed.
+func TestLoad_ParsedDump_MCPStdioRedaction(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "")              // neutralize ambient env pollution
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test_stdio_redaction.yaml")
+	yamlContent := `
+MCP_SERVERS:
+  fs:
+    COMMAND: "uvx"
+    ARGS: ["--token", "sk-1234"]
+    ENV:
+      FOO: "sk-5678"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	buf := captureDebugLogs(t)
+	cfg, err := load(configPath)
+	if err != nil {
+		t.Fatalf("load() failed: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config")
+	}
+
+	output := buf.String()
+	if strings.Contains(output, "sk-1234") {
+		t.Error("debug output leaked an ARGS element value (sk-1234)")
+	}
+	if strings.Contains(output, "sk-5678") {
+		t.Error("debug output leaked an ENV value (sk-5678)")
+	}
+	if !strings.Contains(output, "[REDACTED]") {
+		t.Error("debug output missing the [REDACTED] placeholder")
+	}
+	if !strings.Contains(output, "mcp_servers::fs::env") {
+		t.Error("debug output missing the parsed env key; parsed dump not emitted")
+	}
+}
+
+// TestLoad_MCPStdio_EnvExpansion pins the issue §1 claim: ${VAR} expansion
+// must apply to the new stdio fields — the COMMAND string, each ARGS slice
+// element, and each ENV map value. expandEnvHook fires per string element /
+// value through mapstructure's decode hook pipeline; if it ever stops firing
+// for []string elements or map[string]string values, this test fails and the
+// hook needs a change (the values are compared against the expanded forms).
+func TestLoad_MCPStdio_EnvExpansion(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "")              // neutralize ambient env pollution
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
+	t.Setenv("UVX_PATH", "/venv/bin")
+	t.Setenv("ARG_VAL", "expanded-arg")
+	t.Setenv("CUSTOM_PATH", "/custom/bin")
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test_stdio_expansion.yaml")
+	yamlContent := `
+MCP_SERVERS:
+  fs:
+    COMMAND: "${UVX_PATH}/uvx"
+    ARGS: ["--flag=${ARG_VAL}"]
+    ENV:
+      PATH: "${CUSTOM_PATH}"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := load(configPath)
+	if err != nil {
+		t.Fatalf("load() failed: %v", err)
+	}
+
+	fs := cfg.MCPServers["fs"]
+	if fs.Command != "/venv/bin/uvx" {
+		t.Errorf("COMMAND not expanded: got %q, want %q", fs.Command, "/venv/bin/uvx")
+	}
+	if len(fs.Args) != 1 || fs.Args[0] != "--flag=expanded-arg" {
+		t.Errorf("ARGS element not expanded: got %v, want [--flag=expanded-arg]", fs.Args)
+	}
+	// Viper lowercases nested map keys, so assert on the value rather than
+	// the key casing to pin the expansion itself.
+	expanded := false
+	for _, v := range fs.Env {
+		if v == "/custom/bin" {
+			expanded = true
+		}
+	}
+	if !expanded {
+		t.Errorf("ENV value not expanded: got %v, want a value of /custom/bin", fs.Env)
+	}
+}

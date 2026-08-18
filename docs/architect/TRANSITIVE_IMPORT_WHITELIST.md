@@ -108,6 +108,9 @@ allowed: llm, persistence, services, tools
 ## consumer: internal/infrastructure/logging
 allowed: events, llm, persistence, services, telemetry, tools
 # P1+P2+P3: via events/llm deps
+## consumer: internal/infrastructure/mcp
+allowed: config, events, llm, pricing, telemetry, tools
+# P3+P1+P2 (#1396): stdio transport constructor takes domain config (NewStdioClient); closure via config — same approved set as internal/infrastructure/config
 ## consumer: internal/infrastructure/telemetry
 allowed: config, events, llm, pricing, security, telemetry, tools
 # P2+P3: config via events/telemetry deps

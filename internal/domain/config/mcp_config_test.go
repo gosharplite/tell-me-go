@@ -409,3 +409,238 @@ MCP_SERVERS:
 	assert.Equal(t, "user@example.com", rovo.Username)
 	assert.Equal(t, "tok", rovo.Token)
 }
+
+// TestMCPServerConfig_IsStdio pins the stdio predicate: a server is stdio
+// iff COMMAND is set — whitespace-only COMMAND does not count.
+func TestMCPServerConfig_IsStdio(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		command string
+		want    bool
+	}{
+		{"empty command is not stdio", "", false},
+		{"whitespace-only command is not stdio", "   ", false},
+		{"command set is stdio", "npx", true},
+		{"command with surrounding whitespace is stdio", "  npx  ", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := MCPServerConfig{Command: tt.command}
+			assert.Equal(t, tt.want, c.IsStdio())
+		})
+	}
+}
+
+// TestMCPServerConfig_Validate_StdioModeConflict pins the stdio/HTTP mode
+// contract: COMMAND and URL are mutually exclusive, neither may be absent,
+// and ARGS/DIR/ENV require COMMAND. The most specific error wins (each
+// check returns immediately).
+func TestMCPServerConfig_Validate_StdioModeConflict(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		cfg         MCPServerConfig
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:        "COMMAND and URL are mutually exclusive",
+			cfg:         MCPServerConfig{Command: "npx", URL: "https://example.com/mcp"},
+			wantErr:     true,
+			errContains: "mutually exclusive",
+		},
+		{
+			name:        "neither COMMAND nor URL",
+			cfg:         MCPServerConfig{},
+			wantErr:     true,
+			errContains: "URL must not be empty",
+		},
+		{
+			name:        "ARGS without COMMAND",
+			cfg:         MCPServerConfig{URL: "https://example.com/mcp", Args: []string{"--foo"}},
+			wantErr:     true,
+			errContains: "ARGS/DIR/ENV require COMMAND",
+		},
+		{
+			name:        "DIR without COMMAND",
+			cfg:         MCPServerConfig{URL: "https://example.com/mcp", Dir: "/tmp"},
+			wantErr:     true,
+			errContains: "ARGS/DIR/ENV require COMMAND",
+		},
+		{
+			name:        "ENV without COMMAND",
+			cfg:         MCPServerConfig{URL: "https://example.com/mcp", Env: map[string]string{"FOO": "bar"}},
+			wantErr:     true,
+			errContains: "ARGS/DIR/ENV require COMMAND",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := tt.cfg.validate("server")
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestMCPServerConfig_Validate_StdioAuth pins the stdio auth contract:
+// bearer/basic are hard-rejected under COMMAND (stdio servers transmit no
+// credentials) — the mode conflict is diagnosed before the positive
+// credential rules — while auto/gh/none/empty remain valid and stray
+// TOKEN/USERNAME are tolerated.
+func TestMCPServerConfig_Validate_StdioAuth(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		cfg         MCPServerConfig
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:        "COMMAND with bearer rejected",
+			cfg:         MCPServerConfig{Command: "npx", Auth: "bearer", Token: "tok"},
+			wantErr:     true,
+			errContains: "requires an HTTP endpoint",
+		},
+		{
+			name:        "COMMAND with basic rejected even with valid credentials",
+			cfg:         MCPServerConfig{Command: "npx", Auth: "basic", Username: "user", Token: "tok"},
+			wantErr:     true,
+			errContains: "requires an HTTP endpoint",
+		},
+		{
+			name:        "COMMAND with bearer and empty token: mode conflict wins",
+			cfg:         MCPServerConfig{Command: "npx", Auth: "bearer"},
+			wantErr:     true,
+			errContains: "requires an HTTP endpoint",
+		},
+		{
+			name:    "COMMAND with auto valid",
+			cfg:     MCPServerConfig{Command: "npx", Auth: "auto"},
+			wantErr: false,
+		},
+		{
+			name:    "COMMAND with gh valid",
+			cfg:     MCPServerConfig{Command: "npx", Auth: "gh"},
+			wantErr: false,
+		},
+		{
+			name:    "COMMAND with none valid",
+			cfg:     MCPServerConfig{Command: "npx", Auth: "none"},
+			wantErr: false,
+		},
+		{
+			name:    "COMMAND with empty auth valid",
+			cfg:     MCPServerConfig{Command: "npx"},
+			wantErr: false,
+		},
+		{
+			name:    "COMMAND with gh and stray token valid",
+			cfg:     MCPServerConfig{Command: "npx", Auth: "gh", Token: "stray"},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := tt.cfg.validate("server")
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+				// The mode-conflict diagnosis must win over the positive
+				// credential rules (bearer/basic missing-credential errors).
+				assert.NotContains(t, err.Error(), "must not be empty when AUTH")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestMCPServerConfig_ConsentAndSerial_Stdio pins the stdio defaults for
+// consent and serialization: a stdio server defaults to no consent (trusted
+// local spawn) and serial execution (no URL → not read-only). The explicit
+// REQUIRES_CONSENT override still wins; HTTP URL-class defaults are
+// regression-pinned.
+func TestMCPServerConfig_ConsentAndSerial_Stdio(t *testing.T) {
+	t.Parallel()
+
+	trueVal := true
+	falseVal := false
+
+	tests := []struct {
+		name        string
+		cfg         MCPServerConfig
+		wantConsent bool
+		wantSerial  bool
+	}{
+		{
+			name:        "stdio default: no consent, serial",
+			cfg:         MCPServerConfig{Command: "npx"},
+			wantConsent: false,
+			wantSerial:  true,
+		},
+		{
+			name:        "stdio with explicit consent true",
+			cfg:         MCPServerConfig{Command: "npx", RequiresConsent: &trueVal},
+			wantConsent: true,
+			wantSerial:  true,
+		},
+		{
+			name:        "stdio with explicit consent false",
+			cfg:         MCPServerConfig{Command: "npx", RequiresConsent: &falseVal},
+			wantConsent: false,
+			wantSerial:  true,
+		},
+		{
+			name:        "HTTP readonly regression",
+			cfg:         MCPServerConfig{URL: "https://api.githubcopilot.com/mcp/readonly"},
+			wantConsent: false,
+			wantSerial:  false,
+		},
+		{
+			name:        "HTTP mutating regression",
+			cfg:         MCPServerConfig{URL: "https://api.githubcopilot.com/mcp/"},
+			wantConsent: true,
+			wantSerial:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.wantConsent, tt.cfg.EffectiveRequiresConsent())
+			assert.Equal(t, tt.wantSerial, tt.cfg.EffectiveSerial())
+		})
+	}
+}
+
+// TestConfig_ValidateMCPServers_Stdio pins that a valid stdio server
+// config survives ValidateMCPServers: the key-regex check runs first and
+// the per-server validate() accepts a COMMAND-only stdio configuration.
+func TestConfig_ValidateMCPServers_Stdio(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{MCPServers: map[string]MCPServerConfig{
+		"local-fs": {
+			Command: "npx",
+			Args:    []string{"-y", "@modelcontextprotocol/server-filesystem"},
+			Dir:     "/tmp",
+			Env:     map[string]string{"FOO": "bar"},
+		},
+	}}
+	require.NoError(t, cfg.ValidateMCPServers())
+}

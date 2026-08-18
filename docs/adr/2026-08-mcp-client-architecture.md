@@ -273,6 +273,150 @@ subset of configuration the per-turn config watcher manages.
    in-process code and the alternative (provenance tracking) adds registry
    coupling disproportionate to the threat model.
 
+### Amendment (2026-08, issue #1396 — stdio transport for local MCP servers)
+
+1. **Second transport implementation.** tell-me-go now supports local stdio
+   MCP servers via a separate `StdioClient` type
+   (`internal/infrastructure/mcp/stdio_client.go`) in the same package — not
+   a mode on the HTTP `Client`. Eager construction: `NewStdioClient(cfg,
+   logger)` spawns `COMMAND` with `ARGS`/`DIR`/`ENV` via
+   `exec.CommandContext`, connects over
+   `sdkmcp.IOTransport{Reader: stdoutPipe, Writer: stdinPipe}` inside the
+   constructor, bounded by the server's `TIMEOUT` (default 300s). One child
+   process per server; no reliance on `os.Stdin`/`os.Stdout` (the SDK's
+   `StdioTransport` is hard-wired to those, one per process, hence rejected).
+   Reuses the HTTP client's unexported conversion helpers; SDK confinement
+   (§2) unchanged.
+
+2. **Lifecycle & process-tree guarantees (two-tier).** Direct-child reaping
+   is **deterministic**: a reaper goroutine started immediately after
+   `cmd.Start()` sends `cmd.Wait()`'s result to a buffered channel, so the
+   child is reaped the moment it dies — zombie prevention is not contingent
+   on `Close()`. Tree termination is **best-effort** via shared-pipe stdin
+   EOF: launchers (`npx`, `uvx`) pass stdio through rather than proxying it,
+   so a grandchild sees EOF directly and SDK-built servers
+   (`server.Run(ctx, &StdioTransport{})` read loop exits on `io.EOF`)
+   self-terminate; the Unix SIGPIPE write-backstop covers a grandchild that
+   writes after our read end closes. **Zombie vs orphan**: no zombies,
+   guaranteed; orphans possible for transport-contract-violating servers (an
+   EOF-ignoring **and silent** grandchild on Unix; any EOF-ignoring
+   grandchild on Windows — no signal backstop) — accepted residuals. **No
+   process-group kill this PR** (Unix-only platform split for a
+   misbehaving-server edge; pgid-kill is wrong for a reparenting child;
+   Windows needs Job Objects) — tracked future option.
+
+3. **Fast-death and failure surfaces.** A non-blocking pre-check at the top
+   of `ListTools`/`CallTool` (under the client mutex) returns a sticky
+   `mcp: stdio child %q exited: %w` error once the child has died — every
+   subsequent call fails fast deterministically (the SDK alone does not
+   guarantee this). In-flight EOF (`io.EOF`/`ErrConnectionClosed`)
+   coinciding with a confirmed child exit is annotated with the exit status;
+   a wedge surfaces as the plain `context.DeadlineExceeded` wrap — dead vs
+   wedged are distinguishable by error text and latency.
+   Spawn/connect/handshake failures and handshake timeout surface at DI
+   `Build` as the existing warn+skip (server skipped for the session;
+   `MCP_SERVERS` read once, §10 unchanged); per-call timeouts are
+   recoverable (call fails, session remains); **no kill on
+   operation-timeout** — a slow legitimate call (e.g. a 200s filesystem op
+   under TIMEOUT 300) is indistinguishable from a wedge and does not poison
+   the session; documented known limitation, child stderr is the operator's
+   visibility window.
+
+4. **Close semantics.** `Close()` is idempotent and mutex-guarded, in this
+   order: (1) `session.Close()` first — closes both pipes, sending stdin EOF
+   so a well-behaved child (and its tree) exits gracefully; (2) `cancel()` as
+   the kill backstop for uncooperative children (called explicitly and
+   deferred so it fires even on an error unwinding `session.Close`);
+   (3) join the reaper (expected `signal: killed`/`context.Canceled` logged
+   at debug, not surfaced). `factory.Close()` iterates tracked clients, so
+   session teardown kills every child.
+
+5. **Consent/serial defaults — trusted local spawns (MAINTAINER DECISION).**
+   Stdio servers are trusted by virtue of config trust: `consent=false`
+   default (no user prompt), `serial=true` default (mutating local
+   processes), with `REQUIRES_CONSENT: true` opting back in. **This deviates
+   from the #1394 grill round's recommendation (`consent=true` default)** —
+   flag the deviation explicitly and record the maintainer's rationale: a
+   `COMMAND`/`ARGS` config entry is an explicit, operator-authored grant of
+   local execution — no different in trust class from the config's own
+   `SELECTED_PROVIDER` — and prompting on every call would make "many local
+   MCP services" tedious. `EffectiveRequiresConsent()` gains an explicit
+   stdio branch (override wins, then `IsStdio()` → false, else
+   `!isReadOnly()`); `EffectiveSerial()` remains `!isReadOnly()` — stdio has
+   no URL, so it already yields `true`. **Known consequence (accepted):** a
+   read-only local server (e.g. `fetch`) is forced serial forever — there is
+   no serial override for any transport today (`EffectiveSerial()` is
+   global; consent is the only overridable axis), so stdio is not made
+   *more* configurable than HTTP. A per-server serial override is a tracked
+   future option: if ever added, it must apply to both transports or carry a
+   justification for asymmetry.
+
+6. **Mode-conflict validation rule.** `validate()` rejects
+   `AUTH: bearer`/`basic` together with `COMMAND` ("stdio (COMMAND) servers
+   transmit no credentials"), checked before the positive credential rules
+   so the mode-conflict message wins. This is a mode-conflict rule, same
+   family as COMMAND/URL mutual exclusivity — it does not disturb §4's
+   positive-rule-only credential philosophy; `auto`/`gh`/`none`/empty under
+   stdio are accepted (inert under the stdio short-circuit, which also means
+   `gh`/`auto` under stdio never resolve and never invoke the resolver), and
+   stray `TOKEN`/`USERNAME` under stdio remain tolerated (§4 stray-field
+   tolerance). COMMAND and URL are mutually exclusive — exactly one must be
+   set.
+
+7. **Concurrent construction.** The DI factory
+   (`internal/infrastructure/di/mcp_factory.go`) builds clients in two
+   phases: a sequential token pre-pass (stdio short-circuits first;
+   `gh`/`auto` under stdio never resolve; HTTP servers resolve via the
+   single-flight `gh`-memoized resolver, credentials stamped into per-server
+   copies), then concurrent construction per server (`sync.WaitGroup`,
+   per-server spawn+handshake bounded by `TIMEOUT`), failures warn+skip per
+   server, no overall `Build` bound. First-`GetRegistry` latency caps at
+   `max(Tᵢ)` + plugin discovery rather than ΣTᵢ. **Nuance:** the plugin's
+   own 30s per-server discovery bound (`defaultDiscoveryTimeout`) is separate
+   from and additional to `TIMEOUT` — a server whose handshake took the full
+   `TIMEOUT` still gets its own 30s `ListTools` window.
+
+8. **Stderr scope.** Child stderr is always logged at Info with
+   `mcp_server=<name>`, line-buffered, and never parsed as JSON-RPC. This is
+   **outside** the `mcp-token-not-logged` invariant (the invariant governs
+   tell-me-go's own credential plumbing — config validation, DI factory,
+   client transport — not arbitrary child output); a misbehaving child that
+   echoes secrets to stderr is an accepted residual of the wedge/death
+   visibility window. The domain model invariant statement is unchanged.
+
+9. **Command resolution semantics.** Bare `COMMAND` (no path separator)
+   resolves via `exec.LookPath` in **tell-me-go's own process PATH** — not
+   `ENV.PATH`, not `DIR`; separator-bearing `COMMAND` (`/abs`, `./rel`) is
+   used as-is, relative resolved against `DIR`; `ENV.PATH` governs the child
+   only post-exec (it reaches the server's own subprocess resolution — e.g.
+   uvx finding `mcp-server-git` — which is why it is set and why failures
+   are confusing). `${VAR}` expands at config load via `expandEnvHook` in
+   `COMMAND`, `ARGS`, `DIR`, and `ENV` values. Windows bare-name lookup
+   honors `PATHEXT` via the same stdlib path. On `exec.ErrNotFound`, the
+   error is annotated with the resolution contract (fail-point only; no
+   heuristic warning when `ENV` contains a PATH override).
+
+10. **Tracked future options** (explicitly NOT this PR): (a) per-server
+    serial override, applying to both transports or with a justified
+    asymmetry; (b) process-group kill (Unix pgid) / Job Objects (Windows)
+    for transport-contract-violating grandchildren; (c) extraction refactor
+    of `(*MCPServerConfig).validate` (CC=20, cataloged as structural guards
+    in `INTENTIONAL_NON_FIXES.md`).
+
+### Consequences
+
+Stdio support broadens the MCP surface from remote-only to local processes
+while preserving the SDK-confined, port-based architecture: a separate
+`StdioClient` type keeps the HTTP `Client` untouched, and the two-tier
+lifecycle (deterministic direct-child reaping + best-effort tree termination
+via shared-pipe EOF) prevents zombies with accepted orphan residuals for
+contract-violating servers. The trusted-spawn consent default is a deliberate
+deviation from the #1394 grill recommendation, justified by the
+operator-authored trust class of `COMMAND`/`ARGS`; the forced-serial
+consequence for read-only local servers and the no-kill-on-operation-timeout
+policy are documented known limitations with tracked future options rather
+than silent trade-offs.
+
 ## Consequences
 
 **Positive:** the SDK is fully isolated behind `tools.MCPClient`, so the

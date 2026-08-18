@@ -155,7 +155,9 @@ func readConfigFile(v *viper.Viper, path string) error {
 	if isDebug() {
 		slog.Debug("viper parsed keys")
 		for _, key := range v.AllKeys() {
-			if isSecretKey(key) {
+			// ENV/ARGS subtrees are dropped wholesale so innocuous-named
+			// sub-keys (e.g. env::FOO) cannot leak values.
+			if isSecretKey(key) || hasSecretAncestor(key) {
 				slog.Debug("parsed entry", slog.String("key", key), slog.String("value", redactedValue))
 			} else {
 				slog.Debug("parsed entry", slog.String("key", key), slog.Any("value", v.Get(key)))
