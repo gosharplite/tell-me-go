@@ -289,3 +289,17 @@ func TestExtractDocument_ExportedWrapper(t *testing.T) {
 		t.Error("expected DELETE cleanup after extraction")
 	}
 }
+
+func TestResponsesSink_AddMessage_NonStringContent(t *testing.T) {
+	spy := &testfixtures.SpyLogger{}
+	sink := &responsesSink{client: &client{logger: spy, model: "test-model"}}
+
+	sink.AddMessage("user", []any{map[string]any{"type": "image_url"}}, nil, nil)
+
+	if !spy.CalledWith("Warn", "responses_sink_non_string_content") {
+		t.Error("expected Warn responses_sink_non_string_content for non-string content")
+	}
+	if len(sink.items) != 0 {
+		t.Errorf("expected no items appended for non-string content, got %d", len(sink.items))
+	}
+}
