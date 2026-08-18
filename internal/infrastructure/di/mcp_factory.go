@@ -9,9 +9,9 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -32,11 +32,16 @@ type mcpFactory struct {
 	// token).
 	tokenResolver func() (string, error)
 
-	// newClient constructs the tools.MCPClient adapter for an endpoint.
-	newClient func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error)
+	// newClientFor constructs the tools.MCPClient adapter for a single server,
+	// dispatching on transport: stdio (COMMAND) vs remote Streamable HTTP (URL).
+	// It is injectable so the factory is unit-testable without spawning a
+	// process or contacting a live endpoint.
+	newClientFor func(serverCfg config.MCPServerConfig) (tools.MCPClient, error)
 
 	// cachedToken memoizes a successfully resolved token so that multiple
 	// servers sharing the same fallback do not spawn `gh` repeatedly.
+	// Written and read only during Build's phase-1 pre-pass
+	// (single-threaded); phase-2 goroutines never call resolveToken.
 	cachedToken string
 
 	// mu protects clients. Build may be invoked concurrently with Close
@@ -49,8 +54,9 @@ type mcpFactory struct {
 }
 
 // newMCPFactory constructs the default MCP dependency factory. The default
-// token resolver executes `gh auth token`; the default client constructor is
-// the streamable-HTTP MCP adapter.
+// token resolver executes `gh auth token`; the default client constructor
+// dispatches on transport — local stdio child processes via StdioClient, and
+// remote Streamable HTTP endpoints via the HTTP MCP adapter.
 func newMCPFactory(logger *slog.Logger) *mcpFactory {
 	if logger == nil {
 		logger = slog.Default()
@@ -64,44 +70,104 @@ func newMCPFactory(logger *slog.Logger) *mcpFactory {
 			}
 			return strings.TrimSpace(string(out)), nil
 		},
-		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
-			if username != "" {
-				return infra_mcp.NewClient(endpoint, token, timeout, infra_mcp.WithBasicAuth(username))
+		newClientFor: func(serverCfg config.MCPServerConfig) (tools.MCPClient, error) {
+			if serverCfg.IsStdio() {
+				return infra_mcp.NewStdioClient(serverCfg, logger)
 			}
-			return infra_mcp.NewClient(endpoint, token, timeout)
+			if serverCfg.Username != "" {
+				return infra_mcp.NewClient(serverCfg.URL, serverCfg.Token, serverCfg.EffectiveTimeout(), infra_mcp.WithBasicAuth(serverCfg.Username))
+			}
+			return infra_mcp.NewClient(serverCfg.URL, serverCfg.Token, serverCfg.EffectiveTimeout())
 		},
 	}
 }
 
 // Build constructs the MCP client dependencies for every configured server.
-// A server whose credentials cannot be resolved, or whose client cannot be
-// constructed, is skipped with a warning rather than failing startup.
+// Construction is two-phase: a sequential token pre-pass resolves and stamps
+// credentials into per-server copies (single-flight gh memoization), then
+// per-server construction runs concurrently. A server whose credentials
+// cannot be resolved, or whose client cannot be constructed, is skipped with
+// a warning rather than failing startup.
 func (f *mcpFactory) Build(servers map[string]config.MCPServerConfig) map[string]plugin.MCPServerDependency {
 	deps := make(map[string]plugin.MCPServerDependency, len(servers))
-
-	for name, serverCfg := range servers {
-		username, token, ok := f.resolveServerToken(name, serverCfg)
-		if !ok {
-			continue
-		}
-
-		client, err := f.newClient(serverCfg.URL, username, token, serverCfg.EffectiveTimeout())
-		if err != nil {
-			f.logger.Warn("mcp_client_init_failed", "server", name, "error", err)
-			continue
-		}
-
-		f.mu.Lock()
-		f.clients = append(f.clients, client)
-		f.mu.Unlock()
-
-		deps[name] = plugin.MCPServerDependency{
-			Client:          client,
-			RequiresConsent: serverCfg.EffectiveRequiresConsent(),
-			Serial:          serverCfg.EffectiveSerial(),
-		}
+	if len(servers) == 0 {
+		return deps
 	}
 
+	// Deterministic iteration order (map iteration is not).
+	names := make([]string, 0, len(servers))
+	for name := range servers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	// Phase 1 — SEQUENTIAL token pre-pass. Stdio servers short-circuit first:
+	// gh/auto under COMMAND never resolve, never warn, never invoke the
+	// resolver. HTTP servers resolve via resolveServerToken (single-flight gh
+	// memoization via f.cachedToken — written and read only in this phase,
+	// which is single-threaded). Resolved credentials are stamped into a
+	// per-server copy so phase 2 goroutines never touch shared mutable state.
+	type entry struct {
+		name string
+		cfg  config.MCPServerConfig // HTTP: Token/Username stamped; stdio: unchanged
+		ok   bool
+	}
+	entries := make([]entry, 0, len(names))
+	for _, name := range names {
+		serverCfg := servers[name]
+		if serverCfg.IsStdio() {
+			entries = append(entries, entry{name: name, cfg: serverCfg, ok: true})
+			continue
+		}
+		username, token, ok := f.resolveServerToken(name, serverCfg)
+		if !ok {
+			continue // resolver already warned (mcp_token_resolution_skipped)
+		}
+		resolved := serverCfg
+		resolved.Username = username
+		resolved.Token = token
+		entries = append(entries, entry{name: name, cfg: resolved, ok: true})
+	}
+
+	// Phase 2 — CONCURRENT construction, mirroring the plugin's own pattern
+	// (internal/tools/integrations/mcp/plugin.go:61-89). Per-server
+	// spawn+handshake is bounded by EffectiveTimeout inside the constructor.
+	// Goroutines write only to their own result slot — no shared writes, no
+	// locks in the hot path. Failures warn+skip per server; no overall bound.
+	type result struct {
+		name   string
+		cfg    config.MCPServerConfig
+		client tools.MCPClient
+		err    error
+	}
+	results := make([]result, len(entries))
+	var wg sync.WaitGroup
+	for i, e := range entries {
+		wg.Add(1)
+		go func(i int, e entry) {
+			defer wg.Done()
+			client, err := f.newClientFor(e.cfg)
+			results[i] = result{name: e.name, cfg: e.cfg, client: client, err: err}
+		}(i, e)
+	}
+	wg.Wait()
+
+	// Merge deterministically (sorted by name) so warn order and registration
+	// order are stable regardless of goroutine completion order.
+	for _, res := range results {
+		if res.err != nil {
+			f.logger.Warn("mcp_client_init_failed", "server", res.name, "error", res.err)
+			continue
+		}
+		f.mu.Lock()
+		f.clients = append(f.clients, res.client)
+		f.mu.Unlock()
+		deps[res.name] = plugin.MCPServerDependency{
+			Client:          res.client,
+			RequiresConsent: res.cfg.EffectiveRequiresConsent(),
+			Serial:          res.cfg.EffectiveSerial(),
+		}
+	}
 	return deps
 }
 
