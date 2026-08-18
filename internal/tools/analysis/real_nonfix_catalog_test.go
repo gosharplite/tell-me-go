@@ -98,6 +98,11 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"TestToOpenAISchema_EmptyTypeOmitsKey":                      {Line: 21, Complexity: 11, FilePath: "internal/infrastructure/llm/openai/tools_test.go"},
 		"TestToOpenAITools_EmptyTypeNested_OmitsEmptyTypeKey":       {Line: 124, Complexity: 16, FilePath: "internal/infrastructure/llm/openai/tools_test.go"},
 		"TestConvertSchema_NestedUnrepresentable_BecomesUntypedAny": {Line: 241, Complexity: 12, FilePath: "internal/tools/integrations/mcp/schema_test.go"},
+		"(*MCPServerConfig).validate":                               {Line: 103, Complexity: 20, FilePath: "internal/domain/config/mcp_config.go"},
+		"TestMCPFactory_ConcurrentBuild":                            {Line: 683, Complexity: 11, FilePath: "internal/infrastructure/di/mcp_factory_test.go"},
+		"TestMCPFactory_ConcurrentBuild_FailingServerSkips":         {Line: 743, Complexity: 15, FilePath: "internal/infrastructure/di/mcp_factory_test.go"},
+		"TestStdio_RoundTrip":                                       {Line: 112, Complexity: 11, FilePath: "internal/infrastructure/mcp/stdio_client_integration_test.go"},
+		"TestStdio_LauncherTreePassThrough":                         {Line: 216, Complexity: 13, FilePath: "internal/infrastructure/mcp/stdio_client_integration_test.go"},
 	}
 
 	require.Equal(t, expectedCataloged, cataloged)
@@ -133,8 +138,8 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"manager.go capBestBlock error branch", "internal/agent/session/context/manager.go", 571, 573},
 		{"failover.go ExtractDocument body", "internal/infrastructure/llm/failover.go", 131, 133},
 		{"resilient_client.go ExtractDocument body", "internal/infrastructure/llm/resilient_client.go", 106, 108},
-		{"mcp_factory.go resolveServerToken default case", "internal/infrastructure/di/mcp_factory.go", 157, 160},
-		{"mcp_factory.go gh auth token resolver", "internal/infrastructure/di/mcp_factory.go", 60, 65},
+		{"mcp_factory.go resolveServerToken default case", "internal/infrastructure/di/mcp_factory.go", 223, 227},
+		{"mcp_factory.go gh auth token resolver", "internal/infrastructure/di/mcp_factory.go", 67, 70},
 		{"toolchain_factory.go registerSkillsShTools error", "internal/infrastructure/di/toolchain_factory.go", 124, 126},
 		{"provider_health.go buildRequest error branch", "internal/infrastructure/llm/provider_health.go", 126, 128},
 		{"provider_health.go getPingEndpoint panic", "internal/infrastructure/llm/provider_health.go", 238, 238},
