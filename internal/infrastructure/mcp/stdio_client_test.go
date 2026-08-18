@@ -164,7 +164,7 @@ func newExitErrClient(t *testing.T) *StdioClient {
 	}
 	c.waitDone <- errors.New("exit status 1")
 	c.mu.Lock()
-	c.childExitErrLocked()
+	_ = c.childExitErrLocked()
 	c.mu.Unlock()
 	return c
 }

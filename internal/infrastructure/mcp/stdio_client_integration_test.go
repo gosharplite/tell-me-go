@@ -167,7 +167,7 @@ func TestStdio_HandshakeTimeoutKillsChild(t *testing.T) {
 		Timeout: 1,
 	}, slog.Default())
 	if err == nil {
-		c.Close() // cleanup; constructor should not have succeeded
+		_ = c.Close() // cleanup; constructor should not have succeeded
 		t.Fatal("NewStdioClient(never-init) error = nil, want connect error")
 	}
 	if !strings.Contains(err.Error(), "connect") {
