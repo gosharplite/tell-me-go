@@ -44,8 +44,8 @@ func main() {
 	}
 }
 
-// newFixtureServer builds the canonical SDK MCP server with the five fixture
-// tools: echo, slow, die, stderr, block.
+// newFixtureServer builds the canonical SDK MCP server with the six fixture
+// tools: echo, slow, die, stderr, block, args-capture.
 func newFixtureServer() *sdkmcp.Server {
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "stdioserver-fixture", Version: "1.0.0"}, nil)
 
@@ -97,6 +97,15 @@ func newFixtureServer() *sdkmcp.Server {
 		func(_ context.Context, _ *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
 			select {}
 			return nil, nil // unreachable
+		})
+
+	server.AddTool(&sdkmcp.Tool{Name: "args-capture", Description: "returns the raw arguments bytes as text", InputSchema: map[string]any{"type": "object"}},
+		func(_ context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+			text := string(req.Params.Arguments) // json.RawMessage; pre-fix this is "null"
+			if text == "" {
+				text = "{}" // defensive default for a genuinely-absent field
+			}
+			return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: text}}}, nil
 		})
 
 	return server
