@@ -21,6 +21,8 @@ type MCPClient interface {
 	ListTools(ctx context.Context) ([]MCPToolDefinition, error)
 
 	// CallTool executes a tool on the remote MCP server with the provided arguments.
+	// A nil args map is normalized to an empty object by implementations — the MCP
+	// wire must never carry "arguments": null (strict servers reject it).
 	CallTool(ctx context.Context, name string, args map[string]interface{}) (ToolResult, error)
 
 	// Close terminates the client connection and releases any underlying resources.
