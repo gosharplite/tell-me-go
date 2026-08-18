@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
@@ -389,4 +390,48 @@ func TestDetailedCoverageReport_OpenAIPackageCataloged(t *testing.T) {
 	require.Contains(t, report, "[CATALOGED GAPS (ACCEPTED)]")
 	require.Contains(t, report, "files.go (Lines 38-40)")
 	require.Contains(t, report, "buildFileUploadBody multipart error branches")
+}
+
+// TestDetailedCoverageReport_ConfigPackageCataloged is the end-to-end
+// regression for the cataloged normalizeKeyToken dead-branch entry: the
+// structurally unreachable branches at redact.go:53-55 must appear under
+// [CATALOGED GAPS (ACCEPTED)] with the dead-branch title, and never as an
+// actionable gap. Same full report path as the sibling
+// TestDetailedCoverageReport_* tests, scoped to the config package.
+func TestDetailedCoverageReport_ConfigPackageCataloged(t *testing.T) {
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	// Run from the module root so the coverage profile records repo-relative
+	// paths; restore on cleanup (all arch-tagged tests are sequential).
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoRoot))
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	// Mirror production wiring (manager.go newAnalysisManager).
+	executor := &exec.RealExecutor{}
+	m := &healthManager{
+		SP:          &mockSecurityProvider{},
+		Exec:        executor,
+		Runner:      toolchain.NewGoRunner(executor),
+		clk:         clock.RealClock{},
+		catalogPath: defaultNonFixCatalogPath,
+	}
+
+	report, err := m.getDetailedCoverageReport(context.Background(), "./internal/infrastructure/config", nil, nil)
+	require.NoError(t, err)
+
+	// The only uncovered block in the config package (redact.go:53-55) is
+	// ACCEPTED, so it renders under [CATALOGED GAPS (ACCEPTED)] with the
+	// dead-branch title ...
+	require.Contains(t, report, "[CATALOGED GAPS (ACCEPTED)]")
+	require.Contains(t, report, "redact.go (Lines 53-55)")
+	require.Contains(t, report, "normalizeKeyToken dead branches")
+	// ... and the positional guard proves the interval is cataloged, not
+	// actionable: actionable buckets render BEFORE the cataloged section, so
+	// the gap must appear strictly after it.
+	gapIdx := strings.Index(report, "redact.go (Lines 53-55)")
+	catalogedIdx := strings.Index(report, "[CATALOGED GAPS (ACCEPTED)]")
+	require.Greater(t, gapIdx, catalogedIdx, "redact.go (Lines 53-55) must appear under [CATALOGED GAPS (ACCEPTED)], not as an actionable gap")
 }
