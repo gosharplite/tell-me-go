@@ -190,7 +190,7 @@ func (c *StdioClient) CallTool(ctx context.Context, name string, args map[string
 
 	res, err := c.session.CallTool(ctx, &sdkmcp.CallToolParams{
 		Name:      name,
-		Arguments: args,
+		Arguments: normalizeArguments(args),
 	})
 	if err != nil {
 		return tools.ToolResult{}, c.annotateIfDead(fmt.Errorf("mcp call %s: %w", name, err))

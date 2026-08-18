@@ -129,6 +129,18 @@ func (c *Client) ListTools(ctx context.Context) ([]tools.MCPToolDefinition, erro
 	return defs, nil
 }
 
+// normalizeArguments ensures the SDK never receives a nil map in the
+// Arguments any-field. A nil map inside an interface defeats the SDK's
+// own nil guard (interface-nil vs typed-nil, go-sdk mcp/client.go:1281-1284,
+// "Avoid sending nil over the wire"), so the adapter — the only layer
+// confined to the SDK (ADR-067 §2) — must normalize before construction.
+func normalizeArguments(args map[string]interface{}) map[string]interface{} {
+	if args == nil {
+		return map[string]interface{}{}
+	}
+	return args
+}
+
 // CallTool executes a tool on the remote MCP server with the provided arguments.
 func (c *Client) CallTool(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 	ctx, cancel := c.operationContext(ctx)
@@ -141,7 +153,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]inte
 
 	res, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
 		Name:      name,
-		Arguments: args,
+		Arguments: normalizeArguments(args),
 	})
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("mcp call %s: %w", name, err)

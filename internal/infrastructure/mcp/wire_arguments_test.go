@@ -6,6 +6,7 @@ package mcp
 import (
 	"context"
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -116,5 +117,36 @@ func TestStdio_WireArguments_NonEmptyPassthrough(t *testing.T) {
 	}
 	if !strings.Contains(res.Text, "text") {
 		t.Errorf("Text = %q, want it to contain %q", res.Text, "text")
+	}
+}
+
+// TestNormalizeArguments pins the normalizeArguments contract (issue #1399):
+// a nil map becomes a non-nil empty map — the SDK must never receive a
+// typed-nil map in the CallToolParams.Arguments any-field, which would emit
+// "arguments": null on the wire — while a non-nil map is returned unchanged.
+func TestNormalizeArguments(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    map[string]interface{}
+		wantLen int
+	}{
+		{"nil becomes empty", nil, 0},
+		{"non-nil empty unchanged", map[string]interface{}{}, 0},
+		{"non-empty unchanged", map[string]interface{}{"text": "x"}, 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeArguments(tt.args)
+			if got == nil {
+				t.Fatalf("normalizeArguments(%v) = nil, want non-nil", tt.args)
+			}
+			if len(got) != tt.wantLen {
+				t.Errorf("len(normalizeArguments(%v)) = %d, want %d", tt.args, len(got), tt.wantLen)
+			}
+			if tt.args != nil && !reflect.DeepEqual(got, tt.args) {
+				t.Errorf("normalizeArguments(%v) = %v, want the input unchanged", tt.args, got)
+			}
+		})
 	}
 }
