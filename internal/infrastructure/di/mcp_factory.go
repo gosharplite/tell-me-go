@@ -20,7 +20,7 @@ import (
 )
 
 // mcpFactory builds plugin.MCPServerDependency values from MCP server
-// configuration. Bearer-token resolution and client construction are both
+// configuration. Credential resolution and client construction are both
 // injectable so the factory is unit-testable without spawning `gh` or
 // contacting a live MCP endpoint.
 type mcpFactory struct {
@@ -33,7 +33,7 @@ type mcpFactory struct {
 	tokenResolver func() (string, error)
 
 	// newClient constructs the tools.MCPClient adapter for an endpoint.
-	newClient func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error)
+	newClient func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error)
 
 	// cachedToken memoizes a successfully resolved token so that multiple
 	// servers sharing the same fallback do not spawn `gh` repeatedly.
@@ -64,25 +64,28 @@ func newMCPFactory(logger *slog.Logger) *mcpFactory {
 			}
 			return strings.TrimSpace(string(out)), nil
 		},
-		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
+			if username != "" {
+				return infra_mcp.NewClient(endpoint, token, timeout, infra_mcp.WithBasicAuth(username))
+			}
 			return infra_mcp.NewClient(endpoint, token, timeout)
 		},
 	}
 }
 
 // Build constructs the MCP client dependencies for every configured server.
-// A server whose token cannot be resolved, or whose client cannot be
+// A server whose credentials cannot be resolved, or whose client cannot be
 // constructed, is skipped with a warning rather than failing startup.
 func (f *mcpFactory) Build(servers map[string]config.MCPServerConfig) map[string]plugin.MCPServerDependency {
 	deps := make(map[string]plugin.MCPServerDependency, len(servers))
 
 	for name, serverCfg := range servers {
-		token, ok := f.resolveServerToken(name, serverCfg)
+		username, token, ok := f.resolveServerToken(name, serverCfg)
 		if !ok {
 			continue
 		}
 
-		client, err := f.newClient(serverCfg.URL, token, serverCfg.EffectiveTimeout())
+		client, err := f.newClient(serverCfg.URL, username, token, serverCfg.EffectiveTimeout())
 		if err != nil {
 			f.logger.Warn("mcp_client_init_failed", "server", name, "error", err)
 			continue
@@ -117,38 +120,44 @@ func (f *mcpFactory) Close() error {
 	return errors.Join(errs...)
 }
 
-// resolveServerToken resolves the bearer token for a single server from its
-// effective auth mode. It returns ok=false when the server must be skipped
-// (token resolution failed under an auth mode that requires it).
-func (f *mcpFactory) resolveServerToken(name string, serverCfg config.MCPServerConfig) (string, bool) {
+// resolveServerToken resolves the credentials (username, token) for a single
+// server from its effective auth mode. It returns ok=false when the server
+// must be skipped (token resolution failed under an auth mode that requires
+// it).
+func (f *mcpFactory) resolveServerToken(name string, serverCfg config.MCPServerConfig) (username, token string, ok bool) {
 	auth := serverCfg.EffectiveAuth()
 
 	switch auth {
 	case config.MCPAuthNone:
-		return "", true
+		return "", "", true
 
 	case config.MCPAuthBearer:
-		return serverCfg.Token, true
+		return "", serverCfg.Token, true
+
+	case config.MCPAuthBasic:
+		return serverCfg.Username, serverCfg.Token, true
 
 	case config.MCPAuthGH:
 		if serverCfg.Token != "" {
-			return serverCfg.Token, true
+			return "", serverCfg.Token, true
 		}
-		return f.resolveTokenOrSkip(name, serverCfg.URL)
+		token, ok := f.resolveTokenOrSkip(name, serverCfg.URL)
+		return "", token, ok
 
 	case config.MCPAuthAuto:
 		if serverCfg.Token != "" {
-			return serverCfg.Token, true
+			return "", serverCfg.Token, true
 		}
 		if !isGitHubHostname(serverCfg.URL) {
-			return "", true
+			return "", "", true
 		}
-		return f.resolveTokenOrSkip(name, serverCfg.URL)
+		token, ok := f.resolveTokenOrSkip(name, serverCfg.URL)
+		return "", token, ok
 
 	default:
 		// Unknown modes are rejected by config validation before Build runs;
 		// treat defensively as "none".
-		return "", true
+		return "", "", true
 	}
 }
 

@@ -85,7 +85,7 @@ func TestMCPFactory_ExplicitToken(t *testing.T) {
 			resolverCalls++
 			return "", errors.New("should not be called")
 		},
-		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
 			capturedToken = token
 			return &fakeMCPClient{}, nil
 		},
@@ -120,7 +120,7 @@ func TestMCPFactory_GhFallbackAndCaching(t *testing.T) {
 			resolverCalls++
 			return "gh-token", nil
 		},
-		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
 			tokens = append(tokens, token)
 			return &fakeMCPClient{}, nil
 		},
@@ -156,7 +156,7 @@ func TestMCPFactory_EnvFallback(t *testing.T) {
 		tokenResolver: func() (string, error) {
 			return "", errors.New("gh unavailable")
 		},
-		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
 			capturedToken = token
 			return &fakeMCPClient{}, nil
 		},
@@ -183,7 +183,7 @@ func TestMCPFactory_TokenResolutionFailureSkips(t *testing.T) {
 		tokenResolver: func() (string, error) {
 			return "", errors.New("gh unavailable")
 		},
-		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
 			return &fakeMCPClient{}, nil
 		},
 	}
@@ -204,7 +204,7 @@ func TestMCPFactory_ClientInitFailureSkips(t *testing.T) {
 	var buf bytes.Buffer
 	f := &mcpFactory{
 		logger: slog.New(slog.NewTextHandler(&buf, nil)),
-		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
 			return nil, errors.New("boom")
 		},
 	}
@@ -224,7 +224,7 @@ func TestMCPFactory_ClientInitFailureSkips(t *testing.T) {
 func TestMCPFactory_ConsentAndSerialPropagation(t *testing.T) {
 	f := &mcpFactory{
 		logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
-		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
 			return &fakeMCPClient{}, nil
 		},
 	}
@@ -273,7 +273,7 @@ func TestMCPFactory_AuthNone(t *testing.T) {
 			resolverCalls++
 			return "", errors.New("should not be called")
 		},
-		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
 			captured[endpoint] = token
 			return &fakeMCPClient{}, nil
 		},
@@ -308,7 +308,7 @@ func TestMCPFactory_AuthBearer(t *testing.T) {
 			resolverCalls++
 			return "", errors.New("should not be called")
 		},
-		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
 			captured[endpoint] = token
 			return &fakeMCPClient{}, nil
 		},
@@ -331,6 +331,82 @@ func TestMCPFactory_AuthBearer(t *testing.T) {
 	if got := captured["https://api.githubcopilot.com/mcp/"]; got != "explicit-token" {
 		t.Errorf("client token = %q, want %q", got, "explicit-token")
 	}
+
+	// A stray USERNAME under bearer must be normalized away: only the basic
+	// auth mode may carry a username (single-discriminator invariant).
+	t.Run("stray USERNAME normalized", func(t *testing.T) {
+		resolverCalls := 0
+		var capturedUsername, capturedToken string
+
+		f := &mcpFactory{
+			logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+			tokenResolver: func() (string, error) {
+				resolverCalls++
+				return "", errors.New("should not be called")
+			},
+			newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
+				capturedUsername = username
+				capturedToken = token
+				return &fakeMCPClient{}, nil
+			},
+		}
+
+		deps := f.Build(map[string]config.MCPServerConfig{
+			"github": {URL: "https://api.githubcopilot.com/mcp/", Auth: config.MCPAuthBearer, Username: "stray", Token: "explicit-token"},
+		})
+
+		if resolverCalls != 0 {
+			t.Errorf("token resolver called %d times, want 0", resolverCalls)
+		}
+		if _, ok := deps["github"]; !ok {
+			t.Fatal("expected 'github' dependency")
+		}
+		if capturedUsername != "" {
+			t.Errorf("client username = %q, want empty (bearer must normalize stray username)", capturedUsername)
+		}
+		if capturedToken != "explicit-token" {
+			t.Errorf("client token = %q, want %q", capturedToken, "explicit-token")
+		}
+	})
+}
+
+func TestMCPFactory_AuthBasic(t *testing.T) {
+	resolverCalls := 0
+	var capturedUsername, capturedToken string
+
+	f := &mcpFactory{
+		logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+		tokenResolver: func() (string, error) {
+			resolverCalls++
+			return "", errors.New("should not be called")
+		},
+		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
+			capturedUsername = username
+			capturedToken = token
+			return &fakeMCPClient{}, nil
+		},
+	}
+
+	deps := f.Build(map[string]config.MCPServerConfig{
+		"atlassian": {URL: "https://mcp.atlassian.com/v1/mcp", Auth: config.MCPAuthBasic, Username: "user@example.com", Token: "tok"},
+	})
+
+	if resolverCalls != 0 {
+		t.Errorf("token resolver called %d times, want 0 (basic must not resolve)", resolverCalls)
+	}
+	dep, ok := deps["atlassian"]
+	if !ok {
+		t.Fatal("expected 'atlassian' dependency")
+	}
+	if dep.Client == nil {
+		t.Error("expected non-nil MCP client")
+	}
+	if capturedUsername != "user@example.com" {
+		t.Errorf("client username = %q, want %q", capturedUsername, "user@example.com")
+	}
+	if capturedToken != "tok" {
+		t.Errorf("client token = %q, want %q", capturedToken, "tok")
+	}
 }
 
 func TestMCPFactory_AuthGH(t *testing.T) {
@@ -343,7 +419,7 @@ func TestMCPFactory_AuthGH(t *testing.T) {
 			resolverCalls++
 			return "gh-token", nil
 		},
-		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
 			captured[endpoint] = token
 			return &fakeMCPClient{}, nil
 		},
@@ -379,7 +455,7 @@ func TestMCPFactory_AuthGH_ExplicitTokenWins(t *testing.T) {
 			resolverCalls++
 			return "gh-token", nil
 		},
-		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
 			captured[endpoint] = token
 			return &fakeMCPClient{}, nil
 		},
@@ -410,7 +486,7 @@ func TestMCPFactory_AuthAuto(t *testing.T) {
 			resolverCalls++
 			return "gh-token", nil
 		},
-		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
 			captured[endpoint] = token
 			return &fakeMCPClient{}, nil
 		},
@@ -445,7 +521,7 @@ func TestMCPFactory_AuthAuto_ExplicitTokenWins(t *testing.T) {
 			resolverCalls++
 			return "gh-token", nil
 		},
-		newClient: func(endpoint, token string, timeout time.Duration) (tools.MCPClient, error) {
+		newClient: func(endpoint, username, token string, timeout time.Duration) (tools.MCPClient, error) {
 			captured[endpoint] = token
 			return &fakeMCPClient{}, nil
 		},

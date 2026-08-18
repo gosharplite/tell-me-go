@@ -488,3 +488,205 @@ func TestPrepareMediaAssets_KimiURL_SkipsUnsupportedMIME(t *testing.T) {
 
 	ta.release(context.Background(), c)
 }
+
+// errAuthenticator implements authcontract.Authenticator and always
+// fails, driving newAuthenticatedRequest's Apply error branch.
+type errAuthenticator struct{}
+
+func (f *errAuthenticator) Apply(ctx context.Context, headers authcontract.AuthHeaders) error {
+	return fmt.Errorf("authenticator failure")
+}
+
+func (f *errAuthenticator) Invalidate() {}
+
+func TestUploadFile_AuthenticatorError(t *testing.T) {
+	c := &client{baseURL: "https://api.openai.com/v1", httpClient: http.DefaultClient, logger: &ports.NoOpLogger{}}
+	c.authenticator = &errAuthenticator{}
+
+	_, err := c.uploadFile(context.Background(), []byte("test"), "cat.png", "image")
+	if err == nil {
+		t.Fatal("expected authenticator error, got nil")
+	}
+	if !strings.Contains(err.Error(), "create request") || !strings.Contains(err.Error(), "authenticator failure") {
+		t.Errorf("expected 'create request: authenticator failure' in error, got %q", err.Error())
+	}
+}
+
+func TestUploadFile_MalformedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("this is not json"))
+	}))
+	defer server.Close()
+
+	c := &client{baseURL: strings.TrimSuffix(server.URL, "/"), httpClient: server.Client(), logger: &ports.NoOpLogger{}}
+	c.authenticator = &fakeAuthenticator{}
+
+	_, err := c.uploadFile(context.Background(), []byte("test"), "cat.png", "image")
+	if err == nil {
+		t.Fatal("expected decode error, got nil")
+	}
+	if !strings.Contains(err.Error(), "decode upload response") {
+		t.Errorf("expected 'decode upload response' in error, got %q", err.Error())
+	}
+}
+
+func TestDeleteFile_AuthenticatorError(t *testing.T) {
+	c := &client{baseURL: "https://api.openai.com/v1", httpClient: http.DefaultClient, logger: &ports.NoOpLogger{}}
+	c.authenticator = &errAuthenticator{}
+
+	err := c.deleteFile(context.Background(), "file-abc")
+	if err == nil {
+		t.Fatal("expected authenticator error, got nil")
+	}
+	if !strings.Contains(err.Error(), "create request") {
+		t.Errorf("expected 'create request' in error, got %q", err.Error())
+	}
+}
+
+func TestDeleteFile_ErrorStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	c := &client{baseURL: strings.TrimSuffix(server.URL, "/"), httpClient: server.Client(), logger: &ports.NoOpLogger{}}
+	c.authenticator = &fakeAuthenticator{}
+
+	err := c.deleteFile(context.Background(), "file-abc")
+	if err == nil {
+		t.Fatal("expected error status, got nil")
+	}
+	if !strings.Contains(err.Error(), "delete file failed (status 500)") {
+		t.Errorf("expected 'delete file failed (status 500)' in error, got %q", err.Error())
+	}
+}
+
+func TestGetFileContent_AuthenticatorError(t *testing.T) {
+	c := &client{baseURL: "https://api.openai.com/v1", httpClient: http.DefaultClient, logger: &ports.NoOpLogger{}}
+	c.authenticator = &errAuthenticator{}
+
+	_, err := c.getFileContent(context.Background(), "file-abc")
+	if err == nil {
+		t.Fatal("expected authenticator error, got nil")
+	}
+	if !strings.Contains(err.Error(), "create request") {
+		t.Errorf("expected 'create request' in error, got %q", err.Error())
+	}
+}
+
+func TestGetFileContent_TransportError(t *testing.T) {
+	c := &client{baseURL: "http://uploads.invalid", httpClient: &http.Client{Transport: &customRoundTripper{}}, logger: &ports.NoOpLogger{}}
+	c.authenticator = &fakeAuthenticator{}
+
+	_, err := c.getFileContent(context.Background(), "file-abc")
+	if err == nil {
+		t.Fatal("expected transport error, got nil")
+	}
+	if !strings.Contains(err.Error(), "get content") {
+		t.Errorf("expected 'get content' in error, got %q", err.Error())
+	}
+}
+
+func TestGetFileContent_ErrorStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	c := &client{baseURL: strings.TrimSuffix(server.URL, "/"), httpClient: server.Client(), logger: &ports.NoOpLogger{}}
+	c.authenticator = &fakeAuthenticator{}
+
+	_, err := c.getFileContent(context.Background(), "file-abc")
+	if err == nil {
+		t.Fatal("expected error status, got nil")
+	}
+	if !strings.Contains(err.Error(), "get content failed (status 500)") {
+		t.Errorf("expected 'get content failed (status 500)' in error, got %q", err.Error())
+	}
+}
+
+func TestGetFileContent_ReadError(t *testing.T) {
+	c := &client{baseURL: "http://uploads.invalid", httpClient: &http.Client{Transport: &failingBodyTransport{statusCode: http.StatusOK}}, logger: &ports.NoOpLogger{}}
+	c.authenticator = &fakeAuthenticator{}
+
+	_, err := c.getFileContent(context.Background(), "file-abc")
+	if err == nil {
+		t.Fatal("expected read error, got nil")
+	}
+	if !strings.Contains(err.Error(), "read content") {
+		t.Errorf("expected 'read content' in error, got %q", err.Error())
+	}
+}
+
+func TestExtractDocument_UploadError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	c := &client{baseURL: strings.TrimSuffix(server.URL, "/"), httpClient: server.Client(), logger: &ports.NoOpLogger{}}
+	c.authenticator = &fakeAuthenticator{}
+
+	_, err := c.extractDocument(context.Background(), []byte("pdf data"), "report.pdf")
+	if err == nil {
+		t.Fatal("expected upload error, got nil")
+	}
+	if !strings.Contains(err.Error(), "upload document") {
+		t.Errorf("expected 'upload document' in error, got %q", err.Error())
+	}
+}
+
+func TestExtractDocument_GetContentError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/files":
+			_ = json.NewEncoder(w).Encode(fileObject{ID: "file-doc", Status: "ok"})
+		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/content"):
+			w.WriteHeader(http.StatusInternalServerError)
+		case r.Method == "DELETE":
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	c := &client{baseURL: strings.TrimSuffix(server.URL, "/"), httpClient: server.Client(), logger: &ports.NoOpLogger{}}
+	c.authenticator = &fakeAuthenticator{}
+
+	_, err := c.extractDocument(context.Background(), []byte("pdf data"), "report.pdf")
+	if err == nil {
+		t.Fatal("expected get-content error, got nil")
+	}
+	if !strings.Contains(err.Error(), "get document content") {
+		t.Errorf("expected 'get document content' in error, got %q", err.Error())
+	}
+}
+
+func TestSendChat_MediaCleanup(t *testing.T) {
+	var deleted bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/files":
+			_ = json.NewEncoder(w).Encode(fileObject{ID: "file-xyz", Status: "ok"})
+		case r.Method == "POST" && r.URL.Path == "/chat/completions":
+			w.WriteHeader(http.StatusInternalServerError)
+		case r.Method == "DELETE":
+			deleted = true
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	c := &client{baseURL: strings.TrimSuffix(server.URL, "/"), httpClient: server.Client(), logger: &ports.NoOpLogger{}, capabilities: llm.Capabilities{SupportsVision: true, SupportsFileUpload: true}}
+	c.authenticator = &fakeAuthenticator{}
+
+	history := []*llm.Content{{Role: "user", Parts: []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89, 0x50}}}}}}
+
+	_, _, err := c.SendChat(context.Background(), history, nil, nil)
+	if err == nil {
+		t.Fatal("expected chat error, got nil")
+	}
+	if !deleted {
+		t.Error("expected deferred media cleanup (DELETE) after chat failure")
+	}
+}

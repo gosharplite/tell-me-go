@@ -91,6 +91,7 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"(*renderer).makeSubscriber":                                {Line: 48, Complexity: 11, FilePath: "internal/ui/tui/progress/renderer.go"},
 		"TestMediaBlocks":                                           {Line: 18, Complexity: 11, FilePath: "internal/infrastructure/llm/openai/client_vision_test.go"},
 		"TestRunCommand_NonExitErrorWaitPath":                       {Line: 817, Complexity: 11, FilePath: "internal/tools/workspace/process_executor_stream_test.go"},
+		"TestBasicAuthTransport":                                    {Line: 645, Complexity: 11, FilePath: "internal/infrastructure/mcp/client_test.go"},
 		"TestFakeToolchainRunner_PresetValues":                      {Line: 36, Complexity: 28, FilePath: "internal/tools/toolstest/fake_toolchain_runner_test.go"},
 		"TestFakeToolchainRunner_ZeroDefaults":                      {Line: 249, Complexity: 38, FilePath: "internal/tools/toolstest/fake_toolchain_runner_test.go"},
 		"TestToSDKSchema_EmptyType_OmitsTypeKey":                    {Line: 20, Complexity: 19, FilePath: "internal/infrastructure/llm/gemini/tools_test.go"},
@@ -132,7 +133,7 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"manager.go capBestBlock error branch", "internal/agent/session/context/manager.go", 571, 573},
 		{"failover.go ExtractDocument body", "internal/infrastructure/llm/failover.go", 131, 133},
 		{"resilient_client.go ExtractDocument body", "internal/infrastructure/llm/resilient_client.go", 106, 108},
-		{"mcp_factory.go resolveServerToken default case", "internal/infrastructure/di/mcp_factory.go", 148, 151},
+		{"mcp_factory.go resolveServerToken default case", "internal/infrastructure/di/mcp_factory.go", 157, 160},
 		{"mcp_factory.go gh auth token resolver", "internal/infrastructure/di/mcp_factory.go", 60, 65},
 		{"toolchain_factory.go registerSkillsShTools error", "internal/infrastructure/di/toolchain_factory.go", 124, 126},
 		{"provider_health.go buildRequest error branch", "internal/infrastructure/llm/provider_health.go", 126, 128},
@@ -342,4 +343,44 @@ func TestDetailedCoverageReport_SkillsshPackageCataloged(t *testing.T) {
 	// accepted, never actionable.
 	require.Contains(t, report, "- Cataloged (ACCEPTED): 35")
 	require.Contains(t, report, "... and 25 more cataloged (ACCEPTED) gaps.")
+}
+
+// TestDetailedCoverageReport_OpenAIPackageCataloged is the end-to-end
+// regression for the issue #1387 catalog entries: after the 13 tests
+// cover the OpenAI/Kimi file-upload adapter's error branches and the
+// four multipart + one propagation branch are cataloged (Entry A/B),
+// the openai package must report zero actionable gaps of any priority
+// and exactly 5 cataloged (ACCEPTED) gaps. Same full report path as
+// the sibling TestDetailedCoverageReport_* tests, scoped to the openai
+// package.
+func TestDetailedCoverageReport_OpenAIPackageCataloged(t *testing.T) {
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoRoot))
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	executor := &exec.RealExecutor{}
+	m := &healthManager{
+		SP:          &mockSecurityProvider{},
+		Exec:        executor,
+		Runner:      toolchain.NewGoRunner(executor),
+		clk:         clock.RealClock{},
+		catalogPath: defaultNonFixCatalogPath,
+	}
+
+	report, err := m.getDetailedCoverageReport(context.Background(), "./internal/infrastructure/llm/openai", nil, nil)
+	require.NoError(t, err)
+
+	require.NotContains(t, report, "[HIGH PRIORITY GAPS]")
+	require.NotContains(t, report, "[MEDIUM PRIORITY GAPS]")
+	require.Contains(t, report, "- High Priority (Architectural): 0")
+	require.Contains(t, report, "- Medium Priority (Technical Debt): 0")
+	require.Contains(t, report, "- Low Priority: 0")
+	require.Contains(t, report, "- Cataloged (ACCEPTED): 5")
+	require.Contains(t, report, "[CATALOGED GAPS (ACCEPTED)]")
+	require.Contains(t, report, "files.go (Lines 38-40)")
+	require.Contains(t, report, "buildFileUploadBody multipart error branches")
 }

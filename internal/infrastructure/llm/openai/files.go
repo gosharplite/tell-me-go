@@ -33,19 +33,27 @@ func buildFileUploadBody(data []byte, filename, purpose string) (*bytes.Buffer, 
 	w := multipart.NewWriter(&buf)
 
 	// purpose field
+	// multipart.Writer.WriteField cannot fail on a *bytes.Buffer sink.
+	// Coverage gap accepted by architect — structurally unreachable.
 	if err := w.WriteField("purpose", purpose); err != nil {
 		return nil, "", fmt.Errorf("write purpose field: %w", err)
 	}
 
 	// file field
 	fw, err := w.CreateFormFile("file", filename)
+	// multipart.Writer.CreateFormFile cannot fail on a *bytes.Buffer sink.
+	// Coverage gap accepted by architect — structurally unreachable.
 	if err != nil {
 		return nil, "", fmt.Errorf("create form file: %w", err)
 	}
+	// The form-file writer wraps the *bytes.Buffer; Write cannot fail.
+	// Coverage gap accepted by architect — structurally unreachable.
 	if _, err := fw.Write(data); err != nil {
 		return nil, "", fmt.Errorf("write file data: %w", err)
 	}
 
+	// multipart.Writer.Close cannot fail on a *bytes.Buffer sink.
+	// Coverage gap accepted by architect — structurally unreachable.
 	if err := w.Close(); err != nil {
 		return nil, "", fmt.Errorf("close multipart writer: %w", err)
 	}

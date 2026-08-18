@@ -4,6 +4,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log/slog"
@@ -951,5 +952,114 @@ PROVIDERS:
 
 	if got := cfg.WrapWidth; got != 150 {
 		t.Errorf("expected env-only WRAP_WIDTH=150, got %d", got)
+	}
+}
+
+// captureDebugLogs promotes the default slog logger to Debug writing into a
+// buffer (restored via t.Cleanup) so tests can assert on emitted diagnostics.
+func captureDebugLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	original := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(original) })
+	return &buf
+}
+
+// TestLoad_ParsedDump_EnvOverriddenValues is the liveness probe (issue #1393
+// acceptance criterion 1). The parsed-key debug dump runs inside
+// readConfigFile, which configureViper calls BEFORE wiring env overrides
+// (SetEnvPrefix + AutomaticEnv), so TODAY the dump serializes YAML-file
+// values, not TELL_ME_* overrides; the liveness probe therefore asserts the
+// YAML URL value appears. DEVATION (Architect adjudication, T1): the
+// env-overridden URL (env-url) cannot appear while the dump stays inside
+// readConfigFile; if a future refactor moves the dump after env wiring, the
+// env-super-secret assertion below becomes the critical leak guard — both
+// wiring orders are covered by this test. The env vars remain set so the
+// scenario the issue describes stays exercised.
+func TestLoad_ParsedDump_EnvOverriddenValues(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "")              // neutralize ambient env pollution
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
+	t.Setenv("TELL_ME_MCP_SERVERS_ATLASSIAN_TOKEN", "env-super-secret")
+	t.Setenv("TELL_ME_MCP_SERVERS_ATLASSIAN_URL", "env-url")
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test_redaction.yaml")
+	yamlContent := `
+SELECTED_PROVIDER: "test-provider"
+PROVIDERS:
+  test-provider:
+    TYPE: "openai"
+    MODEL: "gpt-4o"
+    URL: "https://api.openai.com/v1"
+    API_KEY: "yaml-api-key"
+    MAX_TOKENS: 16384
+MCP_SERVERS:
+  atlassian:
+    URL: "https://example.com/mcp"
+    AUTH: "bearer"
+    TOKEN: "yaml-token"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	buf := captureDebugLogs(t)
+	cfg, err := load(configPath)
+	if err != nil {
+		t.Fatalf("load() failed: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config")
+	}
+
+	output := buf.String()
+	if strings.Contains(output, "env-super-secret") {
+		t.Error("debug output leaked the env-overridden TOKEN value (env-super-secret)")
+	}
+	if !strings.Contains(output, "https://example.com/mcp") {
+		t.Error("debug output missing the parsed URL value; liveness probe failed (dump not emitted or value redacted)")
+	}
+	if !strings.Contains(output, "[REDACTED]") {
+		t.Error("debug output missing the [REDACTED] placeholder")
+	}
+	if strings.Contains(output, "yaml-token") {
+		t.Error("debug output leaked the raw YAML TOKEN value (yaml-token)")
+	}
+	if strings.Contains(output, "yaml-api-key") {
+		t.Error("debug output leaked the raw YAML API_KEY value (yaml-api-key)")
+	}
+	if !strings.Contains(output, "16384") {
+		t.Error("debug output missing the non-secret MAX_TOKENS value (16384)")
+	}
+}
+
+// TestRawContentDump_InvalidYAML_ColonlessSecretRedacted exercises issue
+// #1393 acceptance criterion 2's invalid-YAML class: a colonless secret line
+// (which viper rejects) must still be redacted in the raw-content debug dump
+// before the parse error surfaces.
+func TestRawContentDump_InvalidYAML_ColonlessSecretRedacted(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "")              // neutralize ambient env pollution
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test_invalid_colonless.yaml")
+	yamlContent := "MODE: \"test\"\nTOKEN sk-123\n"
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	buf := captureDebugLogs(t)
+	_, err := load(configPath)
+	if err == nil {
+		t.Fatal("expected load() to reject the colonless YAML line")
+	}
+
+	output := buf.String()
+	if strings.Contains(output, "sk-123") {
+		t.Error("debug output leaked the colonless secret value (sk-123)")
+	}
+	if !strings.Contains(output, "TOKEN [REDACTED]") {
+		t.Error("debug output missing the colonless redaction (TOKEN [REDACTED])")
 	}
 }

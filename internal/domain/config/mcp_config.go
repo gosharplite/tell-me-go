@@ -22,11 +22,12 @@ var mcpServerKeyRegex = regexp.MustCompile(`^[a-z0-9-]{1,24}$`)
 const defaultMCPTimeoutSeconds = 300
 
 // MCP auth mode constants. The effective auth mode of a server determines how
-// its bearer token is resolved at client-construction time.
+// its credentials are resolved at client-construction time.
 const (
 	MCPAuthAuto   = "auto"   // explicit token wins; else GitHub-hosted → gh; else none
 	MCPAuthGH     = "gh"     // resolve via gh auth token → GITHUB_TOKEN
 	MCPAuthBearer = "bearer" // use the explicit TOKEN
+	MCPAuthBasic  = "basic"  // username + token → Authorization: Basic base64(username:token)
 	MCPAuthNone   = "none"   // no authentication
 )
 
@@ -34,7 +35,8 @@ const (
 type MCPServerConfig struct {
 	URL             string `yaml:"URL"`
 	Token           string `yaml:"TOKEN"`
-	Auth            string `yaml:"AUTH"` // "auto", "gh", "bearer", "none" (default: "auto")
+	Username        string `yaml:"USERNAME"`
+	Auth            string `yaml:"AUTH"` // "auto", "gh", "bearer", "basic", "none" (default: "auto")
 	RequiresConsent *bool  `yaml:"REQUIRES_CONSENT"`
 	Timeout         int    `yaml:"TIMEOUT"` // Seconds (0 = default 300s)
 }
@@ -93,15 +95,19 @@ func (c *MCPServerConfig) validate(name string) error {
 
 	auth := c.EffectiveAuth()
 	switch auth {
-	case MCPAuthAuto, MCPAuthGH, MCPAuthBearer, MCPAuthNone:
+	case MCPAuthAuto, MCPAuthGH, MCPAuthBearer, MCPAuthBasic, MCPAuthNone:
 		// valid
 	default:
-		return fmt.Errorf("MCP_SERVERS.%s.AUTH must be one of %q, %q, %q, %q, got %q",
-			name, MCPAuthAuto, MCPAuthGH, MCPAuthBearer, MCPAuthNone, auth)
+		return fmt.Errorf("MCP_SERVERS.%s.AUTH must be one of %q, %q, %q, %q, %q, got %q",
+			name, MCPAuthAuto, MCPAuthGH, MCPAuthBearer, MCPAuthBasic, MCPAuthNone, auth)
 	}
 
 	if auth == MCPAuthBearer && strings.TrimSpace(c.Token) == "" {
 		return fmt.Errorf("MCP_SERVERS.%s.TOKEN must not be empty when AUTH is bearer", name)
+	}
+
+	if auth == MCPAuthBasic && (strings.TrimSpace(c.Username) == "" || strings.TrimSpace(c.Token) == "") {
+		return fmt.Errorf("MCP_SERVERS.%s.USERNAME and TOKEN must not be empty when AUTH is basic", name)
 	}
 
 	return nil

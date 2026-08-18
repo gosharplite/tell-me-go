@@ -49,9 +49,9 @@ the infrastructure layer.
 
 ### 4. Authentication & Caching
 
-Each server declares an explicit `AUTH` mode — `"auto"`, `"gh"`, `"bearer"`, or
-`"none"` (default `"auto"`) — that controls how its bearer token is resolved at
-client-construction time:
+Each server declares an explicit `AUTH` mode — `"auto"`, `"gh"`, `"bearer"`,
+`"basic"`, or `"none"` (default `"auto"`) — that controls how its bearer token
+is resolved at client-construction time:
 
 - `auto` — an explicit `TOKEN` wins; otherwise a GitHub-hosted endpoint
   resolves via `gh auth token` / `GITHUB_TOKEN`, and any other endpoint uses no
@@ -60,6 +60,11 @@ client-construction time:
   `gh auth token`, then the `GITHUB_TOKEN` environment variable.
 - `bearer` — the explicit `TOKEN` is required (an empty `TOKEN` is rejected at
   config validation).
+- `basic` — `USERNAME` and `TOKEN` are both required (an empty either is
+  rejected at config validation); every request carries
+  `Authorization: Basic base64(username:token)`. Credentials support
+  `${ENV_VAR}` interpolation via the config loader's `expandEnvHook`;
+  plaintext credentials must never be committed to configs.
 - `none` — no authentication is attached.
 
 Across all token-resolving modes, resolution uses a hierarchy: an **explicit
@@ -68,6 +73,72 @@ servers so `gh` is not spawned repeatedly), then `gh auth token`, then the
 `GITHUB_TOKEN` environment variable. The DI layer resolves credentials during
 client construction and skips (with a warning) a server whose credentials
 cannot be resolved, rather than failing startup for the whole agent.
+
+**Amendment (2026-08, issue #1389 — Basic auth mode):**
+
+1. **Single factory-owned normalization.** The mode→credentials mapping is
+   owned entirely by `resolveServerToken` in the DI factory, which returns
+   a credential triple `(username, token, ok)`. Stray `USERNAME` under
+   non-basic modes is silently normalized away (username is `""` unless the
+   mode is `basic`), matching the existing `TOKEN`-under-`none` tolerance —
+   validation is positive-rule only, with no negative rules.
+2. **Unresolvable-under-basic is a config-load error, not a factory state.**
+   `validate()` hard-rejects `AUTH: basic` with an empty `USERNAME` or
+   `TOKEN` before the factory runs; the `basic` arm of `resolveServerToken`
+   is an unconditional pass-through. The warn-and-skip path
+   (`mcp_token_resolution_skipped`) remains reachable only from `gh`/`auto`
+   resolution failures.
+3. **Config-loader debug dumps — RESOLVED (issue #1393).** The two
+   debug-gated dumps in `internal/infrastructure/config/config.go` — the
+   raw-content dump and the viper parsed-key dump with `slog.Any` —
+   previously serialized config values when debug logging was enabled, and
+   were recorded here (as of #1389) as a known exception to the
+   `mcp-token-not-logged` scope with a tracked follow-up (#1390). Issue
+   #1393 supersedes that framing and closes the gap. **Corrected framing:**
+   the dumps were an **exception to the scope** of `mcp-token-not-logged`
+   (whose subject is the MCP credential plumbing: config validation, DI
+   factory, client transport — verified clean), **not a violation**;
+   post-fix the loader honors the invariant's *intent* on the `MCPServer`
+   credential surface as a side effect of general diagnostics hardening
+   while remaining outside its literal plumbing scope. The invariant
+   statement and the domain model are unchanged. **Wording:** the **two
+   secret-bearing debug dumps now redact secret-bearing values**.
+
+   **Verified exposure class (issue #1393):** the dumps serialize YAML-file
+   config values — plaintext secret-bearing values when present in the file —
+   plus `${ENV_VAR}` reference literals (the reference name, never the
+   resolved value). The original #1390 claim that `AutomaticEnv`-overridden
+   live secrets reach the parsed-key dump was incorrect for the current
+   wiring: the dump runs inside `readConfigFile`, which `configureViper`
+   calls **before** `SetEnvPrefix`/`SetEnvKeyReplacer`/`AutomaticEnv`, and
+   viper's env lookup is gated on `automaticEnvApplied` (viper v1.21
+   `find()`); the explicit `BindEnv` map is also populated only after the
+   dump. The deny-list redaction is future-proof: if a future refactor moves
+   the dump after env wiring, env-overridden secrets are redacted by the
+   same path (the liveness test's `env-super-secret` guard becomes live
+   under that wiring).
+
+   **Redaction contract (issue #1393):** the parsed-key dump routes each key
+   through a deny-list (`isSecretKey` — suffix-anchored on the leaf,
+   case-insensitive; `api_key`/`auth_token`/`authorization`/`token`/
+   `password`/`secret`/`credential`/`username`/`key` families incl. plurals;
+   `max_tokens`/`max_history_tokens` deliberately excluded) and logs
+   `value=[REDACTED]` for a deny-listed leaf while keeping the key visible;
+   the raw-content dump routes through a line-oriented parser
+   (`redactRawContent`) that redacts deny-listed key values (preserving the
+   key), suppresses continuation lines, handles colonless lines, flow maps
+   and brace-less subkey chains (value-mode scanning gated on unquoted
+   scalars so quoted prose/URLs pass byte-identically). Residual class
+   (accepted, pinned by boundary tests): (i) innocuous-name scalars (e.g.
+   `PAYLOAD: sk-1234`); (ii) key-shaped malformed-block content inside a
+   block scalar (fail-closed over-redaction); (iii) barred `tokens:` flow
+   sub-keys (kept off the deny-list to protect `max_tokens`). Unquoted
+   plain-scalar URLs containing `token:` are over-redacted — an accepted,
+   documented cosmetic trade (fail-closed), compensated in valid YAML by the
+   parsed dump (`url` leaf not deny-listed).
+4. **Hot-reload boundary unchanged.** `MCP_SERVERS` remains excluded from
+   hot-reload (§10): changing Basic credentials (or any server
+   configuration) requires starting a new session.
 
 ### 5. Namespacing & Shortening
 

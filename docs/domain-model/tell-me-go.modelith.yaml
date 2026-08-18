@@ -494,7 +494,10 @@ entities:
         description: Base URL of the remote MCP server endpoint.
       - name: auth
         type: string
-        description: "Authentication mode: auto, gh, bearer, or none."
+        description: "Authentication mode: auto, gh, bearer, basic, or none."
+      - name: username
+        type: string
+        description: "Username for Basic authentication (AUTH: basic); sent as the Basic user with TOKEN as the password."
       - name: requiresConsent
         type: boolean
         description: Whether tools from this server require user approval before execution.
@@ -508,7 +511,7 @@ entities:
       - id: mcp-server-key-format
         statement: "MCP server keys must be 1 to 24 characters matching `^[a-z0-9-]+$`."
       - id: mcp-token-not-logged
-        statement: "Authentication tokens for `MCPServer`s must never be logged or serialized into diagnostics."
+        statement: "Credentials and derived Authorization headers for `MCPServer`s must never be logged or serialized by the MCP credential plumbing (config validation, DI factory, client transport)."
       - id: mcp-readonly-defaults
         statement: "An `MCPServer` targeting a read-only endpoint defaults to `requiresConsent: false` and concurrent execution (`serial: false`)."
 
