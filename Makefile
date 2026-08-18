@@ -734,16 +734,22 @@ endif
 verify-exit-query:
 	@go run ./cmd/deadcode -exit-query
 
-# Verify the complexity-pin catalog partition (issue #1297): runs the real
-# GatherComplexities against the live INTENTIONAL_NON_FIXES.md catalog and
-# asserts the post-fix 27-cataloged / 0-alert partition by name (line +
-# recorded CC). RED-first: the gate must fail against a drifted catalog —
+# Verify the complexity-pin catalog partition (issue #1297) PLUS the
+# coverage-pin and detailed-coverage-report gates: runs the real
+# GatherComplexities against the live INTENTIONAL_NON_FIXES.md catalog
+# and asserts the cataloged/alert partition, then runs the live coverage
+# matcher against the catalog and the end-to-end detailed-coverage
+# reports for every cataloged-gap package. The -run filter uses DOUBLE
+# quotes because the | alternation must survive both sh and cmd.exe
+# (single quotes are literal in cmd.exe and would match nothing — a
+# vacuous pass). -v is required so transcripts surface the seven gate
+# PASS lines. RED-first: the gate must fail against a drifted catalog —
 # never weaken it to land green.
 verify-nonfix-catalog:
 ifeq ($(IS_POSIX),true)
-	@go test -tags=arch -run TestVerifyNonFixCatalog ./internal/tools/analysis
+	@go test -v -tags=arch -run "TestVerifyNonFixCatalog|TestVerifyCoveragePinsMatchLiveCatalog|TestDetailedCoverageReport" ./internal/tools/analysis
 else
-	@go test -tags=arch -run TestVerifyNonFixCatalog ./internal/tools/analysis
+	@go test -v -tags=arch -run "TestVerifyNonFixCatalog|TestVerifyCoveragePinsMatchLiveCatalog|TestDetailedCoverageReport" ./internal/tools/analysis
 endif
 
 # Verify the ports registry (issue #1343, ADR-064): runs the live
