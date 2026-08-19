@@ -48,8 +48,8 @@ func main() {
 	}
 }
 
-// newFixtureServer builds the canonical SDK MCP server with the seven fixture
-// tools: echo, slow, die, stderr, block, args-capture, fail.
+// newFixtureServer builds the canonical SDK MCP server with the eight fixture
+// tools: echo, slow, die, stderr, block, args-capture, fail, getenv.
 func newFixtureServer() *sdkmcp.Server {
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "stdioserver-fixture", Version: "1.0.0"}, nil)
 
@@ -116,6 +116,19 @@ func newFixtureServer() *sdkmcp.Server {
 		func(_ context.Context, _ *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
 			return toolError("fail: deliberate tool error"), nil
 		})
+
+	server.AddTool(&sdkmcp.Tool{Name: "getenv", Description: "returns the value of an environment variable (empty when unset)", InputSchema: map[string]any{
+		"type":       "object",
+		"properties": map[string]any{"name": map[string]any{"type": "string"}},
+	}}, func(_ context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+		var args struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+			return toolError("getenv: bad arguments"), nil
+		}
+		return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: os.Getenv(args.Name)}}}, nil
+	})
 
 	return server
 }
