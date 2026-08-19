@@ -849,7 +849,7 @@ func newSDKTestServerListToolsFail(t *testing.T) *httptest.Server {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		r.Body.Close()
+		_ = r.Body.Close()
 		r.Body = io.NopCloser(bytes.NewReader(body))
 
 		var msg struct {
