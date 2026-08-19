@@ -547,6 +547,8 @@ entities:
         statement: "An `MCPServer` targeting a read-only endpoint defaults to `requiresConsent: false` and concurrent execution (`serial: false`)."
       - id: mcp-stdio-trusted-defaults
         statement: "A stdio `MCPServer` (command set) defaults to `requiresConsent: false` (trusted local spawn) and `serial: true`; an explicit `REQUIRES_CONSENT: true` opts back in."
+      - id: mcp-env-keys-byte-for-byte
+        statement: "`MCPServer.env` keys reach the spawned stdio child byte-for-byte: the config loader never lowercases or otherwise transforms ENV keys, and sibling keys that differ only by case (Plur/plur, ENV/env) are rejected deterministically at load."
 
   Skill:
     definition: >
@@ -998,7 +1000,7 @@ scenarios:
       - "LLM requests an MCP tool execution via `ToolCall`."
       - "`ToolCall` delegates execution to the `MCPServer` — over Streamable HTTP for URL-based servers, or to the local stdio child process for COMMAND-based servers."
       - "Non-terminal MCP tool errors (isError: true) return error text with nil Go error for in-turn LLM recovery."
-    invariants_touched: [mcp-server-key-format, mcp-readonly-defaults, mcp-stdio-trusted-defaults, tool-timeout, tool-unique-name]
+    invariants_touched: [mcp-server-key-format, mcp-readonly-defaults, mcp-stdio-trusted-defaults, mcp-env-keys-byte-for-byte, tool-timeout, tool-unique-name]
 
   - name: Automatic memory injection and learning
     description: >
