@@ -150,6 +150,23 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"service.go EditLastTurn body", "internal/agent/service.go", 189, 191},
 		{"repository.go GetID accessor", "internal/domain/ports/repository.go", 108, 108},
 		{"agent.go configRefreshHook no-op stubs", "internal/agent/agent.go", 383, 384},
+		{"client.go marshalInputSchema json.Marshal", "internal/infrastructure/mcp/client.go", 258, 260},
+		{"client.go ListTools marshalInputSchema propagation", "internal/infrastructure/mcp/client.go", 120, 122},
+		{"stdio_client.go ListTools marshalInputSchema propagation", "internal/infrastructure/mcp/stdio_client.go", 162, 165},
+		{"stdio_client.go StdoutPipe error", "internal/infrastructure/mcp/stdio_client.go", 82, 85},
+		{"stdio_client.go StdinPipe error", "internal/infrastructure/mcp/stdio_client.go", 87, 90},
+		{"stdio_client.go resolveCommand generic error", "internal/infrastructure/mcp/stdio_client.go", 347, 347},
+		{"stdio_client.go Close session.Close error", "internal/infrastructure/mcp/stdio_client.go", 240, 242},
+		{"global_prompt_tracker.go prepareCompactedEntries", "internal/infrastructure/history/global_prompt_tracker.go", 420, 422},
+		{"policy.go confirmAction call-site error", "internal/infrastructure/security/policy.go", 95, 98},
+		{"manager.go RegisterSafePath Abs error", "internal/infrastructure/security/manager.go", 136, 139},
+		{"manager.go RegisterReadOnlyPath Abs error", "internal/infrastructure/security/manager.go", 161, 164},
+		{"state.go SetInfo marshal error", "internal/infrastructure/persistence/state.go", 65, 68},
+		{"metrics.go appendSummaryToLog marshal", "internal/infrastructure/telemetry/metrics.go", 176, 178},
+		{"toolchain_factory.go execRunner closure", "internal/infrastructure/di/toolchain_factory.go", 145, 147},
+		{"sqlite_store.go Update RowsAffected", "internal/infrastructure/persistence/sqlite_store.go", 207, 209},
+		{"sqlite_store.go Delete RowsAffected", "internal/infrastructure/persistence/sqlite_store.go", 224, 226},
+		{"mcp_factory.go gh token resolver success", "internal/infrastructure/di/mcp_factory.go", 71, 71},
 	}
 
 	for _, tt := range tests {
