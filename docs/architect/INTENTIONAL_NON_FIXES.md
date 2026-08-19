@@ -905,7 +905,7 @@ catalog a new gap no one reviewed. Policy:
 - **Rationale**: Table-driven resolution-contract test pinning the COMMAND resolution rules (separator-bearing passthrough, bare-name LookPath, empty-command failure, nonexistent-bare-command annotation). CC comes from case enumeration and assertion boilerplate, not branching business logic. CC rose 10→13 (2026-09) when two not-found subtests were added — still the same acceptance class as `TestGetModelTurn` (CC=16) and `TestMediaBlocks` (CC=11): assertion boilerplate across a coverage matrix.
 - **See**: `internal/infrastructure/mcp/stdio_client_test.go:25`
 
-### internal/agent/memory/hook_test.go — TestHookBatch (CC=14)
+### internal/agent/memory/hook_test.go — TestHookBatch (CC=20)
 
 - **Status**: ACCEPTED (2026-09, issue #1404)
 - **Rationale**: Sequential state-mutation test over the batch tier:
@@ -914,18 +914,41 @@ catalog a new gap no one reviewed. Policy:
   outside the lock; a second flush is a no-op. Steps mutate shared hook
   state and depend on prior steps — splitting would duplicate setup. Same
   acceptance class as `TestGetModelTurn` (CC=16) — test-complexity, not
-  branching business logic.
-- **See**: `internal/agent/memory/hook_test.go:209`
+  branching business logic. Re-anchored 2026-09 (#1410): line drifted
+  209→245 as the T2 branch-(i)/(ii)/(iii) tests and the #1410 writeStats/
+  payload-contract assertions were appended above; CC re-measured 14→20 —
+  the added per-key payload assertions and skip-at-append/flush-contract
+  subtests grew the branch count, still the same test-complexity class.
+- **See**: `internal/agent/memory/hook_test.go:245`
 
-### internal/agent/memory/hook_test.go — TestHookFull (CC=15)
+### internal/agent/memory/hook_test.go — TestHookFull (CC=21)
 
 - **Status**: ACCEPTED (2026-09, issue #1404)
 - **Rationale**: Sequential full-tier test: frame-match learns, sha256
   dedupe, flood bound, and non-frame suppression — each subtest mutates the
   hook's per-session learn state built up by prior steps. CC is assertion
   boilerplate across dependent steps. Same acceptance class as
-  `TestGetModelTurn` (CC=16).
-- **See**: `internal/agent/memory/hook_test.go:273`
+  `TestGetModelTurn` (CC=16). Re-anchored 2026-09 (#1410): line drifted
+  273→354 as the T2 branch tests and the #1410 payload-contract assertions
+  were appended above; CC re-measured 15→21 — the added no-agent/no-
+  session_id payload assertions and dead-tool/scope subtests grew the branch
+  count, still the same test-complexity class.
+- **See**: `internal/agent/memory/hook_test.go:354`
+
+### internal/agent/memory/hook_test.go — TestHookCaptureBranchI (CC=13)
+
+- **Status**: ACCEPTED (2026-09, issue #1404)
+- **Rationale**: Two-subtest wire-contract test over branch (i) (Response
+  present): with and without an error annotation, asserting the `plur_capture`
+  payload is exactly `{summary, agent, session_id}` with the text-presence
+  discriminator (text wins over the error annotation) and that
+  `text`/`error`/`prompt` keys are absent (issue #1410). CC comes from
+  per-key assertion boilerplate (summary/agent/session_id checks + the
+  absent-key loop in each subtest), not branching business logic. Same
+  acceptance class as `TestHookBatch` (CC=20) — test-complexity, assertion
+  boilerplate across a coverage matrix. Grew over the CC=10 threshold in
+  2026-09 (#1410) when the exact-payload assertions were added (T2).
+- **See**: `internal/agent/memory/hook_test.go:59`
 
 ### internal/agent/memory/injector_test.go — TestInjectorEnabledInsert (CC=22)
 
@@ -956,8 +979,51 @@ catalog a new gap no one reviewed. Policy:
   config branching for store/seed loading and the tool dispatch table
   setup — structural setup branching in a testdata helper binary, not
   business logic. Same acceptance class as `createPrecisionWorkspace`
-  (CC=12, test-fixture builder).
-- **See**: `tests/e2e/testdata/fakeplur/main.go:104`
+  (CC=12, test-fixture builder). Re-anchored 2026-09 (#1410): line drifted
+  104→142 as the reject-tools/required-param plumbing grew the file above
+  it (T5 measurement); CC re-verified 13 (unchanged).
+- **See**: `tests/e2e/testdata/fakeplur/main.go:142`
+
+### tests/e2e/testdata/fakeplur/main.go — (*server).dispatchTool (CC=13)
+
+- **Status**: ACCEPTED (2026-09, issue #1404)
+- **Rationale**: Testdata helper dispatch for the fake plur MCP server:
+  reject-map guard, required-param presence/empty-value loop, then the
+  6-case tool switch (inject/recall, learn, capture, learn_batch, status,
+  default). CC is dispatch-structural (switch/branch count + guard loop),
+  not branching business logic — same class as `handleDomainEvent` (CC=12)
+  and `newServer` (CC=13) in the same testdata helper binary. Grew over the
+  CC=10 threshold in 2026-09 (#1410) when the reject-tools guard, the
+  required-param empty-value rejection, and the `plur_learn_batch` case were
+  added (T5).
+- **See**: `tests/e2e/testdata/fakeplur/main.go:381`
+
+### tests/e2e/memory_live_test.go — TestLivePlurCapturePersists (CC=12)
+
+- **Status**: ACCEPTED (2026-09, issue #1404)
+- **Rationale**: Live E2E persistence leg (behind `-tags=e2e_live`, never in
+  `make check-full` — ADR-068 §8): precondition probes (npx present,
+  handshake OK) skip the leg, then a sequential CLI run (capture tier) and a
+  fresh-process after-read assert the captured marker round-trips through
+  the real server's store. CC is precondition/assertion boilerplate across
+  the sequential live-server workflow, not branching business logic. Same
+  acceptance class as `TestHistoryNavigation_CompleteWorkflow` (CC=15) —
+  sequential workflow where steps depend on prior state; splitting would
+  duplicate the expensive live-store setup. New 2026-09 (#1410, T7).
+- **See**: `tests/e2e/memory_live_test.go:285`
+
+### tests/e2e/e2e_test.go — newestSourceMTime (CC=13)
+
+- **Status**: ACCEPTED (2026-09, issue #1404)
+- **Rationale**: Test helper computing the newest ModTime among the CLI
+  binary's inputs (non-test `.go` files + go.mod/go.sum under root) for
+  build-staleness checks: a WalkDir closure with `.git`/`vendor`/`testdata`
+  dir-skip guards and per-file mtime comparison. CC is structural
+  walk-guard branching in test infrastructure, not business logic. Same
+  acceptance class as `createPrecisionWorkspace` (CC=12) — test-fixture
+  helper where the branching is traversal guards. New 2026-09 (#1410, T7 —
+  added for the live-leg rebuild check).
+- **See**: `tests/e2e/e2e_test.go:79`
 
 ---
 
@@ -1207,10 +1273,45 @@ to reason about.
   fragment a coherent sequential function for cosmetic CC reduction (same
   class as `handleDomainEvent` CC=12, `(*RecoveryStep).Process` CC=12). The
   fail-open guard structure (return on every path; memory errors logged and
-  ignored) is mandated by ADR-068 §2.
-- **See**: `internal/agent/memory/hook.go:80`
+  ignored) is mandated by ADR-068 §2. Re-anchored 2026-09 (#1410): line
+  drifted 80→97 as the T2 branch-(i)/(ii)/(iii) tests and the
+  writeStats/flush instrumentation grew the file above it; CC re-verified 21
+  (unchanged — the classification/assertions did not change).
+- **See**: `internal/agent/memory/hook.go:97`
 
-### internal/agent/memory/injector.go — (*plurInjector).Transform (CC=16)
+### internal/agent/memory/hook.go — (*plurHook).maybeLearn (CC=11)
+
+- **Status**: ACCEPTED (2026-09, issue #1404)
+- **Rationale**: Gated per-turn `plur_learn` for the full tier: frame-pattern
+  gate on the user signal, per-session exact-match sha256 dedupe, flood
+  bound (`MAX_LEARNS_PER_SESSION`), then the detached-ctx MCP call with
+  fail-open logging (ADR-068 §3). Every branch is a single-line guard or
+  return; CC is structural guard count (frame gate, hash-map init, dedupe
+  hit, flood bound, scope presence), not branching business logic. Same
+  acceptance class as `(*plurHook).AfterTurn` (CC=21) — sequential guarded
+  dispatch mandated by ADR-068 §3, fail-open (memory errors logged and
+  ignored). Grew over the CC=10 threshold in 2026-09 (#1410) when the
+  no-agent/no-`session_id` payload contract and per-write instrumentation
+  were added (T7).
+- **See**: `internal/agent/memory/hook.go:236`
+
+### internal/agent/memory/hook.go — (*plurHook).FlushSession (CC=13)
+
+- **Status**: ACCEPTED (2026-09, issue #1404)
+- **Rationale**: Session-end batch flush: drain-under-lock, delete the map
+  entry, copy the episodes, then issue `plur_learn_batch` outside the lock
+  (never hold the lock across I/O) with an empty-drain no-op and the
+  session-end aggregate / dead-tool notice surface (ADR-068 §8, §10 rows
+  18–19). Every branch is a single-line guard or delegation; CC is
+  structural guards (no-buffer, empty-drain, per-tool dead trigger,
+  error handling), not branching business logic. Same acceptance class as
+  `(*RecoveryStep).Process` (CC=12) and `renderHistory` (CC=12) — sequential
+  orchestration with error guards. Grew over the CC=10 threshold in 2026-09
+  (#1410) when the per-tool writeStats aggregation and dead-tool notice were
+  added (T7).
+- **See**: `internal/agent/memory/hook.go:296`
+
+### internal/agent/memory/injector.go — (*plurInjector).Transform (CC=18)
 
 - **Status**: ACCEPTED (2026-09, issue #1404)
 - **Rationale**: Sequential fail-open pipeline mandated by ADR-068 §1:
@@ -1218,7 +1319,10 @@ to reason about.
   insert, observability — each step a single-line guard or delegation, and
   the function returns nil on every path so the turn is never broken. CC is
   structural guards, not business logic. Same acceptance class as
-  `renderHistory` (CC=12).
+  `renderHistory` (CC=12). CC re-measured 2026-09 (#1410): 16→18 — the
+  `result.Error` strip branch (Seam A blindness, ADR-068 §10 row 17) and its
+  nested logger guard added 2; the line stays 64 since the additions are
+  inside the body.
 - **See**: `internal/agent/memory/injector.go:64`
 
 ### internal/agent/memory/injector.go — metadataIDs (CC=11)
@@ -1228,8 +1332,10 @@ to reason about.
   `Metadata["ids"]` value into a string slice — dispatch-structural, same
   class as `handleDomainEvent` (CC=12). Each case is a single-line
   conversion or return; the CC is inherent to the type-switch dispatch
-  pattern, not branching business logic.
-- **See**: `internal/agent/memory/injector.go:226`
+  pattern, not branching business logic. Re-anchored 2026-09 (#1410): line
+  drifted 226→237 as the #1410 Transform strip branch grew the file above
+  it; CC re-verified 11 (unchanged).
+- **See**: `internal/agent/memory/injector.go:237`
 
 ---
 
