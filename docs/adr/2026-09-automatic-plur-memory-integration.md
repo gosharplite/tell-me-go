@@ -4,6 +4,9 @@
 - **Date**: 2026-09
 - **Deciders**: Architect, Coder
 - **Consulted**: Issue #1404 (supersedes #1403, which superseded #1402)
+- **Amended**: 2026-08-20, issue #1412 — `plur_learn_batch` payload carries
+  `max_llm_calls: 0`; `FlushSession` retains buffered episodes on write
+  failure (claim/restore)
 
 ## Context
 
@@ -84,6 +87,18 @@ including the Round 2 refinements, are settled. There are no open questions.**
    cancellation/timeout. User aborts (`err == context.Canceled` /
    `DeadlineExceeded`) are still captured as error episodes via the detached
    ctx.
+
+   **Why the 3s bound is safe for the default tier (issue #1412).** The
+   session-end `plur_learn_batch` payload carries `max_llm_calls: 0`, which
+   disables server-side LLM dedup entirely (upstream-pinned:
+   `maxLlmCalls: 0 → 0 LLM calls`, `packages/core/test/learn-batch-cap.test.ts`
+   in plur-ai/plur), removing the dominant latency leg. The residual legs — a
+   warm embedder (the per-turn injector keeps it warm), a warm stdio child,
+   and the local cosine/ADD write — are normally well under 3s. **Revisit
+   triggers** if this changes: (a) `LEARN: full` is enabled — `plur_learn`
+   has no `max_llm_calls` parameter, so its gated dedup still LLM-calls
+   inside the same bound; (b) multi-process flock contention shows up in
+   practice (concurrent persona flushes consuming the detached window).
 3. **Episode sourcing — three-way classification keyed on the hook's `err`
    argument** (never `Turn.State.LastError`, which is stale on the
    empty-response retry path):
@@ -136,14 +151,25 @@ default is `batch`:
   empty/whitespace-text episodes, so error turns never occupy ring capacity
   and cannot evict learnable content), flushed via
   `defer plurHook.FlushSession()` in `Chat` (success and error). Local
-  extraction, zero LLM cost. The batch payload is **engrams-only**:
-  `engrams: [{statement, scope?, tags}]` — episodes belong to the capture
+  extraction, zero LLM cost. The batch payload is `{engrams: [{statement,
+  scope?, tags}], max_llm_calls: 0}` — `max_llm_calls: 0` disables
+  server-side LLM dedup (zero LLM cost; deterministic cosine/ADD path;
+  upstream-pinned semantics, issue #1412). Episodes belong to the capture
   tier's timeline, not the batch. `scope` is native per-engram (from
   `MEMORY.SCOPE` — never silently dropped); the identity convention is
   `tags: ["session:<id>", "mode:<mode>"]`; there is **no top-level
   `session_id`** and the payload is **never `engrams: []`** (an empty drain
-  is a no-op). `FlushSession` drains under lock, deletes the map entry,
-  then issues the MCP call **outside** the lock.
+  is a no-op). `FlushSession` **claims** the buffered episodes under lock
+  (snapshot AND remove, so a concurrent flush can never double-write the
+  same episodes), issues the MCP call **outside** the lock, and on write
+  failure **restores** the claimed episodes — retained for the next flush
+  opportunity, with any ring-bound drops reported on the failure Warn
+  (`retained`/`dropped` keys) — and deletes the entry only on success.
+  Fail-open means log-and-move-on, never delete-then-fail (issue #1412).
+  Retention is **in-process only**: a process exit after a failed flush
+  still loses the buffer (accepted fail-open posture); cross-process
+  durability (a spill/retry queue) is a recorded future concern, not
+  implemented.
 - `full` — episodes + **gated per-turn direct `plur_learn`** of
   `{statement, scope?, tags}` — **no `agent`** (not a real parameter; the
   server silently ignores it) and **no `session_id`** (an unstarted
@@ -295,7 +321,7 @@ adapters in `internal/agent/memory`.
 a new violation introduced by this ADR's priority 15, and explicitly out of
 scope for this issue.
 
-### 10. The corrections tables (22 rows)
+### 10. The corrections tables (24 rows)
 
 #### Round 1 (on #1402, 9 premises)
 
@@ -333,6 +359,13 @@ scope for this issue.
 | 20 | Probe 1 (per-item `session_id` on `plur_learn_batch`) | **OUTCOME: keep-tags** — the server accepted the item but the `plur_history` `engram_created` event carries only `{type, scope}`; the per-item `session_id` does not round-trip → the `tags: ["session:<id>", "mode:<mode>"]` convention is retained |
 | 21 | Probe 2 (old `{statement, agent}` shape on `plur_learn`) | **OUTCOME: silently-ignore** — the server accepts the unknown `agent` param and creates the engram (no isError) |
 | 22 | `PLUR_TOOL_PROFILE` | The default "lean" profile rejects direct calls to the write/inject tools; deployments must set `PLUR_TOOL_PROFILE=full` in the MCP server's ENV (see §8) |
+
+#### Round 4 (on #1412, 2 findings — both verified)
+
+| # | Finding (verified) | Committed outcome |
+| --- | --- | --- |
+| 23 | `plur_learn_batch` latency exceeds the 3s detached bound → the session-end flush times out and the buffered episodes are silently lost (the buffer was deleted before the call) | Payload carries `max_llm_calls: 0` (kills the LLM-dedup leg, zero LLM cost); `FlushSession` claims under lock and restores on failure, reporting ring-bound drops |
+| 24 | Timeout work proposed (configurable knob, constant raise 3s→30s) | **Deferred** — with `max_llm_calls: 0` the residual legs are well under 3s; revisit triggers recorded in §2.2 |
 
 ### 11. Failure/disable matrix
 
@@ -423,3 +456,4 @@ silently.
 - Grill rounds: [Round 1 transcript](https://gist.github.com/gosharplite/6af5e8d44cd3d7cfd765ff4be1a2537e) ·
   [Round 2 transcript](https://gist.github.com/gosharplite/213ada4b83cca349afeadef12ff729f0)
 - Superseded issues: #1402, #1403
+- Issue #1412 — latency-layer follow-on: `max_llm_calls: 0` + retain-on-failure

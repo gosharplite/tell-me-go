@@ -905,7 +905,7 @@ catalog a new gap no one reviewed. Policy:
 - **Rationale**: Table-driven resolution-contract test pinning the COMMAND resolution rules (separator-bearing passthrough, bare-name LookPath, empty-command failure, nonexistent-bare-command annotation). CC comes from case enumeration and assertion boilerplate, not branching business logic. CC rose 10→13 (2026-09) when two not-found subtests were added — still the same acceptance class as `TestGetModelTurn` (CC=16) and `TestMediaBlocks` (CC=11): assertion boilerplate across a coverage matrix.
 - **See**: `internal/infrastructure/mcp/stdio_client_test.go:25`
 
-### internal/agent/memory/hook_test.go — TestHookBatch (CC=20)
+### internal/agent/memory/hook_test.go — TestHookBatch (CC=22)
 
 - **Status**: ACCEPTED (2026-09, issue #1404)
 - **Rationale**: Sequential state-mutation test over the batch tier:
@@ -919,7 +919,10 @@ catalog a new gap no one reviewed. Policy:
   payload-contract assertions were appended above; CC re-measured 14→20 —
   the added per-key payload assertions and skip-at-append/flush-contract
   subtests grew the branch count, still the same test-complexity class.
-- **See**: `internal/agent/memory/hook_test.go:245`
+  Re-anchored 2026-09 (#1412): line drifted 245→247 and CC re-measured
+  20→22 as the T2 retain-on-failure/drop-count subtests grew the file
+  above and inside the test, still the same test-complexity class.
+- **See**: `internal/agent/memory/hook_test.go:247`
 
 ### internal/agent/memory/hook_test.go — TestHookFull (CC=21)
 
@@ -932,8 +935,10 @@ catalog a new gap no one reviewed. Policy:
   273→354 as the T2 branch tests and the #1410 payload-contract assertions
   were appended above; CC re-measured 15→21 — the added no-agent/no-
   session_id payload assertions and dead-tool/scope subtests grew the branch
-  count, still the same test-complexity class.
-- **See**: `internal/agent/memory/hook_test.go:354`
+  count, still the same test-complexity class. Re-anchored 2026-09 (#1412):
+  line drifted 354→359 as the T2 retain-on-failure/drop-count subtests grew
+  the file above it; CC re-verified 21 (unchanged).
+- **See**: `internal/agent/memory/hook_test.go:359`
 
 ### internal/agent/memory/hook_test.go — TestHookCaptureBranchI (CC=13)
 
@@ -948,7 +953,10 @@ catalog a new gap no one reviewed. Policy:
   acceptance class as `TestHookBatch` (CC=20) — test-complexity, assertion
   boilerplate across a coverage matrix. Grew over the CC=10 threshold in
   2026-09 (#1410) when the exact-payload assertions were added (T2).
-- **See**: `internal/agent/memory/hook_test.go:59`
+  Re-anchored 2026-09 (#1412): line drifted 59→61 as the T2 retain-on-
+  failure/drop-count subtests grew the file above it; CC re-verified 13
+  (unchanged).
+- **See**: `internal/agent/memory/hook_test.go:61`
 
 ### internal/agent/memory/injector_test.go — TestInjectorEnabledInsert (CC=22)
 
@@ -981,22 +989,30 @@ catalog a new gap no one reviewed. Policy:
   business logic. Same acceptance class as `createPrecisionWorkspace`
   (CC=12, test-fixture builder). Re-anchored 2026-09 (#1410): line drifted
   104→142 as the reject-tools/required-param plumbing grew the file above
-  it (T5 measurement); CC re-verified 13 (unchanged).
-- **See**: `tests/e2e/testdata/fakeplur/main.go:142`
+  it (T5 measurement); CC re-verified 13 (unchanged). Re-anchored 2026-09
+  (#1412): line drifted 142→179 as the T1 delayFile/delayTool server fields
+  and FAKE_PLUR_DELAY_* env wiring grew the file above it; CC re-verified
+  13 (unchanged).
+- **See**: `tests/e2e/testdata/fakeplur/main.go:179`
 
-### tests/e2e/testdata/fakeplur/main.go — (*server).dispatchTool (CC=13)
+### tests/e2e/testdata/fakeplur/main.go — (*server).dispatchTool (CC=14)
 
 - **Status**: ACCEPTED (2026-09, issue #1404)
 - **Rationale**: Testdata helper dispatch for the fake plur MCP server:
-  reject-map guard, required-param presence/empty-value loop, then the
-  6-case tool switch (inject/recall, learn, capture, learn_batch, status,
-  default). CC is dispatch-structural (switch/branch count + guard loop),
-  not branching business logic — same class as `handleDomainEvent` (CC=12)
-  and `newServer` (CC=13) in the same testdata helper binary. Grew over the
-  CC=10 threshold in 2026-09 (#1410) when the reject-tools guard, the
-  required-param empty-value rejection, and the `plur_learn_batch` case were
-  added (T5).
-- **See**: `tests/e2e/testdata/fakeplur/main.go:381`
+  reject-map guard, the T1 delay guard (`delayFor` re-read per call,
+  issue #1412 — sleeps and returns isError so the store is never mutated
+  by a call the client already abandoned), required-param presence/empty-
+  value loop, then the 6-case tool switch (inject/recall, learn, capture,
+  learn_batch, status, default). CC is dispatch-structural (switch/branch
+  count + guard loop), not branching business logic — same class as
+  `handleDomainEvent` (CC=12) and `newServer` (CC=13) in the same testdata
+  helper binary. Grew over the CC=10 threshold in 2026-09 (#1410) when the
+  reject-tools guard, the required-param empty-value rejection, and the
+  `plur_learn_batch` case were added (T5). Re-anchored 2026-09 (#1412):
+  line drifted 381→419 as the T1 delayFile/delayTool plumbing grew the file
+  above it; CC re-measured 13→14 — the delay guard adds one decision point,
+  still the same dispatch-structural class.
+- **See**: `tests/e2e/testdata/fakeplur/main.go:419`
 
 ### tests/e2e/memory_live_test.go — TestLivePlurCapturePersists (CC=12)
 
@@ -1295,21 +1311,28 @@ to reason about.
   were added (T7).
 - **See**: `internal/agent/memory/hook.go:236`
 
-### internal/agent/memory/hook.go — (*plurHook).FlushSession (CC=13)
+### internal/agent/memory/hook.go — (*plurHook).FlushSession (CC=16)
 
 - **Status**: ACCEPTED (2026-09, issue #1404)
-- **Rationale**: Session-end batch flush: drain-under-lock, delete the map
-  entry, copy the episodes, then issue `plur_learn_batch` outside the lock
-  (never hold the lock across I/O) with an empty-drain no-op and the
-  session-end aggregate / dead-tool notice surface (ADR-068 §8, §10 rows
-  18–19). Every branch is a single-line guard or delegation; CC is
-  structural guards (no-buffer, empty-drain, per-tool dead trigger,
-  error handling), not branching business logic. Same acceptance class as
-  `(*RecoveryStep).Process` (CC=12) and `renderHistory` (CC=12) — sequential
-  orchestration with error guards. Grew over the CC=10 threshold in 2026-09
-  (#1410) when the per-tool writeStats aggregation and dead-tool notice were
-  added (T7).
-- **See**: `internal/agent/memory/hook.go:296`
+- **Rationale**: Session-end batch flush: claim the buffer under lock
+  (snapshot AND remove the episodes so a concurrent flush can never
+  double-write), issue `plur_learn_batch` outside the lock (never hold the
+  lock across I/O), restore the claimed episodes on write failure (retained
+  for the next flush opportunity) with the `retained`/`dropped` counts
+  reported on the failure Warn, and delete the buffer entry on success
+  (issue #1412); empty-drain no-op and the session-end aggregate / dead-tool
+  notice surface (ADR-068 §8, §10 rows 18–19). Every branch is a single-line
+  guard or delegation; CC is structural guards (no-buffer, empty-drain,
+  claim/restore, per-tool dead trigger, error handling), not branching
+  business logic. Same acceptance class as `(*RecoveryStep).Process` (CC=12)
+  and `renderHistory` (CC=12) — sequential orchestration with error guards.
+  Grew over the CC=10 threshold in 2026-09 (#1410) when the per-tool
+  writeStats aggregation and dead-tool notice were added (T7).
+  Re-anchored 2026-09 (#1412): line drifted 296→300 as the T2 claim/
+  restore/retain-drop refactor grew the file above it; CC re-measured 13→16 —
+  the claim/restore guards and retained/dropped reporting added decision
+  points, still the same structural-guard class.
+- **See**: `internal/agent/memory/hook.go:300`
 
 ### internal/agent/memory/injector.go — (*plurInjector).Transform (CC=18)
 

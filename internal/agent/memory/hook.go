@@ -291,25 +291,39 @@ func (h *plurHook) maybeLearn(turn *orchestrator.Turn, cfg *config.MemoryConfig)
 
 // FlushSession drains the per-session ring buffer and writes it via
 // plur_learn_batch (batch and full tiers; called via defer in Chat — success
-// and error). Drain happens under lock; the MCP call goes outside the lock —
-// never hold the lock across I/O.
+// and error). Claim: snapshot AND remove the buffered episodes under one
+// lock, so a concurrent flush can never double-write the same episodes. The
+// MCP call goes outside the lock — never hold the lock across I/O. On write
+// failure the claimed episodes are restored (retained for the next flush
+// opportunity) and ring-bound drops are reported on the failure Warn —
+// fail-open means log-and-move-on, never delete-then-fail (issue #1412).
 func (h *plurHook) FlushSession(sessionID string) {
+	// Claim: snapshot AND remove the buffered episodes under one lock, so a
+	// concurrent flush can never double-write the same episodes (issue
+	// #1412). The claim is restored on write failure (retained for the next
+	// flush opportunity); on success it stays removed. The MCP call goes
+	// outside the lock — never hold the lock across I/O.
 	h.mu.Lock()
 	buf, ok := h.buffers[sessionID]
 	if !ok {
 		h.mu.Unlock()
 		return
 	}
-	delete(h.buffers, sessionID)
-	episodes := append([]episode(nil), buf.episodes...)
-	h.mu.Unlock()
-
+	episodes := buf.claim()
 	if len(episodes) == 0 {
+		delete(h.buffers, sessionID)
+		h.mu.Unlock()
 		return
 	}
+	h.mu.Unlock()
 
-	// Nil-client guard: drain happened above (fail-open); skip the call.
+	// Nil-client guard: permanent misconfiguration — the claim is NOT
+	// restored (retention can never succeed; drain-and-drop keeps today's
+	// fail-open no-op and bounds map growth). ADR-068 §5.
 	if h.client == nil {
+		h.mu.Lock()
+		delete(h.buffers, sessionID)
+		h.mu.Unlock()
 		if h.logger != nil {
 			h.logger.Warn("memory_client_unavailable", "reason", "nil MCP client", "phase", "learn_batch")
 		}
@@ -336,7 +350,7 @@ func (h *plurHook) FlushSession(sessionID string) {
 	if len(engrams) == 0 { // belt-and-suspenders — never send engrams: []
 		return
 	}
-	payload := map[string]interface{}{"engrams": engrams}
+	payload := map[string]interface{}{"engrams": engrams, "max_llm_calls": 0}
 
 	detachedCtx, cancel := context.WithTimeout(context.Background(), detachedTimeout)
 	defer cancel()
@@ -347,10 +361,35 @@ func (h *plurHook) FlushSession(sessionID string) {
 	}
 	result, err := h.client.CallTool(detachedCtx, "plur_learn_batch", payload)
 	if err != nil || result.Error != nil {
+		// Retain on failure: restore the claimed episodes at the front
+		// (newer appends stay after them) and report ring-bound drops.
+		h.mu.Lock()
+		b, exists := h.buffers[sessionID]
+		if !exists {
+			b = &sessionBuffer{}
+			h.buffers[sessionID] = b
+		}
+		b.restore(episodes)
+		dropped := b.dropped
+		h.mu.Unlock()
 		if h.logger != nil {
-			h.logger.Warn("memory_learn_batch_failed", "error", firstNonNil(err, result.Error), "session", sessionID)
+			h.logger.Warn("memory_learn_batch_failed", "error", firstNonNil(err, result.Error), "session", sessionID, "retained", len(episodes), "dropped", dropped)
+		}
+		h.recordWrite(sessionID, "plur_learn_batch", result, err)
+		return
+	}
+	// Success: the claimed episodes were written. Drop the entry when the
+	// buffer is empty (episodes appended during the call survive); otherwise
+	// the retention window closed, so the drop counter resets.
+	h.mu.Lock()
+	if b, exists := h.buffers[sessionID]; exists {
+		if len(b.episodes) == 0 {
+			delete(h.buffers, sessionID)
+		} else {
+			b.dropped = 0
 		}
 	}
+	h.mu.Unlock()
 	h.recordWrite(sessionID, "plur_learn_batch", result, err)
 }
 
