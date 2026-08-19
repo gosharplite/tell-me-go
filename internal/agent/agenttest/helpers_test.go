@@ -337,6 +337,48 @@ func TestStubChatterComposer_Getters_ConfigWatcher(t *testing.T) {
 	}
 }
 
+// stubMCPClientDouble is a minimal non-nil tools.MCPClient for asserting the
+// GetMCPClient identity path without contacting a live MCP endpoint.
+type stubMCPClientDouble struct{ tools.MCPClient }
+
+func TestStubChatterComposer_Getters_MCPClients(t *testing.T) {
+	t.Parallel()
+
+	client := &stubMCPClientDouble{}
+	c := &StubChatterComposer{
+		MCPClients: map[string]tools.MCPClient{"plur": client},
+	}
+
+	got, ok := c.GetMCPClient("plur")
+	if !ok {
+		t.Error("GetMCPClient should report ok=true for a configured key")
+	}
+	if got != client {
+		t.Errorf("GetMCPClient mismatch: got %v, want %v", got, client)
+	}
+
+	missing, ok := c.GetMCPClient("missing")
+	if missing != nil {
+		t.Errorf("GetMCPClient(missing) client = %v, want nil", missing)
+	}
+	if ok {
+		t.Error("GetMCPClient(missing) should report ok=false")
+	}
+}
+
+func TestStubChatterComposer_NilFields_MCPClients(t *testing.T) {
+	t.Parallel()
+
+	c := &StubChatterComposer{}
+	got, ok := c.GetMCPClient("plur")
+	if got != nil {
+		t.Errorf("nil MCPClients should return nil client, got %v", got)
+	}
+	if ok {
+		t.Error("nil MCPClients should return ok=false")
+	}
+}
+
 func TestStubChatterComposer_RegisterTrace(t *testing.T) {
 	t.Parallel()
 

@@ -107,6 +107,7 @@ type RuntimeSnapshot struct {
 	Mode             string
 	PricingOverrides map[string]domain_pricing.ModelPricing
 	Limits           events.Limits
+	Memory           domain_config.MemoryConfig
 }
 
 // GetRuntimeConfig returns a snapshot of the agent's current runtime

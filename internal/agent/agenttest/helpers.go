@@ -292,6 +292,7 @@ type StubChatterComposer struct {
 	Summarizer        ports.Summarizer
 	ConfigWatcher     domain_config.ConfigWatcher
 	RegisterTraceFunc func(path string)
+	MCPClients        map[string]tools.MCPClient
 }
 
 var _ ports.ChatterComposer = (*StubChatterComposer)(nil)
@@ -314,6 +315,10 @@ func (s *StubChatterComposer) GetSkillRepository() domain_skills.SkillRepository
 }
 func (s *StubChatterComposer) GetSummarizer() ports.Summarizer               { return s.Summarizer }
 func (s *StubChatterComposer) GetConfigWatcher() domain_config.ConfigWatcher { return s.ConfigWatcher }
+func (s *StubChatterComposer) GetMCPClient(name string) (tools.MCPClient, bool) {
+	c, ok := s.MCPClients[name]
+	return c, ok
+}
 func (s *StubChatterComposer) RegisterTrace(path string) {
 	if s.RegisterTraceFunc != nil {
 		s.RegisterTraceFunc(path)

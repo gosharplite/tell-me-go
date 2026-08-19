@@ -11,6 +11,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
@@ -123,5 +124,17 @@ func WithProviderName(name string) AgentOption {
 func WithSkillEcosystemIntro(intro string) AgentOption {
 	return func(a *agent) {
 		a.ecosystemIntro = intro
+	}
+}
+
+// WithMemoryClient sets the MCP client for the MEMORY.SERVER and the seed
+// MemoryConfig. A nil client is legal — it yields an inert memory
+// integration (runtime nil-client guards fail open). The live config
+// comes from the ConfigWatcher at runtime (later wiring task); seed only
+// pre-populates the atomic before the first applyConfig.
+func WithMemoryClient(client tools.MCPClient, seed domain_config.MemoryConfig) AgentOption {
+	return func(a *agent) {
+		a.memoryClient = client
+		a.memorySeed = seed
 	}
 }

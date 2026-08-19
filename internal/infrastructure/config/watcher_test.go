@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"testing"
 	"time"
@@ -786,5 +787,44 @@ MAX_TURNS: 99
 	_, toolTurns, _ = cw.GetLimits()
 	if toolTurns != 99 {
 		t.Errorf("MAX_TURNS after update: got %d, want 99", toolTurns)
+	}
+}
+
+// TestFileConfigWatcher_GetMemoryConfig pins the hot-reload surface for
+// MEMORY (ADR-068 §5): GetMemoryConfig returns DefaultMemoryConfig() before
+// any reload, and after a reload through the loader
+// (Refresh → Loader.Load → applyMainConfig) it reflects the config's Memory
+// section. The stub loader returns a config with Memory set, so the watcher's
+// cached value must update under the write lock. Zero time.Sleep — the future
+// mod time on stubFileStat triggers the reload deterministically.
+func TestFileConfigWatcher_GetMemoryConfig(t *testing.T) {
+	cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+	fcw := cw.(*fileConfigWatcher)
+
+	// 1. Before any reload: the zero-behavior default.
+	got := cw.GetMemoryConfig()
+	want := domain_config.DefaultMemoryConfig()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("GetMemoryConfig() before reload = %+v; want %+v", got, want)
+	}
+
+	// 2. After a reload with a stub loader returning a config with Memory set.
+	memCfg := domain_config.MemoryConfig{
+		Enabled:             true,
+		Server:              "plur",
+		InjectBudget:        5000,
+		LearnTier:           domain_config.MemoryLearnFull,
+		Scope:               "team-x",
+		MaxLearnsPerSession: 5,
+	}
+	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
+	fcw.Loader = stubConfigLoader{cfg: &domain_config.Config{Memory: memCfg}}
+	fcw.SetPaths("/fake/main.yaml", "")
+
+	fcw.Refresh("gpt-5")
+
+	got = cw.GetMemoryConfig()
+	if !reflect.DeepEqual(got, memCfg) {
+		t.Errorf("GetMemoryConfig() after reload = %+v; want %+v", got, memCfg)
 	}
 }

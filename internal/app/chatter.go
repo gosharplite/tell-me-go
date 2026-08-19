@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
 )
@@ -78,6 +79,17 @@ func NewChatter(ctx context.Context, deps ports.ChatterComposer, cfg ports.Chatt
 	reg, err := deps.GetRegistry()
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve tool registry: %w", err)
+	}
+
+	// Memory integration seam (ADR-068): look up the MCP client for the
+	// memory server after the registry build so the factory stash is
+	// populated. A nil client is legal — the agent constructs an inert
+	// memory integration and the runtime nil-client guards fail open.
+	if cfg.MemoryServer != "" {
+		client, _ := deps.GetMCPClient(cfg.MemoryServer)
+		seed := domain_config.DefaultMemoryConfig()
+		seed.Server = cfg.MemoryServer
+		opts = append(opts, agent.WithMemoryClient(client, seed))
 	}
 
 	return agent.NewAgent(

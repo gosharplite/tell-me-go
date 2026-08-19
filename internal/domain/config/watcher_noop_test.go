@@ -159,3 +159,13 @@ func TestNoOpConfigWatcher_GetContextWindow(t *testing.T) {
 		}
 	})
 }
+
+func TestNoOpConfigWatcher_GetMemoryConfig(t *testing.T) {
+	cw := NewNoOpConfigWatcher(100, 10, 20)
+
+	got := cw.GetMemoryConfig()
+	want := DefaultMemoryConfig()
+	if got != want {
+		t.Errorf("GetMemoryConfig() = %+v, want %+v", got, want)
+	}
+}

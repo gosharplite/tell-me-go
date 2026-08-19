@@ -1752,6 +1752,10 @@ func (f *captureToolchainFactory) BuildHealthChecker() ports.HealthChecker { ret
 
 func (f *captureToolchainFactory) CloseMCPClients() error { return nil }
 
+func (f *captureToolchainFactory) GetMCPClient(name string) (tools.MCPClient, bool) {
+	return nil, false
+}
+
 func TestWireToolRegistry_PopulatesMCPServers(t *testing.T) {
 	ctx := context.Background()
 	tempDir := t.TempDir()
@@ -1971,4 +1975,77 @@ func TestBuildSessionDependencies_CleanupClosesMCPClients(t *testing.T) {
 	for i, c := range constructed {
 		assert.Equal(t, 1, c.closeCalls, "client[%d] Close calls", i)
 	}
+}
+
+// TestSessionDeps_GetMCPClient_StashedAfterRegistryBuild proves the
+// ChatterComposer.GetMCPClient seam (ADR-068): the mcpFactory stashes
+// clients by server name during Build (which runs lazily on the first
+// GetRegistry), and sessionDeps delegates to the toolchain factory. Before
+// the registry build the lookup reports unavailable; after it, the stashed
+// client is returned for a healthy server and (nil, false) for a skipped
+// or never-configured server.
+func TestSessionDeps_GetMCPClient_StashedAfterRegistryBuild(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	sm := new(mockConfigurableSecurityManager)
+
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	bcfg.ClientFactory = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+		return new(mockLLMClient), nil
+	})
+
+	b := NewBootstrapper(bcfg)
+
+	// Replace the MCP client constructor so no live endpoint is contacted:
+	// the "ok" server builds fine, the "skip" server fails construction.
+	tf := b.toolchainFactory.(*defaultToolchainFactory)
+	tf.mcpFactory.newClientFor = func(cfg config.MCPServerConfig) (tools.MCPClient, error) {
+		if strings.HasSuffix(cfg.URL, "/skip") {
+			return nil, errors.New("boom")
+		}
+		return &fakeMCPClient{}, nil
+	}
+
+	testCfg := &config.Config{
+		Mode:  "assistant",
+		Model: "test-model",
+		MCPServers: map[string]config.MCPServerConfig{
+			"ok":   {URL: "https://example.com/mcp/ok"},
+			"skip": {URL: "https://example.com/mcp/skip"},
+		},
+	}
+
+	deps, _, cleanup, err := b.BuildSessionDependencies(ctx, testCfg, "config.yaml", false, nil)
+	require.NoError(t, err)
+	require.NotNil(t, deps)
+	defer func() { _ = cleanup(ctx) }()
+
+	// Before the registry build the stash is empty — the lookup must
+	// report "unavailable" without panicking.
+	client, ok := deps.GetMCPClient("ok")
+	assert.Nil(t, client)
+	assert.False(t, ok)
+
+	// Registry (and therefore MCP client) construction is lazy; force it now.
+	_, err = deps.GetRegistry()
+	require.NoError(t, err)
+
+	// After the registry build, the healthy server's client is stashed.
+	client, ok = deps.GetMCPClient("ok")
+	assert.True(t, ok)
+	assert.NotNil(t, client)
+
+	// The skipped server and an unknown key both report unavailable.
+	client, ok = deps.GetMCPClient("skip")
+	assert.Nil(t, client)
+	assert.False(t, ok)
+	client, ok = deps.GetMCPClient("missing")
+	assert.Nil(t, client)
+	assert.False(t, ok)
 }

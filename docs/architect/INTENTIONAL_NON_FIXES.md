@@ -301,7 +301,7 @@ catalog a new gap no one reviewed. Policy:
   error-return branch flagged by coverage tools does not exist in the current
   single-file architecture. Structurally unreachable — same acceptance class
   as `json.Marshal` on all-string structs in `global_prompt_tracker.go`.
-- **See**: `internal/domain/config/config.go:224-229` (definition), `:250-252` (call-site error branch, covered by this entry)
+- **See**: `internal/domain/config/config.go:224-229` (definition), `:251-253` (call-site error branch, covered by this entry)
 
 ### domain/events/events.go — NoOpEventBus no-op stubs at 0%
 
@@ -905,6 +905,60 @@ catalog a new gap no one reviewed. Policy:
 - **Rationale**: Table-driven resolution-contract test pinning the COMMAND resolution rules (separator-bearing passthrough, bare-name LookPath, empty-command failure, nonexistent-bare-command annotation). CC comes from case enumeration and assertion boilerplate, not branching business logic. CC rose 10→13 (2026-09) when two not-found subtests were added — still the same acceptance class as `TestGetModelTurn` (CC=16) and `TestMediaBlocks` (CC=11): assertion boilerplate across a coverage matrix.
 - **See**: `internal/infrastructure/mcp/stdio_client_test.go:25`
 
+### internal/agent/memory/hook_test.go — TestHookBatch (CC=14)
+
+- **Status**: ACCEPTED (2026-09, issue #1404)
+- **Rationale**: Sequential state-mutation test over the batch tier:
+  AfterTurn appends to the shared ring buffer (no MCP call); FlushSession
+  drains under lock, deletes the map entry, and calls plur_learn_batch
+  outside the lock; a second flush is a no-op. Steps mutate shared hook
+  state and depend on prior steps — splitting would duplicate setup. Same
+  acceptance class as `TestGetModelTurn` (CC=16) — test-complexity, not
+  branching business logic.
+- **See**: `internal/agent/memory/hook_test.go:209`
+
+### internal/agent/memory/hook_test.go — TestHookFull (CC=15)
+
+- **Status**: ACCEPTED (2026-09, issue #1404)
+- **Rationale**: Sequential full-tier test: frame-match learns, sha256
+  dedupe, flood bound, and non-frame suppression — each subtest mutates the
+  hook's per-session learn state built up by prior steps. CC is assertion
+  boilerplate across dependent steps. Same acceptance class as
+  `TestGetModelTurn` (CC=16).
+- **See**: `internal/agent/memory/hook_test.go:273`
+
+### internal/agent/memory/injector_test.go — TestInjectorEnabledInsert (CC=22)
+
+- **Status**: ACCEPTED (2026-09, issue #1404)
+- **Rationale**: Table-driven injector test across the enabled-path insertion
+  behaviors — prepend when no system Content, append to an existing system
+  Content, replace an existing marker Part, at most one memory block — plus
+  trim and warning surfaces. CC comes from case enumeration and assertion
+  boilerplate, not branching business logic. Same acceptance class as
+  `TestHydrateMediaAssets` (CC=13) — assertion boilerplate across a coverage
+  matrix.
+- **See**: `internal/agent/memory/injector_test.go:108`
+
+### internal/app/chatter_test.go — TestNewChatter_MemoryClientLookup (CC=12)
+
+- **Status**: ACCEPTED (2026-09, issue #1404)
+- **Rationale**: Subtest enumeration over the memory-lookup seam
+  (configured → client returned, skipped → nil-degrade, empty → not
+  called) with per-subtest setup — assertion boilerplate across a coverage
+  matrix. CC is subtest enumeration, not branching business logic. Same
+  acceptance class as `TestGetModelTurn` (CC=16).
+- **See**: `internal/app/chatter_test.go:226`
+
+### tests/e2e/testdata/fakeplur/main.go — newServer (CC=13)
+
+- **Status**: ACCEPTED (2026-09, issue #1404)
+- **Rationale**: Testdata helper constructor for the fake plur MCP server:
+  config branching for store/seed loading and the tool dispatch table
+  setup — structural setup branching in a testdata helper binary, not
+  business logic. Same acceptance class as `createPrecisionWorkspace`
+  (CC=12, test-fixture builder).
+- **See**: `tests/e2e/testdata/fakeplur/main.go:104`
+
 ---
 
 ## Complexity Alerts (ACCEPTED)
@@ -1141,6 +1195,41 @@ to reason about.
   `handleDomainEvent` (CC=12) and `(*model).Update` (CC=14) — structural
   dispatch where CC is switch/branch count, not branching business logic.
 - **See**: `internal/agent/orchestrator/engine_phases.go:129`
+
+### internal/agent/memory/hook.go — (*plurHook).AfterTurn (CC=21)
+
+- **Status**: ACCEPTED (2026-09, issue #1404)
+- **Rationale**: Sequential guarded classification: three-way switch on the
+  hook err (nil / correction-frame / other) plus LEARN-tier dispatch
+  (off/batch/full), with nil-client and nil-config guards. Every branch is a
+  single-line episode build or tier dispatch — CC is structural
+  guard/branch count, not branching business logic. Extracting would
+  fragment a coherent sequential function for cosmetic CC reduction (same
+  class as `handleDomainEvent` CC=12, `(*RecoveryStep).Process` CC=12). The
+  fail-open guard structure (return on every path; memory errors logged and
+  ignored) is mandated by ADR-068 §2.
+- **See**: `internal/agent/memory/hook.go:80`
+
+### internal/agent/memory/injector.go — (*plurInjector).Transform (CC=16)
+
+- **Status**: ACCEPTED (2026-09, issue #1404)
+- **Rationale**: Sequential fail-open pipeline mandated by ADR-068 §1:
+  disabled-strip, nil-client guard, error-strip, defensive trim, marker
+  insert, observability — each step a single-line guard or delegation, and
+  the function returns nil on every path so the turn is never broken. CC is
+  structural guards, not business logic. Same acceptance class as
+  `renderHistory` (CC=12).
+- **See**: `internal/agent/memory/injector.go:64`
+
+### internal/agent/memory/injector.go — metadataIDs (CC=11)
+
+- **Status**: ACCEPTED (2026-09, issue #1404)
+- **Rationale**: 4-case type-switch + guards normalizing the
+  `Metadata["ids"]` value into a string slice — dispatch-structural, same
+  class as `handleDomainEvent` (CC=12). Each case is a single-line
+  conversion or return; the CC is inherent to the type-switch dispatch
+  pattern, not branching business logic.
+- **See**: `internal/agent/memory/injector.go:226`
 
 ---
 

@@ -11,12 +11,14 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/require"
 )
 
 type localMockSummarizer struct{ ports.Summarizer }
 type localMockTracker struct{ domain_pricing.CostTracker }
 type localMockSkillSelector struct{ skills.SkillSelector }
+type localMockMCPClient struct{ tools.MCPClient }
 
 func TestAgentOptions(t *testing.T) {
 	t.Parallel()
@@ -83,6 +85,26 @@ func TestAgentOptions(t *testing.T) {
 			option: WithSkillSelector(mockSkillSelector),
 			validate: func(t *testing.T, a *agent) {
 				require.Equal(t, mockSkillSelector, a.skillSelector)
+			},
+		},
+		{
+			name: "WithMemoryClient",
+			option: WithMemoryClient(&localMockMCPClient{}, domain_config.MemoryConfig{
+				Server:       "plur",
+				InjectBudget: 2000,
+			}),
+			validate: func(t *testing.T, a *agent) {
+				require.NotNil(t, a.memoryClient)
+				require.Equal(t, "plur", a.memorySeed.Server)
+				require.Equal(t, 2000, a.memorySeed.InjectBudget)
+			},
+		},
+		{
+			name:   "WithMemoryClient_NilClient",
+			option: WithMemoryClient(nil, domain_config.MemoryConfig{Server: "plur"}),
+			validate: func(t *testing.T, a *agent) {
+				require.Nil(t, a.memoryClient, "nil client must be stored as-is (inert integration)")
+				require.Equal(t, "plur", a.memorySeed.Server)
 			},
 		},
 	}

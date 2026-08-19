@@ -113,6 +113,7 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		lazyProvider:         lazyProvider{client: lazyClient},
 		summarizer:           summarizer,
 		configWatcher:        configWatcher,
+		toolchain:            b.toolchainFactory,
 	}
 
 	deps.health = b.wireHealth(cfg, sessionProvider, lazyClient)
@@ -253,6 +254,9 @@ type sessionDeps struct {
 	skillRepo     domain_skills.SkillRepository
 	summarizer    ports.Summarizer
 	configWatcher config.ConfigWatcher
+	// toolchain owns the stashed MCP clients (via the toolchain factory's
+	// mcpFactory), enabling the ChatterComposer.GetMCPClient seam.
+	toolchain toolchainFactory
 }
 
 var _ ports.ChatterComposer = (*sessionDeps)(nil)
@@ -270,6 +274,16 @@ func (d *sessionDeps) GetSummarizer() ports.Summarizer {
 
 func (d *sessionDeps) GetConfigWatcher() config.ConfigWatcher {
 	return d.configWatcher
+}
+
+// GetMCPClient returns the stashed MCP client for a server key, or
+// (nil, false) when the server was skipped at DI construction. A nil
+// toolchain (e.g. bare sessionDeps in tests) degrades to "unavailable".
+func (d *sessionDeps) GetMCPClient(name string) (tools.MCPClient, bool) {
+	if d.toolchain == nil {
+		return nil, false
+	}
+	return d.toolchain.GetMCPClient(name)
 }
 
 func (d *sessionDeps) RegisterTrace(path string) {

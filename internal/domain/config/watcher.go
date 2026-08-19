@@ -30,4 +30,11 @@ type ConfigWatcher interface {
 	GetLimits() (tokens, toolTurns, historyTurns int)
 	GetContextWindow() int
 	ApplyLimits(l events.Limits)
+
+	// GetMemoryConfig returns the current MEMORY configuration. It is the
+	// hot-reload surface for ENABLED/LEARN/INJECT_BUDGET/MAX_LEARNS_PER_SESSION;
+	// SERVER is restart-level. The agent's prepareRuntimeConfig reads it
+	// pre-chain (like Limits) and shares it with the memory components via an
+	// atomic pointer.
+	GetMemoryConfig() MemoryConfig
 }

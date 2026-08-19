@@ -32,6 +32,9 @@ type toolchainFactory interface {
 	BuildRegistry(params toolchainParams) (tools.Registry, error)
 	BuildHealthChecker() ports.HealthChecker
 	CloseMCPClients() error
+	// GetMCPClient returns the stashed MCP client for a server key, or
+	// (nil, false) when the server was skipped at construction.
+	GetMCPClient(name string) (tools.MCPClient, bool)
 }
 
 type toolchainParams struct {
@@ -133,6 +136,12 @@ func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.R
 // closed when the chat session ends.
 func (f *defaultToolchainFactory) CloseMCPClients() error {
 	return f.mcpFactory.Close()
+}
+
+// GetMCPClient returns the stashed MCP client for a server key, or
+// (nil, false) when the server was skipped at construction.
+func (f *defaultToolchainFactory) GetMCPClient(name string) (tools.MCPClient, bool) {
+	return f.mcpFactory.Client(name)
 }
 
 // registerSkillsShTools registers the four skills.sh ecosystem tools
