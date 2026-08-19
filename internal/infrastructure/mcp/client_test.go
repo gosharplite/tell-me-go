@@ -4,6 +4,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -752,5 +753,134 @@ func TestConnect_BasicAuthHeader(t *testing.T) {
 	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("user:secret"))
 	if captured != want {
 		t.Errorf("Authorization = %q, want %q", captured, want)
+	}
+}
+
+// TestToolErrorSummary pins the blank-text fallthrough: real error text is
+// passed through verbatim, while blank or whitespace-only text falls back to
+// the prescribed tool-name message.
+func TestToolErrorSummary(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{"real error text passed through", "some real error", "some real error"},
+		{"whitespace-only text falls back", "   ", `tool "my_tool" returned an error`},
+		{"empty text falls back", "", `tool "my_tool" returned an error`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := toolErrorSummary("my_tool", tt.text); got != tt.want {
+				t.Errorf("toolErrorSummary(%q) = %q, want %q", tt.text, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestConvertEmbeddedResource_NilGuards pins the early-return guards: a nil
+// EmbeddedResource or a nil Resource field is a no-op that must not panic,
+// while Blob and Text payloads still populate their respective accumulators
+// (the guards' complement).
+func TestConvertEmbeddedResource_NilGuards(t *testing.T) {
+	t.Run("nil embedded resource is a no-op", func(t *testing.T) {
+		var textParts []string
+		var binaries []tools.BinaryData
+		convertEmbeddedResource(nil, &textParts, &binaries)
+		if len(textParts) != 0 || len(binaries) != 0 {
+			t.Errorf("nil resource: textParts = %v, binaries = %v; want both empty", textParts, binaries)
+		}
+	})
+
+	t.Run("nil Resource field is a no-op", func(t *testing.T) {
+		var textParts []string
+		var binaries []tools.BinaryData
+		convertEmbeddedResource(&sdkmcp.EmbeddedResource{Resource: nil}, &textParts, &binaries)
+		if len(textParts) != 0 || len(binaries) != 0 {
+			t.Errorf("nil Resource: textParts = %v, binaries = %v; want both empty", textParts, binaries)
+		}
+	})
+
+	t.Run("Blob appends to binaries", func(t *testing.T) {
+		var textParts []string
+		var binaries []tools.BinaryData
+		convertEmbeddedResource(&sdkmcp.EmbeddedResource{
+			Resource: &sdkmcp.ResourceContents{MIMEType: "application/octet-stream", Blob: []byte{0x01, 0x02}},
+		}, &textParts, &binaries)
+		want := []tools.BinaryData{{MIMEType: "application/octet-stream", Data: []byte{0x01, 0x02}}}
+		if !reflect.DeepEqual(binaries, want) {
+			t.Errorf("binaries = %#v, want %#v", binaries, want)
+		}
+		if len(textParts) != 0 {
+			t.Errorf("textParts = %v, want empty", textParts)
+		}
+	})
+
+	t.Run("Text appends to textParts", func(t *testing.T) {
+		var textParts []string
+		var binaries []tools.BinaryData
+		convertEmbeddedResource(&sdkmcp.EmbeddedResource{
+			Resource: &sdkmcp.ResourceContents{MIMEType: "text/plain", Text: "embedded text"},
+		}, &textParts, &binaries)
+		if !reflect.DeepEqual(textParts, []string{"embedded text"}) {
+			t.Errorf("textParts = %v, want [embedded text]", textParts)
+		}
+		if len(binaries) != 0 {
+			t.Errorf("binaries = %v, want empty", binaries)
+		}
+	})
+}
+
+// newSDKTestServerListToolsFail starts a real SDK MCP server (same wire
+// contract as newSDKTestServer) whose handler completes the initialize
+// handshake normally but fails every tools/list request with HTTP 500,
+// forcing the session-level ListTools error branch.
+func newSDKTestServerListToolsFail(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "test-server", Version: "v1.0.0"}, nil)
+	handler := sdkmcp.NewStreamableHTTPHandler(
+		func(r *http.Request) *sdkmcp.Server { return server },
+		&sdkmcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true},
+	)
+	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		r.Body.Close()
+		r.Body = io.NopCloser(bytes.NewReader(body))
+
+		var msg struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &msg); err == nil && msg.Method == "tools/list" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	})
+	return httptest.NewServer(wrapped)
+}
+
+// TestListTools_SessionError pins the session-error branch: after a
+// successful initialize handshake, a failed tools/list request surfaces as an
+// error wrapping "mcp list tools" (distinct from the connect-error branch,
+// which wraps "mcp connect").
+func TestListTools_SessionError(t *testing.T) {
+	ts := newSDKTestServerListToolsFail(t)
+	defer ts.Close()
+
+	c, err := NewClient(ts.URL, "", 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	if _, err := c.ListTools(context.Background()); err == nil {
+		t.Fatal("ListTools() error = nil, want session error")
+	} else if !strings.Contains(err.Error(), "mcp list tools") {
+		t.Errorf("ListTools() error = %q, want it to contain %q", err.Error(), "mcp list tools")
 	}
 }
