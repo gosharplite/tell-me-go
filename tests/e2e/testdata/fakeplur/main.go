@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -86,6 +87,15 @@ type server struct {
 	store     store
 	storePath string
 	reject    rejectTools // env-gated reject set; read-only after construction
+
+	// delayFile, when set, names a file whose trimmed contents are parsed as
+	// an integer millisecond delay applied per call to the tool named by
+	// delayTool. Read on EVERY call so a test can arm/disarm the delay
+	// without restarting the child (issue #1412 retention leg).
+	delayFile string
+	// delayTool scopes the delay to one tool name; empty means delay all
+	// tools.
+	delayTool string
 }
 
 // rpcMessage is a JSON-RPC 2.0 message as received from the client. The id
@@ -116,6 +126,8 @@ func main() {
 	seedPath := os.Getenv("FAKE_PLUR_SEED")
 
 	s := newServer(storePath, seedPath, parseRejectTools())
+	s.delayFile = os.Getenv("FAKE_PLUR_DELAY_MS_FILE")
+	s.delayTool = os.Getenv("FAKE_PLUR_DELAY_TOOL")
 	if err := s.run(); err != nil {
 		fmt.Fprintf(os.Stderr, "fakeplur: %v\n", err)
 		os.Exit(1)
@@ -133,6 +145,31 @@ func parseRejectTools() rejectTools {
 		}
 	}
 	return reject
+}
+
+// delayFor returns the configured artificial delay for one tool call,
+// reading FAKE_PLUR_DELAY_MS_FILE on EVERY call (contents = integer
+// milliseconds). Missing/unreadable/unparseable/non-positive content yields
+// 0 (no delay). FAKE_PLUR_DELAY_TOOL scopes the delay to one tool; empty
+// means delay all tools. The file is re-read per call so a test can arm and
+// disarm the delay between flushes without restarting the child (issue
+// #1412).
+func (s *server) delayFor(name string) time.Duration {
+	if s.delayTool != "" && s.delayTool != name {
+		return 0
+	}
+	if s.delayFile == "" {
+		return 0
+	}
+	data, err := os.ReadFile(s.delayFile)
+	if err != nil {
+		return 0
+	}
+	ms, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || ms <= 0 {
+		return 0
+	}
+	return time.Duration(ms) * time.Millisecond
 }
 
 // newServer loads any existing store, merges the out-of-band pinned seed
@@ -320,7 +357,8 @@ func toolSchema(name string) map[string]interface{} {
 		return map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"engrams": map[string]interface{}{"type": "array", "items": engramObj()},
+				"engrams":       map[string]interface{}{"type": "array", "items": engramObj()},
+				"max_llm_calls": map[string]interface{}{"type": "number"},
 			},
 			"required": []string{"engrams"},
 		}
@@ -381,6 +419,14 @@ func (s *server) handleToolCall(msg rpcMessage) rpcResponse {
 func (s *server) dispatchTool(name string, args map[string]interface{}) (string, bool) {
 	if s.reject[name] {
 		return "rejected by FAKE_PLUR_REJECT: " + name, true
+	}
+	if d := s.delayFor(name); d > 0 {
+		time.Sleep(d)
+		// Delayed call: model the server-side failure the client's detached
+		// 3s budget observes — return isError WITHOUT processing, so the
+		// store is never mutated by a call the client already abandoned
+		// (issue #1412).
+		return "delayed: simulated slow leg exceeded client budget", true
 	}
 	for _, param := range requiredParams[name] {
 		if v, ok := args[param]; !ok {

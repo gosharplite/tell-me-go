@@ -48,6 +48,10 @@ type engramPayload struct {
 type sessionBuffer struct {
 	episodes []episode
 	bytes    int
+	// dropped counts ring-bound evictions (append's oldest-episode eviction)
+	// since the buffer's last successful flush. Reported on flush failure so
+	// retention loss at the bound is visible (issue #1412).
+	dropped int
 }
 
 // append adds an episode to the buffer, truncating ep.Text to maxEpisodeBytes
@@ -71,6 +75,34 @@ func (b *sessionBuffer) append(ep episode) {
 		oldest := b.episodes[0]
 		b.episodes = b.episodes[1:]
 		b.bytes -= len(oldest.Text)
+		b.dropped++
+	}
+}
+
+// claim returns a copy of the buffered episodes and empties the buffer. The
+// map entry survives (empty) until the caller decides: write success keeps
+// the removal, failure restores via restore (issue #1412). Callers must hold
+// the hook's mutex.
+func (b *sessionBuffer) claim() []episode {
+	eps := append([]episode(nil), b.episodes...)
+	b.episodes = nil
+	b.bytes = 0
+	return eps
+}
+
+// restore prepends claimed episodes at the front (retain-on-failure, issue
+// #1412): claimed episodes first, newer appends after, bytes recomputed. The
+// ring bound is NOT re-enforced here — subsequent appends evict the oldest
+// retained episodes and count them in dropped. Callers must hold the hook's
+// mutex.
+func (b *sessionBuffer) restore(eps []episode) {
+	merged := make([]episode, 0, len(eps)+len(b.episodes))
+	merged = append(merged, eps...)
+	merged = append(merged, b.episodes...)
+	b.episodes = merged
+	b.bytes = 0
+	for _, e := range merged {
+		b.bytes += len(e.Text)
 	}
 }
 

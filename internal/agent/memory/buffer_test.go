@@ -161,3 +161,23 @@ func TestSessionBufferAppendErrorThenText(t *testing.T) {
 		t.Errorf("newest episode = %q, want %q", got, "ep-4")
 	}
 }
+
+func TestSessionBufferRestorePrepends(t *testing.T) {
+	// Retain-on-failure ordering contract (issue #1412): claimed episodes
+	// come back at the front, newer appends stay after them, and bytes are
+	// recomputed from the merged set.
+	b := &sessionBuffer{}
+	b.append(episode{Text: "claimed0"})
+	b.append(episode{Text: "claimed1"})
+	claimed := b.claim()
+	b.append(episode{Text: "newer"})
+	b.restore(claimed)
+
+	if len(b.episodes) != 3 || b.episodes[0].Text != "claimed0" || b.episodes[1].Text != "claimed1" || b.episodes[2].Text != "newer" {
+		t.Fatalf("episodes after restore = %v, want [claimed0 claimed1 newer]", b.episodes)
+	}
+	wantBytes := len("claimed0") + len("claimed1") + len("newer")
+	if b.bytes != wantBytes {
+		t.Errorf("bytes = %d, want %d (sum of merged text lengths)", b.bytes, wantBytes)
+	}
+}

@@ -16,7 +16,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 // turn builds a minimal Turn for hook tests.
@@ -239,9 +241,9 @@ func TestHookCaptureBranchIII(t *testing.T) {
 
 // TestHookBatch covers the batch tier: AfterTurn appends to the ring buffer
 // (no MCP call); FlushSession drains under lock, deletes the map entry, and
-// calls plur_learn_batch outside the lock with the {engrams: []engramPayload}
-// payload (no top-level session_id — issue #1410); a second flush is a
-// no-op.
+// calls plur_learn_batch outside the lock with the {engrams: []engramPayload,
+// max_llm_calls: 0} payload (no top-level session_id — issue #1410; the
+// max_llm_calls: 0 bound pins issue #1412); a second flush is a no-op.
 func TestHookBatch(t *testing.T) {
 	mock := &mockMCPClient{}
 	h, _ := newTestHook(t, mock, config.MemoryLearnBatch, &stubHistoryManager{})
@@ -274,8 +276,11 @@ func TestHookBatch(t *testing.T) {
 	if gotName != "plur_learn_batch" {
 		t.Errorf("tool = %q, want plur_learn_batch", gotName)
 	}
-	if len(gotArgs) != 1 {
-		t.Errorf("args count = %d, want exactly 1 (engrams only), got %v", len(gotArgs), gotArgs)
+	if len(gotArgs) != 2 {
+		t.Errorf("args count = %d, want exactly 2 (engrams + max_llm_calls), got %v", len(gotArgs), gotArgs)
+	}
+	if v, ok := gotArgs["max_llm_calls"]; !ok || v != 0 {
+		t.Errorf("max_llm_calls = %v (present=%v), want 0", v, ok)
 	}
 	if _, ok := gotArgs["session_id"]; ok {
 		t.Errorf("top-level session_id must be absent, got %v", gotArgs)
@@ -751,5 +756,170 @@ func TestHookWriteStats_ReportDeletesEntry(t *testing.T) {
 	}
 	if second := h.MemoryWriteReport("s1"); second != "" {
 		t.Errorf("second report = %q, want empty string (delete-on-read)", second)
+	}
+}
+
+// recordingLogger is a concurrency-safe ports.Logger double (ADR-021) that
+// records every Warn call as a (msg, kv) pair for assertion. Error/Info/
+// Debug are no-ops — the hook's failure surface is Warn-only.
+type recordingLogger struct {
+	mu    sync.Mutex
+	warns []warnRecord
+}
+
+// warnRecord is one recorded Warn call: the message and its key/value pairs.
+type warnRecord struct {
+	msg string
+	kv  map[string]interface{}
+}
+
+// Warn implements ports.Logger.
+func (l *recordingLogger) Warn(msg string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	kv := make(map[string]interface{}, len(args)/2)
+	for i := 0; i+1 < len(args); i += 2 {
+		kv[fmt.Sprintf("%v", args[i])] = args[i+1]
+	}
+	l.warns = append(l.warns, warnRecord{msg: msg, kv: kv})
+}
+
+// Error implements ports.Logger.
+func (l *recordingLogger) Error(msg string, args ...any) {}
+
+// Info implements ports.Logger.
+func (l *recordingLogger) Info(msg string, args ...any) {}
+
+// Debug implements ports.Logger.
+func (l *recordingLogger) Debug(msg string, args ...any) {}
+
+// warnValue returns the value for key in the first recorded Warn with msg,
+// or (nil, false) when no such Warn or key exists.
+func (l *recordingLogger) warnValue(msg, key string) (interface{}, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, w := range l.warns {
+		if w.msg != msg {
+			continue
+		}
+		v, ok := w.kv[key]
+		return v, ok
+	}
+	return nil, false
+}
+
+// newTestHookWithLogger builds a plurHook like newTestHook but with the
+// given logger (e.g. a *recordingLogger for Warn assertions). HOME is
+// redirected to a temp dir so flock side effects never touch the real
+// ~/.plur.
+func newTestHookWithLogger(t *testing.T, client tools.MCPClient, tier config.MemoryLearnTier, hist ports.HistoryManager, logger ports.Logger) (*plurHook, *atomic.Pointer[config.MemoryConfig]) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	memCfg := config.DefaultMemoryConfig()
+	memCfg.Enabled = true
+	memCfg.LearnTier = tier
+	cfgPtr := &atomic.Pointer[config.MemoryConfig]{}
+	cfgPtr.Store(&memCfg)
+	return NewPlurHook(client, cfgPtr, logger, &clock.FakeClock{}, hist).(*plurHook), cfgPtr
+}
+
+// episodeTexts returns the Text of each episode in order — the assertion
+// projection for buffer-order checks.
+func episodeTexts(eps []episode) []string {
+	texts := make([]string, len(eps))
+	for i, e := range eps {
+		texts[i] = e.Text
+	}
+	return texts
+}
+
+// TestHookBatchRetainOnFailure pins the issue #1412 retain-on-failure
+// contract: a failed batch write restores the claimed episodes at the front
+// of the buffer (newer appends stay after them) and records the failure
+// Warn; the next flush writes all episodes exactly once with
+// max_llm_calls: 0 and removes the (now-empty) buffer entry.
+func TestHookBatchRetainOnFailure(t *testing.T) {
+	logger := &recordingLogger{}
+	mock := &mockMCPClient{}
+	h, _ := newTestHookWithLogger(t, mock, config.MemoryLearnBatch, &stubHistoryManager{}, logger)
+
+	h.AfterTurn(responseTurn(0, "s1", "first"), nil)
+	h.AfterTurn(responseTurn(1, "s1", "second"), nil)
+
+	// First flush: rejected (the real isError convention — ToolResult.Error
+	// set, nil Go error).
+	mock.CallToolFunc = func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		return tools.ToolResult{Text: "rejected", Error: errors.New("rejected")}, nil
+	}
+	h.FlushSession("s1")
+
+	// Claimed episodes restored at the front — the buffer must survive with
+	// both episodes, in order, for the next flush opportunity.
+	h.mu.Lock()
+	buf, ok := h.buffers["s1"]
+	h.mu.Unlock()
+	if !ok || !reflect.DeepEqual(episodeTexts(buf.episodes), []string{"first", "second"}) {
+		t.Fatalf("buffer after failed flush = %v (present=%v), want [first second]", episodeTexts(buf.episodes), ok)
+	}
+	if _, ok := logger.warnValue("memory_learn_batch_failed", "retained"); !ok {
+		t.Error("failed flush must record the memory_learn_batch_failed Warn")
+	}
+
+	// Second flush: succeeds and must write both retained episodes exactly
+	// once, still with max_llm_calls: 0.
+	var gotArgs map[string]interface{}
+	mock.CallToolFunc = func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		gotArgs = args
+		return tools.ToolResult{}, nil
+	}
+	h.FlushSession("s1")
+
+	engrams, ok := gotArgs["engrams"].([]engramPayload)
+	if !ok {
+		t.Fatalf("engrams payload = %T, want []engramPayload", gotArgs["engrams"])
+	}
+	if len(engrams) != 2 || !reflect.DeepEqual([]string{engrams[0].Statement, engrams[1].Statement}, []string{"first", "second"}) {
+		t.Fatalf("engrams = %+v, want statements [first second]", engrams)
+	}
+	if v, ok := gotArgs["max_llm_calls"]; !ok || v != 0 {
+		t.Errorf("max_llm_calls = %v (present=%v), want 0", v, ok)
+	}
+	h.mu.Lock()
+	_, stillPresent := h.buffers["s1"]
+	h.mu.Unlock()
+	if stillPresent {
+		t.Error("buffer map entry must be deleted after successful flush")
+	}
+}
+
+// TestHookBatchDropCountReported pins the issue #1412 ring-bound drop
+// report: after maxBufferEpisodes+5 appends, 5 oldest episodes were evicted
+// at the ring bound; the failed flush must restore the 20 retained episodes
+// and surface dropped=5 with retained=20 on the memory_learn_batch_failed
+// Warn.
+func TestHookBatchDropCountReported(t *testing.T) {
+	logger := &recordingLogger{}
+	mock := &mockMCPClient{}
+	h, _ := newTestHookWithLogger(t, mock, config.MemoryLearnBatch, &stubHistoryManager{}, logger)
+
+	mock.CallToolFunc = func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		return tools.ToolResult{Text: "rejected", Error: errors.New("rejected")}, nil
+	}
+	for i := 0; i < maxBufferEpisodes+5; i++ {
+		h.AfterTurn(responseTurn(i, "s1", fmt.Sprintf("turn-%d", i)), nil)
+	}
+	h.FlushSession("s1")
+
+	if v, ok := logger.warnValue("memory_learn_batch_failed", "dropped"); !ok || v != 5 {
+		t.Errorf("memory_learn_batch_failed dropped = %v (present=%v), want 5", v, ok)
+	}
+	if v, ok := logger.warnValue("memory_learn_batch_failed", "retained"); !ok || v != 20 {
+		t.Errorf("memory_learn_batch_failed retained = %v (present=%v), want 20", v, ok)
+	}
+	h.mu.Lock()
+	buf, ok := h.buffers["s1"]
+	h.mu.Unlock()
+	if !ok || len(buf.episodes) != maxBufferEpisodes {
+		t.Errorf("buffer episodes after failed flush = %d (present=%v), want %d", len(buf.episodes), ok, maxBufferEpisodes)
 	}
 }
