@@ -68,6 +68,7 @@ func (a *agent) GetRuntimeSnapshotForInternalUse() (snap struct {
 	Mode             string
 	PricingOverrides map[string]domain_pricing.ModelPricing
 	Limits           events.Limits
+	Memory           domain_config.MemoryConfig
 }) {
 	cfg := a.config.Load()
 	if cfg == nil {
@@ -78,6 +79,7 @@ func (a *agent) GetRuntimeSnapshotForInternalUse() (snap struct {
 	snap.Mode = cfg.Mode
 	snap.PricingOverrides = cfg.PricingOverrides
 	snap.Limits = cfg.Limits
+	snap.Memory = cfg.Memory
 	return
 }
 

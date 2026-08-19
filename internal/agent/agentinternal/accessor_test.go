@@ -62,6 +62,7 @@ func (m *mockInternalAccessor) GetRuntimeSnapshotForInternalUse() struct {
 	Mode             string
 	PricingOverrides map[string]domain_pricing.ModelPricing
 	Limits           events.Limits
+	Memory           domain_config.MemoryConfig
 } {
 	return m.Called().Get(0).(struct {
 		ProviderName     string
@@ -69,6 +70,7 @@ func (m *mockInternalAccessor) GetRuntimeSnapshotForInternalUse() struct {
 		Mode             string
 		PricingOverrides map[string]domain_pricing.ModelPricing
 		Limits           events.Limits
+		Memory           domain_config.MemoryConfig
 	})
 }
 
@@ -243,6 +245,7 @@ func TestAgentInternal_Getters(t *testing.T) {
 					Mode             string
 					PricingOverrides map[string]domain_pricing.ModelPricing
 					Limits           events.Limits
+					Memory           domain_config.MemoryConfig
 				}{
 					ProviderName: "test-provider",
 					Model:        "test-model",

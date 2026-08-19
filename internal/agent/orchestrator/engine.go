@@ -87,6 +87,11 @@ type Engine struct {
 // engineOption allows configuring the Engine.
 type engineOption func(*Engine, *engineConfig)
 
+// EngineOption is the exported alias of engineOption, allowing callers
+// (e.g. the agent's initComponents DI wiring) to build an opts slice and
+// append options conditionally before calling NewEngine.
+type EngineOption = engineOption
+
 // WithEngineClock sets a custom clock implementation.
 func WithEngineClock(c clock.Clock) engineOption {
 	return func(e *Engine, cfg *engineConfig) {
@@ -339,7 +344,7 @@ func (e *Engine) ExecuteTurn(parentCtx context.Context, Turn *Turn) error {
 
 	err := e.runPhaseLoop(ctxWithTrace, Turn)
 
-	e.finalizeTurnTrace(trace, err)
+	e.finalizeTurnTrace(trace, Turn, err)
 	if err := events.SafePublish(ctx, e.events, events.TraceEvent{Trace: trace}); err != nil {
 		if !errors.Is(err, events.ErrBusNotInitialized) {
 			e.getLogger().Error("event_publish_failed",
@@ -367,11 +372,14 @@ func (e *Engine) runPhaseLoop(ctx context.Context, Turn *Turn) error {
 	return nil
 }
 
-func (e *Engine) finalizeTurnTrace(trace *telemetry.TurnTrace, err error) {
+func (e *Engine) finalizeTurnTrace(trace *telemetry.TurnTrace, Turn *Turn, err error) {
 	trace.EndTime = e.clock.Now()
 	trace.FinalStatus = "success"
 	if err != nil {
 		trace.FinalStatus = "error"
+	}
+	if Turn.State.Metadata != nil && len(Turn.State.Metadata.Warnings) > 0 {
+		trace.AddWarnings(Turn.State.Metadata.Warnings...)
 	}
 }
 

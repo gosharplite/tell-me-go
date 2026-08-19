@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
+	agentsmemory "github.com/gosharplite/tell-me-go/internal/agent/memory"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
@@ -34,6 +35,7 @@ type runtimeConfig struct {
 	Model            string
 	Mode             string
 	PricingOverrides map[string]domain_pricing.ModelPricing
+	Memory           domain_config.MemoryConfig
 }
 
 // agent represents the chat orchestration logic (Stateless Service).
@@ -72,6 +74,15 @@ type agent struct {
 	// an inert memory integration.
 	memoryClient tools.MCPClient
 	memorySeed   domain_config.MemoryConfig
+
+	// memoryCfg is the shared hot-reload snapshot for the memory components
+	// (plurInjector/plurHook). prepareRuntimeConfig refreshes it lock-free per
+	// turn from the ConfigWatcher (ADR-068 §6) — the pointer itself is stored
+	// at initComponents and read by the components on every Transform/AfterTurn.
+	memoryCfg atomic.Pointer[domain_config.MemoryConfig]
+	// memoryHook is the plurHook TurnHook, registered once at initComponents
+	// via NewEngine opts — never per-Chat (WithEngineHook appends → double-fire).
+	memoryHook orchestrator.TurnHook
 
 	config atomic.Pointer[runtimeConfig]
 }
@@ -152,6 +163,21 @@ func (a *agent) initComponents() error {
 		Extras:     []sessctx.ContextTransformer{agentskills.NewSkillInjector(a.skillSelector, a.logger, injectorOpts...)},
 	}
 
+	// Memory integration (ADR-068 §6): construct once, at initComponents —
+	// never per-Chat (WithEngineHook appends → double-fire). Enabled-but-
+	// absent-server → warn and disable (two-stage fallback): a nil client
+	// yields an inert, stable DI shape; the runtime nil-client guards fail
+	// open.
+	if a.memoryClient != nil || a.memorySeed.Server != "" {
+		if a.memoryClient == nil {
+			a.getLogger().Warn("memory_server_unavailable", "server", a.memorySeed.Server)
+			a.memorySeed.Enabled = false // effective disable — inert DI shape
+		}
+		a.memoryCfg.Store(&a.memorySeed)
+		factory.Extras = append(factory.Extras, agentsmemory.NewPlurInjector(a.memoryClient, &a.memoryCfg, a.logger))
+		a.memoryHook = agentsmemory.NewPlurHook(a.memoryClient, &a.memoryCfg, a.logger, a.clock, a.hManager)
+	}
+
 	a.ctxManager = sessctx.NewManager(strategy, a.hManager, a.events, factory,
 		sessctx.WithLogger(a.logger),
 		sessctx.WithSessionProvider(a.sessionProvider),
@@ -159,13 +185,17 @@ func (a *agent) initComponents() error {
 
 	// Initialize engine
 	initialCfg := a.config.Load()
-	a.engine = orchestrator.NewEngine(a.gateway, exec, a.ctxManager, a.registry, a.events, strategy,
+	engineOpts := []orchestrator.EngineOption{
 		orchestrator.WithEngineConfig(a.sm, initialCfg.ProviderName, initialCfg.Model, initialCfg.Mode, initialCfg.PricingOverrides),
 		orchestrator.WithEngineCostTracker(a.tracker),
 		orchestrator.WithEngineLogger(a.logger),
 		orchestrator.WithEngineTurnsLogger(a.turnsLogger),
 		orchestrator.WithEngineClock(a.clock),
-	)
+	}
+	if a.memoryHook != nil {
+		engineOpts = append(engineOpts, orchestrator.WithEngineHook(a.memoryHook))
+	}
+	a.engine = orchestrator.NewEngine(a.gateway, exec, a.ctxManager, a.registry, a.events, strategy, engineOpts...)
 
 	return nil
 }
@@ -237,6 +267,7 @@ func (a *agent) prepareRuntimeConfig() runtimeConfig {
 	newCfg.Limits.MaxHistoryTokens = tokens
 	newCfg.Limits.MaxToolTurns = toolTurns
 	newCfg.Limits.MaxHistoryTurns = histTurns
+	newCfg.Memory = a.configWatcher.GetMemoryConfig()
 
 	if a.strategy != nil {
 		a.strategy.SetLimits(tokens, toolTurns, histTurns)
@@ -244,6 +275,10 @@ func (a *agent) prepareRuntimeConfig() runtimeConfig {
 	}
 
 	a.config.Store(&newCfg)
+	// Memory propagation is pre-chain (before the ADR-029 delegates), like
+	// Limits: the shared atomic pointer gives plurInjector/plurHook a lock-free
+	// per-turn read of the hot-reloaded MEMORY config. Zero ADR-029 changes.
+	a.memoryCfg.Store(&newCfg.Memory)
 	return newCfg
 }
 
@@ -327,6 +362,17 @@ func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 		Parts: []*domain_llm.Part{{Text: prompt}},
 	}); err != nil {
 		return fmt.Errorf("failed to initialize session history: %w", err)
+	}
+
+	// Memory: flush the per-session learning ring buffer at session end —
+	// success and error (ADR-068 §2.3, batch/full tiers). The type assertion
+	// is the optional-behavior seam: TurnHook does not declare FlushSession;
+	// only the plurHook concrete type implements it. A nil/absent hook
+	// yields ok=false and no defer is registered.
+	if a.memoryHook != nil {
+		if flusher, ok := a.memoryHook.(interface{ FlushSession(string) }); ok {
+			defer flusher.FlushSession(s.ID)
+		}
 	}
 
 	if err := a.applyConfig(ctx); err != nil {
@@ -459,6 +505,7 @@ type InternalAccessor interface {
 		Mode             string
 		PricingOverrides map[string]domain_pricing.ModelPricing
 		Limits           events.Limits
+		Memory           domain_config.MemoryConfig
 	}
 	SetEventsForInternalUse(bus events.EventBus)
 	SetConfigWatcherForInternalUse(cw domain_config.ConfigWatcher)
