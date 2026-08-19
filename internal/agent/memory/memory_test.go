@@ -325,11 +325,11 @@ func TestAcquireWriteLockBudgetExhausted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open lock file: %v", err)
 	}
-	defer holder.Close()
+	defer func() { _ = holder.Close() }()
 	if err := syscall.Flock(int(holder.Fd()), syscall.LOCK_EX); err != nil {
 		t.Fatalf("flock holder: %v", err)
 	}
-	defer syscall.Flock(int(holder.Fd()), syscall.LOCK_UN)
+	defer func() { _ = syscall.Flock(int(holder.Fd()), syscall.LOCK_UN) }()
 
 	clk := &clock.FakeClock{SleepChan: make(chan time.Duration, flockMaxAttempts)}
 	release, ok := acquireWriteLock(clk)
@@ -370,11 +370,11 @@ func TestAcquireWriteLockNilClock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open lock file: %v", err)
 	}
-	defer holder.Close()
+	defer func() { _ = holder.Close() }()
 	if err := syscall.Flock(int(holder.Fd()), syscall.LOCK_EX); err != nil {
 		t.Fatalf("flock holder: %v", err)
 	}
-	defer syscall.Flock(int(holder.Fd()), syscall.LOCK_UN)
+	defer func() { _ = syscall.Flock(int(holder.Fd()), syscall.LOCK_UN) }()
 
 	release, ok := acquireWriteLock(nil)
 	if ok || release != nil {
