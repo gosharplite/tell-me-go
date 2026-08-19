@@ -17,6 +17,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	infra_mcp "github.com/gosharplite/tell-me-go/internal/infrastructure/mcp"
 	"github.com/gosharplite/tell-me-go/internal/tools/integrations/plugin"
 )
 
@@ -878,5 +879,44 @@ func TestIsGitHubHostname(t *testing.T) {
 				t.Errorf("isGitHubHostname(%q) = %v, want %v", tt.raw, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestMCPFactory_NewClientFor_StdioBranch drives the IsStdio branch of the
+// real newClientFor closure (mcp_factory.go:74-76) with a config whose
+// COMMAND cannot resolve: the branch body routes to NewStdioClient and the
+// command-resolution error propagates, proving the stdio transport is
+// dispatched without spawning a live child from the di package.
+func TestMCPFactory_NewClientFor_StdioBranch(t *testing.T) {
+	f := newMCPFactory(slog.Default())
+	cfg := config.MCPServerConfig{Command: "definitely-not-a-real-command-xyz-12345", Timeout: 1}
+	_, err := f.newClientFor(cfg)
+	if err == nil {
+		t.Fatal("newClientFor(stdio with unresolvable command) error = nil, want NewStdioClient error")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error = %q, want it to mention the command resolution failure", err.Error())
+	}
+}
+
+// TestMCPFactory_NewClientFor_BasicAuthBranch drives the basic-auth branch of
+// the real newClientFor closure (mcp_factory.go:77-79) with a config carrying
+// a Username: the branch routes to NewClient with WithBasicAuth, which does
+// not connect, so the concrete *mcp.Client type is assertable directly. The
+// auth-header mechanics are pinned by the mcp package's own
+// TestConnect_BasicAuthHeader; this test only proves the branch routing.
+func TestMCPFactory_NewClientFor_BasicAuthBranch(t *testing.T) {
+	f := newMCPFactory(slog.Default())
+	cfg := config.MCPServerConfig{URL: "http://127.0.0.1:1", Token: "tok", Username: "user", Timeout: 1}
+	client, err := f.newClientFor(cfg)
+	if err != nil {
+		t.Fatalf("newClientFor(basic-auth) error = %v, want nil", err)
+	}
+	hc, ok := client.(*infra_mcp.Client)
+	if !ok {
+		t.Fatalf("newClientFor(basic-auth) returned %T, want *mcp.Client", client)
+	}
+	if hc == nil {
+		t.Fatal("newClientFor(basic-auth) returned nil *mcp.Client")
 	}
 }
