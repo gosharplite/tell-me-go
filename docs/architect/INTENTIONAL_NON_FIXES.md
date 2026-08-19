@@ -890,14 +890,14 @@ catalog a new gap no one reviewed. Policy:
 ### internal/infrastructure/mcp/stdio_client_integration_test.go — TestStdio_LauncherTreePassThrough (CC=13)
 
 - **Status**: ACCEPTED (2026-08, #1396)
-- **Rationale**: Sequential launcher test (spawn → stderr poll for pid → ListTools → Close → deadline-bounded liveness poll with `syscall.Kill`). CC is the poll/assertion sequence, not branching business logic. Splitting would duplicate the child-process/launcher setup. Same acceptance class as `TestHistoryNavigation_CompleteWorkflow` (CC=15) — sequential workflow where steps depend on prior state.
-- **See**: `internal/infrastructure/mcp/stdio_client_integration_test.go:216`
+- **Rationale**: Sequential launcher test (spawn → stderr poll for pid → ListTools → Close → deadline-bounded liveness poll with `syscall.Kill`). CC is the poll/assertion sequence, not branching business logic. Splitting would duplicate the child-process/launcher setup. Same acceptance class as `TestHistoryNavigation_CompleteWorkflow` (CC=15) — sequential workflow where steps depend on prior state. Re-anchored 2026-09 (#1407): TestStdio_EnvCasePreserved inserted above drifted the See: from 216 to 262 (CC unchanged at 13).
+- **See**: `internal/infrastructure/mcp/stdio_client_integration_test.go:262`
 
 ### internal/infrastructure/mcp/stdio_client_integration_test.go — TestStdio_ChildDeathMidSession (CC=13)
 
 - **Status**: ACCEPTED (2026-08, #1396)
-- **Rationale**: Sequential death-mid-session integration test over a real child process (die call → race-tolerant death-indication assertion → deadline-bounded poll loop that deterministically closes the async-reap window by waiting for the sticky child-exit error → post-sticky pointer-equality assertions). CC comes from the poll/branch structure (the poll's if/break, the deadline guard, and the two sticky assertions), not branching business logic — and the poll is the test's synchronization mechanism, not refactorable: splitting it would both duplicate the expensive child-process setup and destroy the deterministic reaper synchronization it provides. Same acceptance class as `TestStdio_RoundTrip` (CC=11) and `TestStdio_LauncherTreePassThrough` (CC=13) in the same file. CC re-verified 2026-09: 11→13 (ListTools sticky-error extension).
-- **See**: `internal/infrastructure/mcp/stdio_client_integration_test.go:278`
+- **Rationale**: Sequential death-mid-session integration test over a real child process (die call → race-tolerant death-indication assertion → deadline-bounded poll loop that deterministically closes the async-reap window by waiting for the sticky child-exit error → post-sticky pointer-equality assertions). CC comes from the poll/branch structure (the poll's if/break, the deadline guard, and the two sticky assertions), not branching business logic — and the poll is the test's synchronization mechanism, not refactorable: splitting it would both duplicate the expensive child-process setup and destroy the deterministic reaper synchronization it provides. Same acceptance class as `TestStdio_RoundTrip` (CC=11) and `TestStdio_LauncherTreePassThrough` (CC=13) in the same file. CC re-verified 2026-09: 11→13 (ListTools sticky-error extension). Re-anchored 2026-09 (#1407): TestStdio_EnvCasePreserved inserted above drifted the See: from 278 to 324 (CC unchanged at 13).
+- **See**: `internal/infrastructure/mcp/stdio_client_integration_test.go:324`
 
 ### internal/infrastructure/mcp/stdio_client_test.go — TestResolveCommand (CC=13)
 
@@ -1128,8 +1128,8 @@ to reason about.
 ### internal/domain/config/mcp_config.go — (*MCPServerConfig).validate (CC=20)
 
 - **Status**: ACCEPTED (2026-08, #1396)
-- **Rationale**: Sequential validation with structural guards only: the issue-mandated most-specific-error-wins check order (COMMAND/URL mutual exclusion, ARGS/DIR/ENV-require-COMMAND, bearer/basic mode conflict, TIMEOUT, the 6-case auth-mode switch, and the positive credential rules) — every branch is a one-line error return whose message is pinned by the T1 table tests. CC is driven by guard count + the auth switch, not branching business logic. Extracting helpers would fragment a coherent, message-pinned validation sequence for cosmetic CC reduction — same acceptance class as `renderHistory` (CC=12) and `(*HistoryEditor).Edit` (CC=10) in this section. A future extraction refactor is possible but is tracked, not this PR.
-- **See**: `internal/domain/config/mcp_config.go:103`
+- **Rationale**: Sequential validation with structural guards only: the issue-mandated most-specific-error-wins check order (COMMAND/URL mutual exclusion, ARGS/DIR/ENV-require-COMMAND, bearer/basic mode conflict, TIMEOUT, the 6-case auth-mode switch, and the positive credential rules) — every branch is a one-line error return whose message is pinned by the T1 table tests. CC is driven by guard count + the auth switch, not branching business logic. Extracting helpers would fragment a coherent, message-pinned validation sequence for cosmetic CC reduction — same acceptance class as `renderHistory` (CC=12) and `(*HistoryEditor).Edit` (CC=10) in this section. A future extraction refactor is possible but is tracked, not this PR. Re-anchored 2026-09 (#1407): the Env field doc-comment + gofmt realignment in mcp_config.go drifted the See: from 103 to 107 (CC unchanged at 20).
+- **See**: `internal/domain/config/mcp_config.go:107`
 
 ### ui/tui/browser.go — (*rootBrowserModel).handleActionKeys (CC=15) → RESOLVED
 
