@@ -320,6 +320,22 @@ func TestStdio_ChildDeathMidSession(t *testing.T) {
 	if errB != errA {
 		t.Error("consecutive post-sticky calls returned different error values; want the identical sticky pointer")
 	}
+
+	// ListTools must fail at the same fast-death pre-check with the identical
+	// sticky error value (the SDK is never touched on this path).
+	_, errL := c.ListTools(context.Background())
+	if errL != sticky {
+		t.Errorf("ListTools() post-sticky error = %v, want the sticky child-exit error %v", errL, sticky)
+	}
+
+	// Close after death must return promptly (the go test timeout proves no
+	// hang): the sticky pre-check already consumed waitDone, and cancel is
+	// the kill backstop. Whether session.Close errors on the dead session is
+	// SDK teardown behavior — the coverage profile decides whether the Close
+	// session-error branch is reachable, so the error value is not asserted.
+	if err := c.Close(); err != nil {
+		t.Logf("Close() after death returned error (SDK teardown behavior): %v", err)
+	}
 }
 
 // TestStdio_WedgeTimesOut pins the wedge failure mode: a server that never
@@ -392,5 +408,64 @@ func TestStdio_TwoClientsIndependent(t *testing.T) {
 	}
 	if err := c2.Close(); err != nil {
 		t.Fatalf("client2 Close() error = %v", err)
+	}
+}
+
+// TestStdio_NilLoggerFallsBackToDefault pins the nil-logger fallback: a nil
+// logger is replaced by slog.Default(), and the client works end to end with
+// the default logger routing the child's stderr.
+func TestStdio_NilLoggerFallsBackToDefault(t *testing.T) {
+	c := newTestClient(t, []string{"serve"}, 0, nil) // nil logger → slog.Default()
+
+	defs, err := c.ListTools(context.Background())
+	if err != nil {
+		t.Fatalf("ListTools() error = %v", err)
+	}
+	if len(defs) < 5 {
+		t.Fatalf("ListTools() returned %d tools, want >= 5", len(defs))
+	}
+}
+
+// TestStdio_ListToolsSessionError pins the ListTools session-error branch: a
+// child that is ALIVE but fails the tools/list request surfaces as a Go error
+// wrapping "mcp list tools" — and the session stays usable afterwards (the
+// error is a session error, not a death).
+func TestStdio_ListToolsSessionError(t *testing.T) {
+	c := newTestClient(t, []string{"list-error"}, 0, slog.Default())
+
+	_, err := c.ListTools(context.Background())
+	if err == nil {
+		t.Fatal("ListTools() error = nil, want session error")
+	}
+	if !strings.Contains(err.Error(), "mcp list tools") {
+		t.Errorf("ListTools() error = %q, want it to contain %q", err.Error(), "mcp list tools")
+	}
+
+	// The child must still be alive and functional (session error is not death):
+	res, err := c.CallTool(context.Background(), "echo", map[string]interface{}{"text": "ok"})
+	if err != nil {
+		t.Errorf("CallTool(echo) after list-error error = %v, want success", err)
+	}
+	if res.Text != "ok" {
+		t.Errorf("CallTool(echo) after list-error Text = %q, want %q", res.Text, "ok")
+	}
+}
+
+// TestStdio_CallToolIsError pins the MCP-level tool-error split: a tool that
+// returns an MCP result with isError:true surfaces as a non-terminal domain
+// outcome through ToolResult.Error with a nil Go error (the LLM can recover
+// in-turn), per ADR-022 / issue #1373.
+func TestStdio_CallToolIsError(t *testing.T) {
+	c := newTestClient(t, []string{"serve"}, 0, slog.Default())
+
+	res, err := c.CallTool(context.Background(), "fail", nil)
+	if err != nil {
+		t.Fatalf("CallTool(fail) Go error = %v, want nil (non-terminal outcome)", err)
+	}
+	if res.Error == nil {
+		t.Fatal("CallTool(fail) ToolResult.Error = nil, want non-nil")
+	}
+	if !strings.Contains(res.Error.Error(), "fail: deliberate tool error") {
+		t.Errorf("CallTool(fail) Error = %q, want it to contain the fixture error text", res.Error.Error())
 	}
 }
