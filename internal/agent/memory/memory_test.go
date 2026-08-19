@@ -23,12 +23,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
-// MockMCPClient is a hand-rolled function-field test double for
+// mockMCPClient is a hand-rolled function-field test double for
 // tools.MCPClient (ADR-021/036 pattern): methods lock → append call record →
 // unlock, then invoke the user Func OUTSIDE the lock (non-reentrant deadlock
 // hazard). The zero value is usable — CallTool returns (zero, nil) and
 // records every call.
-type MockMCPClient struct {
+type mockMCPClient struct {
 	mu            sync.Mutex
 	ListToolsFunc func(ctx context.Context) ([]tools.MCPToolDefinition, error)
 	CallToolFunc  func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error)
@@ -36,7 +36,7 @@ type MockMCPClient struct {
 }
 
 // ListTools implements tools.MCPClient.
-func (m *MockMCPClient) ListTools(ctx context.Context) ([]tools.MCPToolDefinition, error) {
+func (m *mockMCPClient) ListTools(ctx context.Context) ([]tools.MCPToolDefinition, error) {
 	m.mu.Lock()
 	m.records = append(m.records, "ListTools")
 	m.mu.Unlock()
@@ -47,7 +47,7 @@ func (m *MockMCPClient) ListTools(ctx context.Context) ([]tools.MCPToolDefinitio
 }
 
 // CallTool implements tools.MCPClient. Record format: "CallTool:<name>".
-func (m *MockMCPClient) CallTool(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *mockMCPClient) CallTool(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 	m.mu.Lock()
 	m.records = append(m.records, "CallTool:"+name)
 	m.mu.Unlock()
@@ -58,10 +58,10 @@ func (m *MockMCPClient) CallTool(ctx context.Context, name string, args map[stri
 }
 
 // Close implements tools.MCPClient.
-func (m *MockMCPClient) Close() error { return nil }
+func (m *mockMCPClient) Close() error { return nil }
 
 // recordedNames returns a race-safe snapshot of the call records.
-func (m *MockMCPClient) recordedNames() []string {
+func (m *mockMCPClient) recordedNames() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make([]string, len(m.records))

@@ -35,7 +35,7 @@ func responseTurn(index int, sessionID, text string) *orchestrator.Turn {
 
 // TestHookTierOff verifies the off tier: no MCP calls, buffer untouched.
 func TestHookTierOff(t *testing.T) {
-	mock := &MockMCPClient{}
+	mock := &mockMCPClient{}
 	h, _ := newTestHook(t, mock, config.MemoryLearnOff, &stubHistoryManager{})
 	h.AfterTurn(responseTurn(0, "s1", "hello"), nil)
 
@@ -54,7 +54,7 @@ func TestHookTierOff(t *testing.T) {
 // without an error annotation.
 func TestHookCaptureBranchI(t *testing.T) {
 	t.Run("response nil err", func(t *testing.T) {
-		mock := &MockMCPClient{}
+		mock := &mockMCPClient{}
 		var gotName string
 		var gotArgs map[string]interface{}
 		mock.CallToolFunc = func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
@@ -80,7 +80,7 @@ func TestHookCaptureBranchI(t *testing.T) {
 	})
 
 	t.Run("response with err annotated", func(t *testing.T) {
-		mock := &MockMCPClient{}
+		mock := &mockMCPClient{}
 		var gotArgs map[string]interface{}
 		mock.CallToolFunc = func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			gotArgs = args
@@ -101,7 +101,7 @@ func TestHookCaptureBranchI(t *testing.T) {
 // TestHookCaptureBranchII covers branch (ii): Response nil + error.
 func TestHookCaptureBranchII(t *testing.T) {
 	t.Run("non-transient error captures error + prompt", func(t *testing.T) {
-		mock := &MockMCPClient{}
+		mock := &mockMCPClient{}
 		var gotArgs map[string]interface{}
 		mock.CallToolFunc = func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			gotArgs = args
@@ -125,7 +125,7 @@ func TestHookCaptureBranchII(t *testing.T) {
 	})
 
 	t.Run("transient error skipped with debug record", func(t *testing.T) {
-		mock := &MockMCPClient{}
+		mock := &mockMCPClient{}
 		h, _ := newTestHook(t, mock, config.MemoryLearnCapture, &stubHistoryManager{})
 		tun := turn(1, "s1", &orchestrator.TurnState{
 			PreparedHistory: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "fix"}}}},
@@ -150,7 +150,7 @@ func TestHookCaptureBranchII(t *testing.T) {
 // produces no episode.
 func TestHookCaptureBranchIII(t *testing.T) {
 	t.Run("model turn with text", func(t *testing.T) {
-		mock := &MockMCPClient{}
+		mock := &mockMCPClient{}
 		var gotArgs map[string]interface{}
 		mock.CallToolFunc = func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			gotArgs = args
@@ -170,7 +170,7 @@ func TestHookCaptureBranchIII(t *testing.T) {
 	})
 
 	t.Run("model turn without text parts filtered", func(t *testing.T) {
-		mock := &MockMCPClient{}
+		mock := &mockMCPClient{}
 		stub := &stubHistoryManager{
 			GetLastModelTurnFunc: func(ctx context.Context) (int, *llm.Content, error) {
 				return 3, &llm.Content{Role: "model", Parts: []*llm.Part{
@@ -188,7 +188,7 @@ func TestHookCaptureBranchIII(t *testing.T) {
 	})
 
 	t.Run("GetLastModelTurn failure logged and skipped", func(t *testing.T) {
-		mock := &MockMCPClient{}
+		mock := &mockMCPClient{}
 		stub := &stubHistoryManager{
 			GetLastModelTurnFunc: func(ctx context.Context) (int, *llm.Content, error) {
 				return 0, nil, errors.New("history missing")
@@ -207,7 +207,7 @@ func TestHookCaptureBranchIII(t *testing.T) {
 // (no MCP call); FlushSession drains under lock, deletes the map entry, and
 // calls plur_learn_batch outside the lock; a second flush is a no-op.
 func TestHookBatch(t *testing.T) {
-	mock := &MockMCPClient{}
+	mock := &mockMCPClient{}
 	h, _ := newTestHook(t, mock, config.MemoryLearnBatch, &stubHistoryManager{})
 
 	h.AfterTurn(responseTurn(0, "s1", "first"), nil)
@@ -273,7 +273,7 @@ func TestHookBatch(t *testing.T) {
 func TestHookFull(t *testing.T) {
 	t.Run("frame match learns", func(t *testing.T) {
 		var learnArgs []map[string]interface{}
-		mock := &MockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		mock := &mockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			if name == "plur_learn" {
 				learnArgs = append(learnArgs, args)
 			}
@@ -299,7 +299,7 @@ func TestHookFull(t *testing.T) {
 
 	t.Run("hash dedupe identical statement", func(t *testing.T) {
 		learnCount := 0
-		mock := &MockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		mock := &mockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			if name == "plur_learn" {
 				learnCount++
 			}
@@ -320,7 +320,7 @@ func TestHookFull(t *testing.T) {
 
 	t.Run("flood bound", func(t *testing.T) {
 		learnCount := 0
-		mock := &MockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		mock := &mockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			if name == "plur_learn" {
 				learnCount++
 			}
@@ -347,7 +347,7 @@ func TestHookFull(t *testing.T) {
 
 	t.Run("non-frame no learn but buffer appended", func(t *testing.T) {
 		learnCount := 0
-		mock := &MockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		mock := &mockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			if name == "plur_learn" {
 				learnCount++
 			}
@@ -375,7 +375,7 @@ func TestHookFull(t *testing.T) {
 // TestHookTurnDedupe verifies the turn-scoped dedupe: the same
 // SessionID+Index twice → the second AfterTurn is a no-op.
 func TestHookTurnDedupe(t *testing.T) {
-	mock := &MockMCPClient{}
+	mock := &mockMCPClient{}
 	h, _ := newTestHook(t, mock, config.MemoryLearnCapture, &stubHistoryManager{})
 	tun := responseTurn(0, "s1", "hello")
 	h.AfterTurn(tun, nil)
@@ -400,7 +400,7 @@ func TestHookNilClientFlush(t *testing.T) {
 
 // TestHookNilCfg verifies the nil-config guard: AfterTurn returns immediately.
 func TestHookNilCfg(t *testing.T) {
-	mock := &MockMCPClient{}
+	mock := &mockMCPClient{}
 	cfgPtr := &atomic.Pointer[config.MemoryConfig]{}
 	cfgPtr.Store(nil)
 	h := &plurHook{client: mock, cfg: cfgPtr, logger: nil}
@@ -414,7 +414,7 @@ func TestHookNilCfg(t *testing.T) {
 // tier) + FlushSession under the race detector: buffer access is mutex-
 // guarded and the MCP call never holds the lock.
 func TestHookConcurrentAfterTurnAndFlush(t *testing.T) {
-	mock := &MockMCPClient{}
+	mock := &mockMCPClient{}
 	h, _ := newTestHook(t, mock, config.MemoryLearnBatch, &stubHistoryManager{})
 
 	var wg sync.WaitGroup

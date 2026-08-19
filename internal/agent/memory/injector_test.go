@@ -63,7 +63,7 @@ func TestInjectorDisabledStrip(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mock := &MockMCPClient{}
+			mock := &mockMCPClient{}
 			inj, _ := newTestInjector(t, mock, false)
 			req := &sessctx.ContextRequest{History: tt.history}
 			if err := inj.Transform(context.Background(), req); err != nil {
@@ -92,7 +92,7 @@ func TestInjectorDisabledStrip(t *testing.T) {
 func TestInjectorNilCfg(t *testing.T) {
 	cfgPtr := &atomic.Pointer[config.MemoryConfig]{}
 	cfgPtr.Store(nil)
-	inj := &plurInjector{client: &MockMCPClient{}, cfg: cfgPtr, logger: &ports.NoOpLogger{}}
+	inj := &plurInjector{client: &mockMCPClient{}, cfg: cfgPtr, logger: &ports.NoOpLogger{}}
 	req := &sessctx.ContextRequest{History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hi"}}}}}
 	if err := inj.Transform(context.Background(), req); err != nil {
 		t.Fatalf("nil cfg must no-op, got err %v", err)
@@ -107,7 +107,7 @@ func TestInjectorNilCfg(t *testing.T) {
 // replace an existing marker Part — at most one memory block.
 func TestInjectorEnabledInsert(t *testing.T) {
 	t.Run("no system content prepends", func(t *testing.T) {
-		mock := &MockMCPClient{CallToolFunc: recall("recall text")}
+		mock := &mockMCPClient{CallToolFunc: recall("recall text")}
 		inj, _ := newTestInjector(t, mock, true)
 		req := &sessctx.ContextRequest{History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hi"}}}}}
 		if err := inj.Transform(context.Background(), req); err != nil {
@@ -136,7 +136,7 @@ func TestInjectorEnabledInsert(t *testing.T) {
 	})
 
 	t.Run("appends part to existing system", func(t *testing.T) {
-		mock := &MockMCPClient{CallToolFunc: recall("recall text")}
+		mock := &mockMCPClient{CallToolFunc: recall("recall text")}
 		inj, _ := newTestInjector(t, mock, true)
 		req := &sessctx.ContextRequest{History: []*llm.Content{
 			{Role: "system", Parts: []*llm.Part{{Text: "base"}}},
@@ -161,7 +161,7 @@ func TestInjectorEnabledInsert(t *testing.T) {
 	})
 
 	t.Run("replaces existing marker part", func(t *testing.T) {
-		mock := &MockMCPClient{CallToolFunc: recall("new recall")}
+		mock := &mockMCPClient{CallToolFunc: recall("new recall")}
 		inj, _ := newTestInjector(t, mock, true)
 		req := &sessctx.ContextRequest{History: []*llm.Content{
 			{Role: "system", Parts: []*llm.Part{{Text: "base"}, {Text: memoryHeader + "\n\nstale recall\n" + memoryFooter}}},
@@ -187,7 +187,7 @@ func TestInjectorEnabledInsert(t *testing.T) {
 // the marker block is stripped in memory only — PersistHistory is NOT set —
 // and Transform returns nil.
 func TestInjectorFailOpenStrip(t *testing.T) {
-	mock := &MockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+	mock := &mockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 		return tools.ToolResult{}, errors.New("inject failed")
 	}}
 	inj, _ := newTestInjector(t, mock, true)
@@ -230,7 +230,7 @@ func TestInjectorNilClient(t *testing.T) {
 // in a block whose len/4 heuristic fits the inject budget.
 func TestInjectorTrim(t *testing.T) {
 	long := strings.Repeat("lorem ipsum dolor sit amet ", 20000)
-	mock := &MockMCPClient{CallToolFunc: recall(long)}
+	mock := &mockMCPClient{CallToolFunc: recall(long)}
 	inj, cfgPtr := newTestInjector(t, mock, true)
 	req := &sessctx.ContextRequest{History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hi"}}}}}
 	if err := inj.Transform(context.Background(), req); err != nil {
@@ -252,7 +252,7 @@ func TestInjectorTrim(t *testing.T) {
 // TestInjectorTrimOverflow verifies the maxBody < 0 overflow path: the block
 // is stripped in memory and Transform returns nil.
 func TestInjectorTrimOverflow(t *testing.T) {
-	mock := &MockMCPClient{CallToolFunc: recall("recall")}
+	mock := &mockMCPClient{CallToolFunc: recall("recall")}
 	inj, cfgPtr := newTestInjector(t, mock, true)
 	memCfg := cfgPtr.Load()
 	memCfg.InjectBudget = 0 // header+footer alone exceed the budget
@@ -273,7 +273,7 @@ func TestInjectorTrimOverflow(t *testing.T) {
 // the regex fallback both produce injected_engrams:<ids> warnings.
 func TestInjectorWarnings(t *testing.T) {
 	t.Run("metadata ids", func(t *testing.T) {
-		mock := &MockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		mock := &mockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			return tools.ToolResult{Text: "recall", Metadata: map[string]interface{}{"ids": []string{"e1", "e2"}}}, nil
 		}}
 		inj, _ := newTestInjector(t, mock, true)
@@ -287,7 +287,7 @@ func TestInjectorWarnings(t *testing.T) {
 	})
 
 	t.Run("regex fallback deduplicated", func(t *testing.T) {
-		mock := &MockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		mock := &mockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			return tools.ToolResult{Text: "engram_id: e1\nid: e2\nid: e1\nid: e3"}, nil
 		}}
 		inj, _ := newTestInjector(t, mock, true)
@@ -304,7 +304,7 @@ func TestInjectorWarnings(t *testing.T) {
 // TestInjectorMultiPassIdempotent verifies that repeated Transform passes
 // keep exactly one marker Part (memory-single-block) and refresh its content.
 func TestInjectorMultiPassIdempotent(t *testing.T) {
-	mock := &MockMCPClient{CallToolFunc: recall("recall A")}
+	mock := &mockMCPClient{CallToolFunc: recall("recall A")}
 	inj, _ := newTestInjector(t, mock, true)
 	req := &sessctx.ContextRequest{History: []*llm.Content{
 		{Role: "system", Parts: []*llm.Part{{Text: "base"}, {Text: memoryHeader + "\n\nold recall\n" + memoryFooter}}},
@@ -352,7 +352,7 @@ func TestInjectorScope(t *testing.T) {
 		cfgPtr := &atomic.Pointer[config.MemoryConfig]{}
 		cfgPtr.Store(&memCfg)
 		var gotArgs map[string]interface{}
-		mock := &MockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		mock := &mockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			gotArgs = args
 			return tools.ToolResult{Text: "recall"}, nil
 		}}
@@ -378,7 +378,7 @@ func TestInjectorScope(t *testing.T) {
 		cfgPtr := &atomic.Pointer[config.MemoryConfig]{}
 		cfgPtr.Store(&memCfg)
 		var gotArgs map[string]interface{}
-		mock := &MockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		mock := &mockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			gotArgs = args
 			return tools.ToolResult{Text: "recall"}, nil
 		}}
