@@ -178,6 +178,52 @@ func TestStdio_HandshakeTimeoutKillsChild(t *testing.T) {
 	}
 }
 
+// TestStdio_EnvCasePreserved pins issue #1407 end-to-end: a case-preserved
+// ENV key configured on the server must reach the spawned child's actual
+// process environment. The getenv fixture tool reads the environment from
+// INSIDE the child (post-execve), so a CallTool result IS the child's env:
+// the uppercase key must be present, and the lowercased duplicate must not
+// exist — the assertion that fails if anyone re-introduces lowercasing
+// anywhere in the decode → sortedEnvPairs → execve chain. Deterministic: a
+// plain sequential CallTool assertion (ADR-036 — no time.Sleep, no /proc,
+// no pid polling).
+func TestStdio_EnvCasePreserved(t *testing.T) {
+	c, err := NewStdioClient(config.MCPServerConfig{
+		Command: stdioServerPath,
+		Args:    []string{"serve"},
+		Env:     map[string]string{"PLUR_TOOL_PROFILE": "full"},
+	}, slog.Default())
+	if err != nil {
+		t.Fatalf("NewStdioClient() error = %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	// Assert 1 (the bug): the case-preserved key reaches the child's env.
+	res, err := c.CallTool(context.Background(), "getenv", map[string]interface{}{"name": "PLUR_TOOL_PROFILE"})
+	if err != nil {
+		t.Fatalf("CallTool(getenv PLUR_TOOL_PROFILE) error = %v", err)
+	}
+	if res.Error != nil {
+		t.Errorf("getenv(PLUR_TOOL_PROFILE) Error = %v, want nil", res.Error)
+	}
+	if res.Text != "full" {
+		t.Errorf("getenv(PLUR_TOOL_PROFILE) Text = %q, want %q", res.Text, "full")
+	}
+
+	// Assert 2 (case-sensitivity pin): the lowercased duplicate must NOT
+	// exist in the child environment.
+	res, err = c.CallTool(context.Background(), "getenv", map[string]interface{}{"name": "plur_tool_profile"})
+	if err != nil {
+		t.Fatalf("CallTool(getenv plur_tool_profile) error = %v", err)
+	}
+	if res.Error != nil {
+		t.Errorf("getenv(plur_tool_profile) Error = %v, want nil", res.Error)
+	}
+	if res.Text != "" {
+		t.Errorf("getenv(plur_tool_profile) Text = %q, want %q (lowercased duplicate must not exist)", res.Text, "")
+	}
+}
+
 // TestStdio_GracefulEOFClose pins the graceful shutdown path: a well-behaved
 // child exits on stdin EOF, Close returns nil, and a second Close is a no-op.
 func TestStdio_GracefulEOFClose(t *testing.T) {

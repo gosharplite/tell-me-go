@@ -33,16 +33,20 @@ const (
 
 // MCPServerConfig defines configuration for an external Model Context Protocol server.
 type MCPServerConfig struct {
-	URL             string            `yaml:"URL"`
-	Token           string            `yaml:"TOKEN"`
-	Username        string            `yaml:"USERNAME"`
-	Auth            string            `yaml:"AUTH"` // "auto", "gh", "bearer", "basic", "none" (default: "auto")
-	RequiresConsent *bool             `yaml:"REQUIRES_CONSENT"`
-	Timeout         int               `yaml:"TIMEOUT"` // Seconds (0 = default 300s)
-	Command         string            `yaml:"COMMAND"` // executable for a stdio (local-process) MCP server; mutually exclusive with URL
-	Args            []string          `yaml:"ARGS"`    // optional arguments for COMMAND
-	Dir             string            `yaml:"DIR"`     // optional working directory for the child process
-	Env             map[string]string `yaml:"ENV"`     // optional extra environment variables for the child
+	URL             string   `yaml:"URL"`
+	Token           string   `yaml:"TOKEN"`
+	Username        string   `yaml:"USERNAME"`
+	Auth            string   `yaml:"AUTH"` // "auto", "gh", "bearer", "basic", "none" (default: "auto")
+	RequiresConsent *bool    `yaml:"REQUIRES_CONSENT"`
+	Timeout         int      `yaml:"TIMEOUT"` // Seconds (0 = default 300s)
+	Command         string   `yaml:"COMMAND"` // executable for a stdio (local-process) MCP server; mutually exclusive with URL
+	Args            []string `yaml:"ARGS"`    // optional arguments for COMMAND
+	Dir             string   `yaml:"DIR"`     // optional working directory for the child process
+	// Env holds optional extra environment variables for the stdio child. Keys
+	// reach the child byte-for-byte (never lowercased); TELL_ME_MCP_SERVERS_<NAME>_ENV_<KEY>
+	// overrides win for declared keys only, empty overrides are ignored, and an
+	// override for case-differing keys (Path/PATH) applies to all casings.
+	Env map[string]string `yaml:"ENV"`
 }
 
 // isReadOnly reports whether the server URL targets a read-only endpoint.
