@@ -216,3 +216,39 @@ func TestSecurityManager_Prompt(t *testing.T) {
 		t.Errorf("expected Prompt to delegate to interactor, got warns: %v", mi.Warns)
 	}
 }
+
+// TestSecurityManager_RegisterEmptyPath_NoOp covers the empty-path guards in
+// RegisterSafePath (manager.go:132-134) and RegisterReadOnlyPath
+// (manager.go:157-159): registering "" must be a no-op that leaves the
+// respective path set unchanged.
+func TestSecurityManager_RegisterEmptyPath_NoOp(t *testing.T) {
+	t.Parallel()
+	sm := NewSecurityManager(nil)
+
+	// RegisterSafePath("") must be a no-op: no panic, no registered paths.
+	sm.RegisterSafePath("")
+	if got := sm.GetSafePaths(); len(got) != 0 {
+		t.Errorf("RegisterSafePath(\"\") registered paths: %v", got)
+	}
+
+	// RegisterReadOnlyPath("") must be a no-op.
+	sm.RegisterReadOnlyPath("")
+	if got := sm.getReadOnlyPaths(); len(got) != 0 {
+		t.Errorf("RegisterReadOnlyPath(\"\") registered paths: %v", got)
+	}
+
+	// Complement: registering a real path in each mode works as expected.
+	tmpDir := t.TempDir()
+	safePath := filepath.Join(tmpDir, "safe")
+	roPath := filepath.Join(tmpDir, "readonly")
+
+	sm.RegisterSafePath(safePath)
+	if !contains(sm.GetSafePaths(), safePath) {
+		t.Errorf("expected %s in safe paths after RegisterSafePath", safePath)
+	}
+
+	sm.RegisterReadOnlyPath(roPath)
+	if !contains(sm.getReadOnlyPaths(), roPath) {
+		t.Errorf("expected %s in read-only paths after RegisterReadOnlyPath", roPath)
+	}
+}

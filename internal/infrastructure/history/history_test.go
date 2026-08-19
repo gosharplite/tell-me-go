@@ -1867,3 +1867,64 @@ func TestUpdateTurnContent_ReplaceTextWhenThoughtPrecedesText(t *testing.T) {
 		t.Errorf("expected text part %q, got %+v", "hi", parts[0])
 	}
 }
+
+// stubAssetStore is a minimal persistence.AssetStore double used by
+// TestNewManagerWithAssetStore. It records Put calls and returns a
+// deterministic asset ID.
+type stubAssetStore struct {
+	putCalls int
+}
+
+func (s *stubAssetStore) Put(ctx context.Context, data []byte) (string, error) {
+	s.putCalls++
+	return "stub-asset", nil
+}
+
+func (s *stubAssetStore) Get(ctx context.Context, id string) ([]byte, error) {
+	return nil, nil
+}
+
+// TestNewManagerWithAssetStore covers the NewManagerWithAssetStore constructor
+// (history.go:42-49): the injected AssetStore is wired into the store, the
+// Manager is fully initialized, and it is immediately usable.
+func TestNewManagerWithAssetStore(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "history.jsonl")
+	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
+
+	m := NewManagerWithAssetStore(infrapersistence.NewOSFileSystem(), &stubAssetStore{}, historyFile, archiveFile)
+
+	if m == nil {
+		t.Fatal("expected non-nil Manager")
+	}
+	if m.FilePath != historyFile {
+		t.Errorf("FilePath = %q, want %q", m.FilePath, historyFile)
+	}
+	if m.Contents == nil {
+		t.Error("expected non-nil Contents")
+	}
+
+	ctx := context.Background()
+
+	// GetWindow on an empty history succeeds.
+	window, err := m.GetWindow(ctx, 0, -1)
+	if err != nil {
+		t.Fatalf("GetWindow on empty history failed: %v", err)
+	}
+	if len(window) != 0 {
+		t.Errorf("expected empty window, got %d entries", len(window))
+	}
+
+	// AddContent + GetWindow round-trip proves the manager (and its
+	// asset-store-backed jsonlStore) is wired and functional.
+	if err := m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
+		t.Fatalf("AddContent failed: %v", err)
+	}
+	window, err = m.GetWindow(ctx, 0, -1)
+	if err != nil {
+		t.Fatalf("GetWindow after AddContent failed: %v", err)
+	}
+	if len(window) != 1 || window[0].Parts[0].Text != "hello" {
+		t.Errorf("expected 1 entry 'hello', got %+v", window)
+	}
+}

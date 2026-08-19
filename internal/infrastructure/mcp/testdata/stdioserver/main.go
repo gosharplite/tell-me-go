@@ -9,6 +9,8 @@
 //	launcher     execs <path> serve with inherited stdio (pass-through pin)
 //	never-init   writes nothing to stdout, blocks forever (handshake timeout)
 //	ignore-eof   serves normally but ignores stdin EOF (kill-backstop pin)
+//	list-error   serves normally but fails every tools/list request (session
+//	             error while the child stays alive)
 package main
 
 import (
@@ -26,7 +28,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: stdioserver <serve|launcher|never-init|ignore-eof>")
+		fmt.Fprintln(os.Stderr, "usage: stdioserver <serve|launcher|never-init|ignore-eof|list-error>")
 		os.Exit(2)
 	}
 	switch os.Args[1] {
@@ -38,14 +40,16 @@ func main() {
 		neverInit()
 	case "ignore-eof":
 		ignoreEOF()
+	case "list-error":
+		listError()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", os.Args[1])
 		os.Exit(2)
 	}
 }
 
-// newFixtureServer builds the canonical SDK MCP server with the six fixture
-// tools: echo, slow, die, stderr, block, args-capture.
+// newFixtureServer builds the canonical SDK MCP server with the seven fixture
+// tools: echo, slow, die, stderr, block, args-capture, fail.
 func newFixtureServer() *sdkmcp.Server {
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "stdioserver-fixture", Version: "1.0.0"}, nil)
 
@@ -106,6 +110,11 @@ func newFixtureServer() *sdkmcp.Server {
 				text = "{}" // defensive default for a genuinely-absent field
 			}
 			return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: text}}}, nil
+		})
+
+	server.AddTool(&sdkmcp.Tool{Name: "fail", Description: "returns an MCP-level tool error (isError)", InputSchema: map[string]any{"type": "object"}},
+		func(_ context.Context, _ *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+			return toolError("fail: deliberate tool error"), nil
 		})
 
 	return server
@@ -196,5 +205,32 @@ func ignoreEOF() {
 		// stdin EOF — a normal server returns here; this fixture ignores EOF
 		// and blocks forever.
 		select {}
+	}
+}
+
+// listError is a functioning MCP server that completes the handshake and
+// serves tools but returns a JSON-RPC error for every tools/list request,
+// pinning the client's ListTools session-error branch: the child stays alive
+// (a session error, not a death), so tools/call keeps working afterwards.
+func listError() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	server := newFixtureServer()
+	// Intercept only tools/list; the initialize handshake, notifications, and
+	// tools/call all pass through to the SDK's normal handlers. The returned
+	// error becomes a JSON-RPC error response on the wire.
+	server.AddReceivingMiddleware(func(next sdkmcp.MethodHandler) sdkmcp.MethodHandler {
+		return func(ctx context.Context, method string, req sdkmcp.Request) (sdkmcp.Result, error) {
+			if method == "tools/list" {
+				return nil, fmt.Errorf("tools/list denied by list-error fixture")
+			}
+			return next(ctx, method, req)
+		}
+	})
+	fmt.Fprintln(os.Stderr, "fixture_ready")
+	if err := server.Run(ctx, &sdkmcp.StdioTransport{}); err != nil && ctx.Err() == nil {
+		fmt.Fprintf(os.Stderr, "list-error: %v\n", err)
+		os.Exit(1)
 	}
 }

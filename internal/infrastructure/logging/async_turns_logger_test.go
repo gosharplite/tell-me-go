@@ -615,6 +615,22 @@ func TestFormatTurnStatusForLog(t *testing.T) {
 			},
 		},
 		{
+			name: "header with model",
+			status: events.TurnStatus{
+				Timestamp:        now,
+				SessionTurns:     2,
+				MaxHistoryTurns:  10,
+				Tokens:           300,
+				MaxHistoryTokens: 3000,
+				Mode:             "coder",
+				Model:            "deepseek-v4-flash",
+			},
+			contains: []string{
+				"╭─⠿ Turn 3/10 - coder",
+				"[12:00:00] Payload: ~300/3000 tokens - coder - deepseek-v4-flash",
+			},
+		},
+		{
 			name: "metrics success",
 			status: events.TurnStatus{
 				Timestamp:        now,
@@ -738,6 +754,25 @@ func TestFormatTurnStatusForLog(t *testing.T) {
 			},
 			contains: []string{
 				"[12:00:00] Payload: 500/5000 tokens - architect",
+			},
+		},
+		{
+			name: "metrics with status model",
+			status: events.TurnStatus{
+				Timestamp:        now,
+				IsPostCall:       true,
+				MaxHistoryTokens: 5000,
+				Mode:             "architect",
+				Model:            "deepseek-v4-flash",
+				Metrics: &llm.Metrics{
+					PromptTokens:   500,
+					CachedTokens:   200,
+					ResponseTokens: 100,
+					Duration:       2.0,
+				},
+			},
+			contains: []string{
+				"[12:00:00] Payload: 500/5000 tokens - architect - deepseek-v4-flash",
 			},
 		},
 		{
@@ -1215,4 +1250,24 @@ func TestAsyncTurnsLogger_DrainAndSyncEscalation(t *testing.T) {
 
 		assertLogLevel(t, handler, slog.LevelError, "failed to sync turns log on shutdown after multiple retries")
 	})
+}
+
+func TestAsyncTurnsLogger_DrainAndSync_ChannelClosed(t *testing.T) {
+	file := &spyFile{}
+	logger := slog.New(&slogHandler{})
+	ch := make(chan string)
+	close(ch)
+
+	l := &asyncTurnsLogger{
+		file:   file,
+		ch:     ch,
+		logger: logger,
+		clock:  &mockClock{now: time.Now()},
+	}
+
+	// Closed, drained channel: the select's `case msg, ok := <-l.ch` returns
+	// ok == false → syncAfterDrain() → Sync must be called, then return.
+	l.drainAndSync()
+
+	assert.True(t, file.syncCalled, "syncAfterDrain must call Sync on the closed-channel drain path")
 }

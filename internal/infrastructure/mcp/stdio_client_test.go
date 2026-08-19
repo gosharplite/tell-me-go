@@ -14,6 +14,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
 )
 
 // TestResolveCommand pins the resolution contract: a separator-bearing COMMAND
@@ -58,6 +60,24 @@ func TestResolveCommand(t *testing.T) {
 		}
 		if !strings.HasPrefix(err.Error(), "mcp stdio: command ") {
 			t.Errorf("error = %q, want prefix %q", err.Error(), "mcp stdio: command ")
+		}
+		if !strings.Contains(err.Error(), "not found in tell-me-go's PATH") {
+			t.Errorf("error = %q, want fragment %q", err.Error(), "not found in tell-me-go's PATH")
+		}
+	})
+
+	t.Run("empty command fails LookPath", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir()) // empty PATH dir guarantees not-found
+		if _, err := resolveCommand(""); err == nil {
+			t.Fatal("resolveCommand(\"\") error = nil, want error")
+		}
+	})
+
+	t.Run("nonexistent bare command yields prescribed annotation", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir()) // empty PATH dir guarantees not-found
+		_, err := resolveCommand("definitely-not-a-real-command-xyz-12345")
+		if err == nil {
+			t.Fatal("resolveCommand() error = nil, want error")
 		}
 		if !strings.Contains(err.Error(), "not found in tell-me-go's PATH") {
 			t.Errorf("error = %q, want fragment %q", err.Error(), "not found in tell-me-go's PATH")
@@ -217,5 +237,44 @@ func TestSortedEnvPairs(t *testing.T) {
 	}
 	if got := sortedEnvPairs(map[string]string{}); got != nil {
 		t.Errorf("sortedEnvPairs(empty) = %v, want nil", got)
+	}
+}
+
+// TestNewStdioClient_CommandNotFound pins the constructor's resolveCommand
+// error propagation: an unresolvable bare COMMAND returns the annotated
+// not-found error before any child is spawned.
+func TestNewStdioClient_CommandNotFound(t *testing.T) {
+	t.Setenv("PATH", t.TempDir()) // guarantees LookPath failure
+	_, err := NewStdioClient(config.MCPServerConfig{
+		Command: "definitely-not-a-real-command-xyz-12345",
+	}, slog.Default())
+	if err == nil {
+		t.Fatal("NewStdioClient() error = nil, want resolveCommand error")
+	}
+	if !strings.Contains(err.Error(), "not found in tell-me-go's PATH") {
+		t.Errorf("error = %q, want fragment %q", err.Error(), "not found in tell-me-go's PATH")
+	}
+}
+
+// TestNewStdioClient_StartError pins the cmd.Start failure branch: a COMMAND
+// that resolves (a directory path contains a path separator, so resolveCommand
+// returns it as-is) but cannot be exec'd fails deterministically on every OS.
+func TestNewStdioClient_StartError(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := NewStdioClient(config.MCPServerConfig{Command: dir}, slog.Default()); err == nil {
+		t.Fatal("NewStdioClient(directory as COMMAND) error = nil, want Start error")
+	}
+}
+
+// TestStdioClient_OperationContext_NonPositiveTimeout pins the pass-through
+// branch: a non-positive timeout returns the original context unchanged and a
+// no-op cancel that must not panic.
+func TestStdioClient_OperationContext_NonPositiveTimeout(t *testing.T) {
+	c := &StdioClient{timeout: 0}
+	original := context.Background()
+	ctx, cancel := c.operationContext(original)
+	cancel() // no-op cancel must not panic
+	if ctx != original {
+		t.Error("non-positive timeout must return the original context")
 	}
 }
