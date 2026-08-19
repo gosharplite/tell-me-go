@@ -209,6 +209,33 @@ func TestSQLiteTaskStore_GetByID_NotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "task 999", "error should contain task ID")
 }
 
+// TestSQLiteTaskStore_GetByID_Success verifies the success return of GetByID:
+// a task inserted via Append is fetched back with matching fields, and
+// CreatedAt survives the RFC3339Nano round-trip (non-zero after parse).
+func TestSQLiteTaskStore_GetByID_Success(t *testing.T) {
+	t.Parallel()
+	db := setupSQLite(t)
+	store := newSQLiteTaskStore(db)
+	ctx := context.Background()
+
+	now := time.Now().Truncate(time.Millisecond)
+	task := ports.Task{ID: 42, Content: "found task", Status: "in_progress", CreatedAt: now}
+	require.NoError(t, store.Append(ctx, task))
+
+	got, err := store.GetByID(ctx, task.ID)
+	require.NoError(t, err)
+	assert.Equal(t, task.ID, got.ID)
+	assert.Equal(t, task.Content, got.Content)
+	assert.Equal(t, task.Status, got.Status)
+	assert.False(t, got.CreatedAt.IsZero(), "CreatedAt must be non-zero after RFC3339Nano round-trip")
+	assert.True(t, got.CreatedAt.Equal(task.CreatedAt), "CreatedAt mismatch: got %v, want %v", got.CreatedAt, task.CreatedAt)
+
+	// Complement: the not-found path still wraps ErrTaskNotFound.
+	_, err = store.GetByID(ctx, 999)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ports.ErrTaskNotFound), "expected ErrTaskNotFound, got %v", err)
+}
+
 func TestStoreErrors(t *testing.T) {
 	t.Parallel()
 

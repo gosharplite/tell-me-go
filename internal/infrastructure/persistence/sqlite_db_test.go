@@ -1014,6 +1014,49 @@ func TestWithBusyRetry_NonBusyFailsFast(t *testing.T) {
 	}
 }
 
+// TestWithBusyRetry_PreCancelledCtx verifies the ctx.Done branch inside the
+// backoff select (sqlite_db.go L59-60): a pre-cancelled context fires the
+// select immediately, so withBusyRetry returns ctx.Err() on the FIRST
+// iteration — no backoff delay — and fn is invoked exactly once. The fn
+// returns a genuine SQLITE_BUSY error (real RESERVED lock, bare-path
+// connection), exactly what isBusyErr matches. Deterministic per ADR-036:
+// the cancelled ctx state proves the branch; no time.Sleep, no timing
+// assertions.
+func TestWithBusyRetry_PreCancelledCtx(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "ctxcancel.db")
+
+	// Genuine SQLITE_BUSY source: raw connection holds the RESERVED lock;
+	// the SUT connection (bare path → busy_timeout 0) fails immediately
+	// with a real *sqlite.Error{code:5}.
+	release := holdBusyLock(t, dbPath)
+	defer release() // unlock before cleanup closes the conn / removes the dir
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	// Pre-cancelled context: the backoff select sees an already-closed
+	// ctx.Done() on the first busy error.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var calls atomic.Int32
+	err = withBusyRetry(ctx, func() error {
+		calls.Add(1)
+		// Background ctx here — the pre-cancelled ctx would make ExecContext
+		// fail with a context error (non-busy → fail-fast path) instead of
+		// returning the busy error that drives the select.
+		_, e := db.ExecContext(context.Background(), "CREATE TABLE t (id INTEGER)")
+		return e
+	}, 3)
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, context.Canceled), "must surface ctx.Err(), got: %v", err)
+	assert.Equal(t, int32(1), calls.Load(), "fn must be invoked exactly once: pre-cancelled ctx returns on the first backoff")
+}
+
 // TestCreateTables_BusyCancellation verifies that cancellation during backoff
 // surfaces as ctx.Err() and fn is never retried. Deterministic by ctx state:
 // the fn itself cancels the ctx on the first (busy) invocation, so
