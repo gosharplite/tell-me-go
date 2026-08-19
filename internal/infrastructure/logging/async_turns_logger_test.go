@@ -757,6 +757,25 @@ func TestFormatTurnStatusForLog(t *testing.T) {
 			},
 		},
 		{
+			name: "metrics with status model",
+			status: events.TurnStatus{
+				Timestamp:        now,
+				IsPostCall:       true,
+				MaxHistoryTokens: 5000,
+				Mode:             "architect",
+				Model:            "deepseek-v4-flash",
+				Metrics: &llm.Metrics{
+					PromptTokens:   500,
+					CachedTokens:   200,
+					ResponseTokens: 100,
+					Duration:       2.0,
+				},
+			},
+			contains: []string{
+				"[12:00:00] Payload: 500/5000 tokens - architect - deepseek-v4-flash",
+			},
+		},
+		{
 			name: "metrics with start time and zero current turns",
 			status: events.TurnStatus{
 				Timestamp:        now,

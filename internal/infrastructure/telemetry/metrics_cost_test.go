@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -552,4 +553,52 @@ func BenchmarkEstimateCost_Batch100(b *testing.B) {
 		}
 		_, _ = benchSinkEstimate, benchSinkEstimateErr
 	})
+}
+
+// ---------------------------------------------------------------------------
+// applyPricingOverrides / resolveModel direct tests (metrics_cost.go)
+// ---------------------------------------------------------------------------
+
+// TestApplyPricingOverrides verifies that applyPricingOverrides copies each
+// configured override into the pricing data's Models map, covering the loop
+// body (metrics_cost.go:18-20).
+func TestApplyPricingOverrides(t *testing.T) {
+	t.Parallel()
+
+	m := &metricsManager{
+		pricingOverrides: map[string]domain_pricing.ModelPricing{
+			"test-model": {Hit: 0.5, Miss: 1.5, Comp: 3.0, SearchQuery: 0.02},
+		},
+	}
+
+	pd := domain_config.DefaultPricing()
+	pd2 := m.applyPricingOverrides(pd)
+
+	got, ok := pd2.Models["test-model"]
+	if !ok {
+		t.Fatal("expected 'test-model' override to be present in resulting pricing")
+	}
+	want := domain_pricing.ModelPricing{Hit: 0.5, Miss: 1.5, Comp: 3.0, SearchQuery: 0.02}
+	if got != want {
+		t.Errorf("applyPricingOverrides() model = %+v, want %+v", got, want)
+	}
+	// Entries from DefaultPricing must survive the override merge.
+	if _, ok := pd2.Models["default"]; !ok {
+		t.Error("expected default pricing entry to survive the override merge")
+	}
+}
+
+// TestResolveModel verifies the empty-detected fallback branch
+// (metrics_cost.go:27-29) and the detected-model pass-through.
+func TestResolveModel(t *testing.T) {
+	t.Parallel()
+
+	m := &metricsManager{model: "configured-model"}
+
+	if got := m.resolveModel(""); got != "configured-model" {
+		t.Errorf(`resolveModel("") = %q, want "configured-model"`, got)
+	}
+	if got := m.resolveModel("detected-model"); got != "detected-model" {
+		t.Errorf(`resolveModel("detected-model") = %q, want "detected-model"`, got)
+	}
 }
