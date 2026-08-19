@@ -73,6 +73,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-065** | Infra-Only Multi-Package Seam Realigns to Concept-Side Contract Leaf | 2026-08 | Accepted | [2026-08-infra-seam-contract-leaf-rule.md](2026-08-infra-seam-contract-leaf-rule.md) |
 | **ADR-066** | Infrastructure→Application Dependency Inversion — Port Relocation and internal/app Construction Seam (TD-1, M-scope) | 2026-08 | Accepted | [2026-08-infrastructure-application-dependency-inversion.md](2026-08-infrastructure-application-dependency-inversion.md) |
 | **ADR-067** | MCP Client Architecture — Remote MCP Server Consumption via Streamable HTTP | 2026-08 | Accepted | [2026-08-mcp-client-architecture.md](2026-08-mcp-client-architecture.md) |
+| **ADR-068** | Automatic PLUR Memory Integration | 2026-09 | Accepted | [2026-09-automatic-plur-memory-integration.md](2026-09-automatic-plur-memory-integration.md) |
 
 ## How to Create a New ADR
 
