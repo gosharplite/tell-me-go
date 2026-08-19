@@ -102,6 +102,23 @@ including the Round 2 refinements, are settled. There are no open questions.**
      if the retrieved response has no text parts (this also suppresses
      intermediate tool-iteration turns, which fire `AfterTurn` per
      `Engine.Run` iteration).
+4. **Internal episode shape vs wire mapping (issue #1410).** The internal
+   `episode` model `{text, error, prompt, mode, session, timestamp}` is a
+   capture-side data structure, **not** a wire shape — the old contract
+   conflated the two. `buffer.go` no longer carries JSON tags on `episode`
+   (the struct is tag-free) and the old "wire contract" comment is removed;
+   it was the seed of the circular test this issue fixes. Wire shapes are
+   produced explicitly by mapping helpers so the internal model can never
+   accidentally define the on-the-wire contract again:
+   - **capture tier** — `buildCaptureSummary` renders the required `summary`
+     with a **text-presence discriminator**: branches (i)/(iii) (text
+     present, even with an error annotation) map to the response text
+     bounded at `maxEpisodeBytes` (2000, rune-safe); branch (ii) (empty
+     text) maps error-first — `"error: <Error>"` with `" | user: <Prompt>"`
+     folded in only when it fits in the remaining budget; the error always
+     survives. The payload is exactly `{summary, agent, session_id}`.
+   - **batch/full tiers** — `engramPayload` `{statement, scope?, tags}`
+     (`json:"statement"`, `json:"scope,omitempty"`, `json:"tags"`).
 
 ### 3. `LEARN` tiers — `off | capture | batch | full`
 
@@ -109,19 +126,35 @@ The tiers are **mutually exclusive** (`memory-learn-tier-exclusive`); the
 default is `batch`:
 
 - `off` — nothing.
-- `capture` — per-turn `plur_capture` episodes (`{agent: Mode, session_id}`).
+- `capture` — per-turn `plur_capture` with payload **exactly**
+  `{summary, agent, session_id}` — three keys; `summary` required and always
+  bounded at `maxEpisodeBytes` via the `buildCaptureSummary` fit rule
+  (§2.4). `text`/`error`/`prompt` are **not** parameters — the internal
+  `episode` model is not a wire shape.
 - `batch` — episodes + **session-end `plur_learn_batch`** of a bounded
-  per-session ring buffer (~20 turns, per-entry text/token cap — bounded in
-  count and bytes), flushed via `defer plurHook.FlushSession()` in `Chat`
-  (success and error). Local extraction, zero LLM cost. `FlushSession` drains
-  under lock, deletes the map entry, then issues the MCP call **outside** the
-  lock.
-- `full` — episodes + **gated per-turn direct `plur_learn`**: signal = the
-  **user message only**; matcher = correction *frames* (`please remember` /
-  `note`, `from now on`, `stop <verb>`, `don't|do not|never|always
-  <imperative>` — documented heuristic list); flood bounds =
-  `MAX_LEARNS_PER_SESSION` = **3** (hot-reloadable) + per-session exact-match
-  hash dedupe. Statement = the user's own words, trimmed, tagged mode/scope.
+  per-session ring buffer (**~20 *learnable* turns** — skip-at-append drops
+  empty/whitespace-text episodes, so error turns never occupy ring capacity
+  and cannot evict learnable content), flushed via
+  `defer plurHook.FlushSession()` in `Chat` (success and error). Local
+  extraction, zero LLM cost. The batch payload is **engrams-only**:
+  `engrams: [{statement, scope?, tags}]` — episodes belong to the capture
+  tier's timeline, not the batch. `scope` is native per-engram (from
+  `MEMORY.SCOPE` — never silently dropped); the identity convention is
+  `tags: ["session:<id>", "mode:<mode>"]`; there is **no top-level
+  `session_id`** and the payload is **never `engrams: []`** (an empty drain
+  is a no-op). `FlushSession` drains under lock, deletes the map entry,
+  then issues the MCP call **outside** the lock.
+- `full` — episodes + **gated per-turn direct `plur_learn`** of
+  `{statement, scope?, tags}` — **no `agent`** (not a real parameter; the
+  server silently ignores it) and **no `session_id`** (an unstarted
+  session's `session_id` risks scope mis-resolution; there are zero
+  `plur_session_start` calls repo-wide) — plus the same session-end
+  `plur_learn_batch` flush as `batch`. Signal = the **user message only**;
+  matcher = correction *frames* (`please remember` / `note`, `from now on`,
+  `stop <verb>`, `don't|do not|never|always <imperative>` — documented
+  heuristic list); flood bounds = `MAX_LEARNS_PER_SESSION` = **3**
+  (hot-reloadable) + per-session exact-match hash dedupe. Statement = the
+  user's own words, trimmed, tagged `["session:<id>", "mode:<mode>"]`.
 
 `plur_ingest` (LLM extraction) is **never auto-fired** — explicit ingestion
 remains agent-mediated. Fail-open: memory errors are logged and ignored
@@ -204,7 +237,7 @@ relevance gate. Block header wording (verbatim):
 
 > ## PLUR MEMORY — recalled from the local memory store (user-authored or learned from your own sessions); follow them unless they conflict with explicit user instructions.
 
-### 8. Observability (Round 2 — settled)
+### 8. Observability (Round 2 — settled; Round 3 — issue #1410)
 
 - **In-process surface:** append `injected_engrams:<ids>` to
   `ContextRequest.Metadata.Warnings` — this survives to `Turn.State.Metadata`
@@ -216,8 +249,33 @@ relevance gate. Block header wording (verbatim):
   reusable by future transformers), populated from `ContextMetadata` at
   `finalizeTurnTrace`.
 - **Debug-level record** for skipped error episodes (the `IsTransient` skips
-  of §2).
-- Live E2E legs run behind `-tags=e2e_live` (precedent: `-tags=arch`).
+  of §2) and per-write Debug diagnostics.
+- **Write-failure surface (Round 3 correction).** The per-turn
+  `memory_write_failures` Warnings-append is **dropped** — it was
+  Transform-time-only and dead for the hook (`finalizeTurnTrace` and the
+  `TraceEvent` publish run **before** `notifyAfterTurn`, so a hook-append
+  never reaches `Turn.State.Metadata`). It is replaced by the
+  **session-end aggregate + per-tool all-or-nothing dead-tool notice**,
+  surfaced by the single top-of-Chat flush-then-read defer: turns.log via
+  `SystemMessageEvent` is the best-effort primary (it can race the telemetry
+  drain on ctx cancel); the synchronous stderr `Warn` is the asserted
+  surface.
+- **Live-leg posture (Round 3).** Live E2E legs run behind
+  `-tags=e2e_live` (precedent: `-tags=arch`) and are **never in
+  `make check-full`**. Environment preconditions (npx present, handshake OK)
+  skip the leg; once past the precondition stage, persistence assertions
+  **hard-fail on mismatch** — no log-and-pass past the precondition stage.
+  The `memory_live_test.go` header carries this posture.
+- **Deployment requirement (Round 3 — verified finding, issue #1410 / T7).**
+  Deployments must set `MCP_SERVERS.<server>.ENV.PLUR_TOOL_PROFILE: "full"`:
+  the real `@plur-ai/mcp` v0.18.0 server's default **"lean"** tool profile
+  rejects direct calls to `plur_capture` / `plur_learn_batch` /
+  `plur_inject_hybrid` ("not directly callable under the current tool
+  profile"); the server's own hint names `PLUR_TOOL_PROFILE=full` as the
+  direct-call surface. Under the default profile the integration's
+  write/injection paths are dead — and, since this fix, that
+  misconfiguration is now **caught and surfaced** by the dead-tool notice
+  instead of failing silently.
 
 ### 9. Domain-model governance (Round 2 — settled)
 
@@ -237,7 +295,7 @@ adapters in `internal/agent/memory`.
 a new violation introduced by this ADR's priority 15, and explicitly out of
 scope for this issue.
 
-### 10. The two-round corrections table (14 rows)
+### 10. The corrections tables (22 rows)
 
 #### Round 1 (on #1402, 9 premises)
 
@@ -262,6 +320,19 @@ scope for this issue.
 | 12 | DI wiring | `ChatterComposer` has no MCP accessor; clients not retained after registration; `ChatterConfig` lacks server key | `GetMCPClient(name)` on `ChatterComposer` (factory stashes map); server key on `ChatterConfig`; nil-client runtime guard; two-stage fallback |
 | 13 | Governance | `MemoryLearnTier` also caught by layers regex; ADR-068 filename/numbering | `Memory` exception + `MemoryLearnTier` enum exclusion; `docs/adr/2026-09-automatic-plur-memory-integration.md` indexed + linked in main README; pre-existing 110/110 collision acknowledged in ADR-068 |
 | 14 | Observability | `TurnTrace` carries no warnings today | `ContextMetadata.Warnings` (in-process) + additive general `TurnTrace.Warnings []string` + Info-level log line for CLI legs; live E2E behind `-tags=e2e_live` |
+
+#### Round 3 (on #1410, 8 findings — all verified)
+
+| # | Finding (verified) | Committed outcome |
+| --- | --- | --- |
+| 15 | Three payload mismatches (`plur_capture` missing required `summary`; `plur_learn_batch` sent `episodes`/`session_id` instead of `engrams[]`; `plur_learn` sent unknown `agent`) | Wire contract aligned: `{summary, agent, session_id}` / `{statement, scope?, tags}` / `{engrams:[{statement, scope?, tags}]}` |
+| 16 | Fully-silent failure class: the MCP adapter surfaces isError rejections as `ToolResult.Error` with a nil Go error (`stdio_client.go` three-way split) — no Warn ever fired | Detection contract: `err != nil || result.Error != nil` at all four call sites (three write sites + injector) |
+| 17 | Seam A blindness: an isError rejection's `result.Text` is the server's error message | Injector strips on `result.Error` — never builds a recall block from error text |
+| 18 | Skip-at-append + per-tool granularity | Ring buffer holds learnable turns only; `writeStats` keyed (session → tool → {failures, attempts}); per-tool dead trigger (`attempts ≥ 1 && failures == attempts`) |
+| 19 | Failure surface | Session-end aggregate + per-tool dead-tool notice via the single top-of-Chat flush-then-read defer; turns.log best-effort / stderr asserted; Warnings-append dropped |
+| 20 | Probe 1 (per-item `session_id` on `plur_learn_batch`) | **OUTCOME: keep-tags** — the server accepted the item but the `plur_history` `engram_created` event carries only `{type, scope}`; the per-item `session_id` does not round-trip → the `tags: ["session:<id>", "mode:<mode>"]` convention is retained |
+| 21 | Probe 2 (old `{statement, agent}` shape on `plur_learn`) | **OUTCOME: silently-ignore** — the server accepts the unknown `agent` param and creates the engram (no isError) |
+| 22 | `PLUR_TOOL_PROFILE` | The default "lean" profile rejects direct calls to the write/inject tools; deployments must set `PLUR_TOOL_PROFILE=full` in the MCP server's ENV (see §8) |
 
 ### 11. Failure/disable matrix
 

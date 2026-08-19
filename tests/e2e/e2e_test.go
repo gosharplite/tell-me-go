@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -70,18 +71,46 @@ func resolveE2EBinPath() (binPath string, isTemp bool) {
 	return filepath.Join(tempDir, "tell-me-go"+exeSuffix), true
 }
 
+// newestSourceMTime returns the newest ModTime among all non-test Go files
+// under root plus go.mod/go.sum — the inputs of the CLI binary. Directories
+// .git, vendor, and testdata are skipped (testdata holds helper binaries
+// built separately, never the CLI). Returns the zero time when nothing
+// matches.
+func newestSourceMTime(root string) (time.Time, error) {
+	var newest time.Time
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if path != root && (d.Name() == ".git" || d.Name() == "vendor" || d.Name() == "testdata") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		name := d.Name()
+		if strings.HasSuffix(name, "_test.go") {
+			return nil
+		}
+		if strings.HasSuffix(name, ".go") || name == "go.mod" || name == "go.sum" {
+			if info, ierr := d.Info(); ierr == nil && info.ModTime().After(newest) {
+				newest = info.ModTime()
+			}
+		}
+		return nil
+	})
+	return newest, err
+}
+
 // e2eBinaryFresh reports whether the cached binary at binPath is newer than
-// the source at mainPath and therefore does not need to be rebuilt.
-func e2eBinaryFresh(binPath, mainPath string) bool {
+// srcNewest (the newest contributing source mtime) and need not be rebuilt.
+// Equal mtimes are treated as stale (rebuild) — the safe direction.
+func e2eBinaryFresh(binPath string, srcNewest time.Time) bool {
 	binInfo, err := os.Stat(binPath)
 	if err != nil {
 		return false
 	}
-	srcInfo, err := os.Stat(mainPath)
-	if err != nil {
-		return false
-	}
-	return binInfo.ModTime().After(srcInfo.ModTime())
+	return binInfo.ModTime().After(srcNewest)
 }
 
 // buildE2EBinaryNow runs `go build -o binPath mainPath`. On failure it prints
@@ -101,7 +130,8 @@ func buildE2EBinaryNow(binPath, mainPath string) {
 
 // buildE2EBinary compiles cmd/tell-me-go into a persistent cache directory.
 // The cache lives at <UserCacheDir>/tell-me-go/e2e-binary/ so that rebuilds only
-// happen when cmd/tell-me-go/main.go is newer than the cached binary.
+// happen when any contributing source (a non-test .go file, go.mod, or go.sum
+// under the module root) is newer than the cached binary.
 // If os.UserCacheDir() fails, it falls back to a temporary directory.
 // On success it sets the package-level binPath, projectRoot, and isTempBinDir
 // variables. On failure it prints to stderr and calls os.Exit(1).
@@ -112,17 +142,21 @@ func buildE2EBinary() {
 		os.Exit(1)
 	}
 	projectRoot = filepath.Dir(filepath.Dir(wd))
-	mainPath := filepath.Join(projectRoot, "cmd", "tell-me-go", "main.go")
 
 	binPath, isTempBinDir = resolveE2EBinPath()
 
-	if e2eBinaryFresh(binPath, mainPath) {
+	srcNewest, err := newestSourceMTime(projectRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to scan source mtimes (%v); rebuilding\n", err)
+		srcNewest = time.Now()
+	}
+	if e2eBinaryFresh(binPath, srcNewest) {
 		fmt.Printf("Using cached binary: %s\n", binPath)
 		return
 	}
 
-	fmt.Printf("Building binary: %s from %s\n", binPath, mainPath)
-	buildE2EBinaryNow(binPath, mainPath)
+	fmt.Printf("Building binary: %s\n", binPath)
+	buildE2EBinaryNow(binPath, filepath.Join(projectRoot, "cmd", "tell-me-go", "main.go"))
 }
 
 func TestMain(m *testing.M) {
@@ -138,6 +172,106 @@ func TestMain(m *testing.M) {
 		_ = os.RemoveAll(filepath.Dir(binPath))
 	}
 	os.Exit(code)
+}
+
+// TestNewestSourceMTime pins the inclusion/exclusion semantics of the
+// source-mtime walk behind the E2E binary freshness check: non-test .go
+// files and go.mod/go.sum count; _test.go and testdata/ are excluded.
+// Explicit os.Chtimes values make the ordering deterministic (no Sleep,
+// per ADR-036).
+func TestNewestSourceMTime(t *testing.T) {
+	base := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+
+	// writeSource creates rel under root and pins its mtime to at.
+	writeSource := func(t *testing.T, root, rel string, at time.Time) {
+		t.Helper()
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("package p\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, root string) time.Time // returns the expected newest mtime
+		want  time.Time
+	}{
+		{
+			name: "empty directory returns zero time",
+			setup: func(t *testing.T, root string) time.Time {
+				return time.Time{}
+			},
+			want: time.Time{},
+		},
+		{
+			name: "newer internal file is detected",
+			setup: func(t *testing.T, root string) time.Time {
+				mainTime := base.Add(time.Hour)
+				writeSource(t, root, "main.go", mainTime)
+				// The fix's core case: an internal/*.go change newer than
+				// main.go must be picked up so the cached binary is rebuilt.
+				xTime := base.Add(2 * time.Hour)
+				writeSource(t, root, filepath.Join("internal", "agent", "x.go"), xTime)
+				return xTime
+			},
+			want: base.Add(2 * time.Hour),
+		},
+		{
+			name: "test files are excluded",
+			setup: func(t *testing.T, root string) time.Time {
+				mainTime := base.Add(time.Hour)
+				writeSource(t, root, "main.go", mainTime)
+				// Newer than the only binary input, but tests are not
+				// compiled into the binary and must be ignored.
+				writeSource(t, root, "main_test.go", base.Add(2*time.Hour))
+				return mainTime
+			},
+			want: base.Add(time.Hour),
+		},
+		{
+			name: "testdata helper is excluded",
+			setup: func(t *testing.T, root string) time.Time {
+				mainTime := base.Add(time.Hour)
+				writeSource(t, root, "main.go", mainTime)
+				// Helper binaries under testdata are built separately and
+				// must not trigger noisy CLI rebuilds.
+				writeSource(t, root, filepath.Join("testdata", "helper", "main.go"), base.Add(2*time.Hour))
+				return mainTime
+			},
+			want: base.Add(time.Hour),
+		},
+		{
+			name: "newer go.mod is included",
+			setup: func(t *testing.T, root string) time.Time {
+				writeSource(t, root, "main.go", base.Add(time.Hour))
+				modTime := base.Add(2 * time.Hour)
+				writeSource(t, root, "go.mod", modTime)
+				return modTime
+			},
+			want: base.Add(2 * time.Hour),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			tt.setup(t, root)
+
+			got, err := newestSourceMTime(root)
+			if err != nil {
+				t.Fatalf("newestSourceMTime(%s) returned error: %v", root, err)
+			}
+			if !got.Equal(tt.want) {
+				t.Errorf("newestSourceMTime(%s) = %v; want %v", root, got, tt.want)
+			}
+		})
+	}
 }
 
 // Helper to strip ANSI escape codes

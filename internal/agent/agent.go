@@ -355,6 +355,15 @@ func (a *agent) SetLimits(ctx context.Context, toolTurns, historyTokens, history
 	return a.applyConfig(ctx)
 }
 
+// memoryFlusher is the optional-behavior seam for the session-end memory
+// write flush + failure report (ADR-068 §2.3, issue #1410 §4): only the
+// plurHook concrete type implements both. TurnHook does not declare them;
+// a nil/absent hook yields ok=false and no defer is registered.
+type memoryFlusher interface {
+	FlushSession(string)
+	MemoryWriteReport(string) string
+}
+
 // Chat runs the multi-turn orchestration loop.
 func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error {
 	if err := a.ctxManager.AddContent(ctx, &domain_llm.Content{
@@ -364,14 +373,30 @@ func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 		return fmt.Errorf("failed to initialize session history: %w", err)
 	}
 
-	// Memory: flush the per-session learning ring buffer at session end —
-	// success and error (ADR-068 §2.3, batch/full tiers). The type assertion
-	// is the optional-behavior seam: TurnHook does not declare FlushSession;
-	// only the plurHook concrete type implements it. A nil/absent hook
-	// yields ok=false and no defer is registered.
+	// Memory: flush the per-session learning ring buffer at session end and
+	// surface the write-failure aggregate — success and error (ADR-068 §2.3,
+	// issue #1410 §4). Flush-then-read in ONE defer at the top of Chat:
+	// LIFO-safe by construction — the report is read after the flush attempt,
+	// so it includes the flush's own failure. The type assertion is the
+	// optional-behavior seam: TurnHook does not declare these methods; only
+	// the plurHook concrete type implements both. A nil/absent hook yields
+	// ok=false and no defer is registered.
 	if a.memoryHook != nil {
-		if flusher, ok := a.memoryHook.(interface{ FlushSession(string) }); ok {
-			defer flusher.FlushSession(s.ID)
+		if flusher, ok := a.memoryHook.(memoryFlusher); ok {
+			// Primary surface is turns.log via the turns logger (best-effort:
+			// this defer runs after the telemetry drain on ctx cancel, so it
+			// may race); the synchronous stderr Warn is the asserted surface
+			// (issue #1410 §4).
+			defer func() {
+				flusher.FlushSession(s.ID)
+				if report := flusher.MemoryWriteReport(s.ID); report != "" {
+					if a.turnsLogger != nil {
+						a.turnsLogger.HandleEvent(context.Background(),
+							events.SystemMessageEvent{Message: report, Level: "warn"})
+					}
+					a.getLogger().Warn("memory_write_failures", "report", report, "session", s.ID)
+				}
+			}()
 		}
 	}
 

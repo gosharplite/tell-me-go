@@ -180,14 +180,3 @@ func findEngramByText(st plurStoreFile, text string) (id string, ok bool) {
 	}
 	return "", false
 }
-
-// episodeTexts joins the "text" values of all stored episodes.
-func episodeTexts(st plurStoreFile) string {
-	var parts []string
-	for _, ep := range st.Episodes {
-		if text, ok := ep["text"].(string); ok && text != "" {
-			parts = append(parts, text)
-		}
-	}
-	return strings.Join(parts, "\n")
-}

@@ -29,8 +29,18 @@ func setupSkill(t *testing.T, homeDir, skillName, skillContent string) {
 	}
 }
 
-func setupMockLLMServer(t *testing.T) (*httptest.Server, <-chan string) {
+// setupMockLLMServer spins up the mock OpenAI-compatible LLM server. An
+// optional marker suffix (when provided) is appended to the canned response
+// content — used by the live memory legs so the captured episode/batch
+// statement carries a unique per-run marker (issue #1410 §5). The variadic
+// parameter keeps every existing call site (no marker) unchanged.
+func setupMockLLMServer(t *testing.T, marker ...string) (*httptest.Server, <-chan string) {
 	t.Helper()
+	content := "I will write a Go function."
+	if len(marker) > 0 && marker[0] != "" {
+		content = "I will write a Go function. [" + marker[0] + "]"
+	}
+
 	reqChan := make(chan string, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/chat/completions") {
@@ -43,9 +53,11 @@ func setupMockLLMServer(t *testing.T) (*httptest.Server, <-chan string) {
 		default:
 		}
 
-		// Return a dummy response to keep the agent happy
+		// Return a dummy response to keep the agent happy; the canned
+		// content carries the optional marker suffix.
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"choices": [{"message": {"role": "assistant", "content": "I will write a Go function."}}], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}`)
+		resp := fmt.Sprintf(`{"choices": [{"message": {"role": "assistant", "content": %q}}], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}`, content)
+		_, _ = fmt.Fprint(w, resp)
 	}))
 	t.Cleanup(server.Close)
 	return server, reqChan

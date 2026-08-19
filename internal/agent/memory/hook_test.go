@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -51,7 +53,9 @@ func TestHookTierOff(t *testing.T) {
 }
 
 // TestHookCaptureBranchI covers branch (i): Response present — with and
-// without an error annotation.
+// without an error annotation. The plur_capture payload is exactly
+// {summary, agent, session_id}; text/error/prompt keys are gone (issue
+// #1410).
 func TestHookCaptureBranchI(t *testing.T) {
 	t.Run("response nil err", func(t *testing.T) {
 		mock := &mockMCPClient{}
@@ -68,14 +72,22 @@ func TestHookCaptureBranchI(t *testing.T) {
 		if gotName != "plur_capture" {
 			t.Errorf("tool = %q, want plur_capture", gotName)
 		}
-		if gotArgs["agent"] != "coder" || gotArgs["session_id"] != "s1" || gotArgs["text"] != "hello" {
-			t.Errorf("args = %v, want agent/session_id/text", gotArgs)
+		if len(gotArgs) != 3 {
+			t.Errorf("args count = %d, want exactly 3, got %v", len(gotArgs), gotArgs)
 		}
-		if _, ok := gotArgs["error"]; ok {
-			t.Errorf("error key must be omitted when err is nil, got %v", gotArgs)
+		if gotArgs["summary"] != "hello" {
+			t.Errorf("summary = %v, want hello", gotArgs["summary"])
 		}
-		if _, ok := gotArgs["prompt"]; ok {
-			t.Errorf("prompt key must be omitted on branch (i), got %v", gotArgs)
+		if gotArgs["agent"] != "coder" {
+			t.Errorf("agent = %v, want coder", gotArgs["agent"])
+		}
+		if gotArgs["session_id"] != "s1" {
+			t.Errorf("session_id = %v, want s1", gotArgs["session_id"])
+		}
+		for _, key := range []string{"text", "error", "prompt"} {
+			if _, ok := gotArgs[key]; ok {
+				t.Errorf("%s key must be absent, got %v", key, gotArgs)
+			}
 		}
 	})
 
@@ -89,16 +101,28 @@ func TestHookCaptureBranchI(t *testing.T) {
 		h, _ := newTestHook(t, mock, config.MemoryLearnCapture, &stubHistoryManager{})
 		h.AfterTurn(responseTurn(0, "s1", "hello"), errors.New("boom"))
 
-		if gotArgs["text"] != "hello" {
-			t.Errorf("text = %v, want hello", gotArgs["text"])
+		// The text wins over the error annotation (branch (i) with err —
+		// the T1-revised buildCaptureSummary discriminates on text presence).
+		if gotArgs["summary"] != "hello" {
+			t.Errorf("summary = %v, want hello (text wins)", gotArgs["summary"])
 		}
-		if gotArgs["error"] != "boom" {
-			t.Errorf("error = %v, want boom", gotArgs["error"])
+		if gotArgs["agent"] != "coder" {
+			t.Errorf("agent = %v, want coder", gotArgs["agent"])
+		}
+		if gotArgs["session_id"] != "s1" {
+			t.Errorf("session_id = %v, want s1", gotArgs["session_id"])
+		}
+		for _, key := range []string{"text", "error", "prompt"} {
+			if _, ok := gotArgs[key]; ok {
+				t.Errorf("%s key must be absent, got %v", key, gotArgs)
+			}
 		}
 	})
 }
 
-// TestHookCaptureBranchII covers branch (ii): Response nil + error.
+// TestHookCaptureBranchII covers branch (ii): Response nil + error. The
+// error-first fold lands in the summary (buildCaptureSummary); the payload
+// stays exactly {summary, agent, session_id} (issue #1410).
 func TestHookCaptureBranchII(t *testing.T) {
 	t.Run("non-transient error captures error + prompt", func(t *testing.T) {
 		mock := &mockMCPClient{}
@@ -113,14 +137,24 @@ func TestHookCaptureBranchII(t *testing.T) {
 		})
 		h.AfterTurn(tun, errors.New("inference failed"))
 
-		if gotArgs["error"] != "inference failed" {
-			t.Errorf("error = %v, want inference failed", gotArgs["error"])
+		// The error-first fold: "error: <Error>", with " | user: <Prompt>"
+		// folded in when it fits — verify the fit rule yields exactly this.
+		if gotArgs["summary"] != "error: inference failed | user: fix the bug" {
+			t.Errorf("summary = %v, want %q", gotArgs["summary"], "error: inference failed | user: fix the bug")
 		}
-		if gotArgs["prompt"] != "fix the bug" {
-			t.Errorf("prompt = %v, want fix the bug", gotArgs["prompt"])
+		if len(gotArgs) != 3 {
+			t.Errorf("args count = %d, want exactly 3, got %v", len(gotArgs), gotArgs)
 		}
-		if _, ok := gotArgs["text"]; ok {
-			t.Errorf("text key must be omitted on branch (ii), got %v", gotArgs)
+		if gotArgs["agent"] != "coder" {
+			t.Errorf("agent = %v, want coder", gotArgs["agent"])
+		}
+		if gotArgs["session_id"] != "s1" {
+			t.Errorf("session_id = %v, want s1", gotArgs["session_id"])
+		}
+		for _, key := range []string{"text", "error", "prompt"} {
+			if _, ok := gotArgs[key]; ok {
+				t.Errorf("%s key must be absent, got %v", key, gotArgs)
+			}
 		}
 	})
 
@@ -164,8 +198,8 @@ func TestHookCaptureBranchIII(t *testing.T) {
 		h, _ := newTestHook(t, mock, config.MemoryLearnCapture, stub)
 		h.AfterTurn(turn(0, "s1", &orchestrator.TurnState{}), nil)
 
-		if gotArgs["text"] != "model text" {
-			t.Errorf("text = %v, want model text", gotArgs["text"])
+		if gotArgs["summary"] != "model text" {
+			t.Errorf("summary = %v, want model text", gotArgs["summary"])
 		}
 	})
 
@@ -205,7 +239,9 @@ func TestHookCaptureBranchIII(t *testing.T) {
 
 // TestHookBatch covers the batch tier: AfterTurn appends to the ring buffer
 // (no MCP call); FlushSession drains under lock, deletes the map entry, and
-// calls plur_learn_batch outside the lock; a second flush is a no-op.
+// calls plur_learn_batch outside the lock with the {engrams: []engramPayload}
+// payload (no top-level session_id — issue #1410); a second flush is a
+// no-op.
 func TestHookBatch(t *testing.T) {
 	mock := &mockMCPClient{}
 	h, _ := newTestHook(t, mock, config.MemoryLearnBatch, &stubHistoryManager{})
@@ -238,18 +274,32 @@ func TestHookBatch(t *testing.T) {
 	if gotName != "plur_learn_batch" {
 		t.Errorf("tool = %q, want plur_learn_batch", gotName)
 	}
-	if gotArgs["session_id"] != "s1" {
-		t.Errorf("session_id = %v, want s1", gotArgs["session_id"])
+	if len(gotArgs) != 1 {
+		t.Errorf("args count = %d, want exactly 1 (engrams only), got %v", len(gotArgs), gotArgs)
 	}
-	eps, ok := gotArgs["episodes"].([]episode)
+	if _, ok := gotArgs["session_id"]; ok {
+		t.Errorf("top-level session_id must be absent, got %v", gotArgs)
+	}
+	engrams, ok := gotArgs["engrams"].([]engramPayload)
 	if !ok {
-		t.Fatalf("episodes payload = %T, want []episode", gotArgs["episodes"])
+		t.Fatalf("engrams payload = %T, want []engramPayload", gotArgs["engrams"])
 	}
-	if len(eps) != 2 || eps[0].Text != "first" || eps[1].Text != "second" {
-		t.Errorf("episodes payload wrong: %+v", eps)
+	if len(engrams) != 2 {
+		t.Fatalf("engrams length = %d, want 2", len(engrams))
 	}
-	if eps[0].Mode != "coder" || eps[0].SessionID != "s1" {
-		t.Errorf("episode fields wrong: %+v", eps[0])
+	for i, want := range []string{"first", "second"} {
+		if engrams[i].Statement != want {
+			t.Errorf("engrams[%d].Statement = %q, want %q", i, engrams[i].Statement, want)
+		}
+	}
+	for i := range engrams {
+		wantTags := []string{"session:s1", "mode:coder"}
+		if !reflect.DeepEqual(engrams[i].Tags, wantTags) {
+			t.Errorf("engrams[%d].Tags = %v, want %v", i, engrams[i].Tags, wantTags)
+		}
+		if engrams[i].Scope != "" {
+			t.Errorf("engrams[%d].Scope = %q, want %q (unset default)", i, engrams[i].Scope, "")
+		}
 	}
 
 	h.mu.Lock()
@@ -265,6 +315,37 @@ func TestHookBatch(t *testing.T) {
 	if got := len(mock.recordedNames()); got != before {
 		t.Errorf("second flush must not call MCP: %d -> %d calls", before, got)
 	}
+
+	t.Run("flush applies configured scope to every engram", func(t *testing.T) {
+		mock := &mockMCPClient{}
+		h, cfgPtr := newTestHook(t, mock, config.MemoryLearnBatch, &stubHistoryManager{})
+		h.AfterTurn(responseTurn(0, "s1", "first"), nil)
+		h.AfterTurn(responseTurn(1, "s1", "second"), nil)
+
+		memCfg := cfgPtr.Load()
+		memCfg.Scope = "team-x"
+		cfgPtr.Store(memCfg)
+
+		var gotArgs map[string]interface{}
+		mock.CallToolFunc = func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+			gotArgs = args
+			return tools.ToolResult{}, nil
+		}
+		h.FlushSession("s1")
+
+		engrams, ok := gotArgs["engrams"].([]engramPayload)
+		if !ok {
+			t.Fatalf("engrams payload = %T, want []engramPayload", gotArgs["engrams"])
+		}
+		if len(engrams) != 2 {
+			t.Fatalf("engrams length = %d, want 2", len(engrams))
+		}
+		for i := range engrams {
+			if engrams[i].Scope != "team-x" {
+				t.Errorf("engrams[%d].Scope = %q, want %q", i, engrams[i].Scope, "team-x")
+			}
+		}
+	})
 }
 
 // TestHookFull covers the full tier: gated direct learn on correction frames,
@@ -279,7 +360,10 @@ func TestHookFull(t *testing.T) {
 			}
 			return tools.ToolResult{}, nil
 		}}
-		h, _ := newTestHook(t, mock, config.MemoryLearnFull, &stubHistoryManager{})
+		h, cfgPtr := newTestHook(t, mock, config.MemoryLearnFull, &stubHistoryManager{})
+		memCfg := cfgPtr.Load()
+		memCfg.Scope = "team-x"
+		cfgPtr.Store(memCfg)
 		tun := turn(0, "s1", &orchestrator.TurnState{
 			Response:        &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}},
 			PreparedHistory: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "please remember to always use X"}}}},
@@ -292,8 +376,40 @@ func TestHookFull(t *testing.T) {
 		if learnArgs[0]["statement"] != "please remember to always use X" {
 			t.Errorf("statement = %v", learnArgs[0]["statement"])
 		}
-		if learnArgs[0]["agent"] != "coder" {
-			t.Errorf("agent = %v, want coder", learnArgs[0]["agent"])
+		wantTags := []string{"session:s1", "mode:coder"}
+		if !reflect.DeepEqual(learnArgs[0]["tags"], wantTags) {
+			t.Errorf("tags = %v, want %v", learnArgs[0]["tags"], wantTags)
+		}
+		if learnArgs[0]["scope"] != "team-x" {
+			t.Errorf("scope = %v, want team-x", learnArgs[0]["scope"])
+		}
+		for _, key := range []string{"agent", "session_id"} {
+			if _, ok := learnArgs[0][key]; ok {
+				t.Errorf("%s key must be absent on plur_learn, got %v", key, learnArgs[0])
+			}
+		}
+	})
+
+	t.Run("learn omits scope when unset", func(t *testing.T) {
+		var learnArgs []map[string]interface{}
+		mock := &mockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+			if name == "plur_learn" {
+				learnArgs = append(learnArgs, args)
+			}
+			return tools.ToolResult{}, nil
+		}}
+		h, _ := newTestHook(t, mock, config.MemoryLearnFull, &stubHistoryManager{}) // default Scope == ""
+		tun := turn(0, "s1", &orchestrator.TurnState{
+			Response:        &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}},
+			PreparedHistory: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "please remember to always use Y"}}}},
+		})
+		h.AfterTurn(tun, nil)
+
+		if len(learnArgs) != 1 {
+			t.Fatalf("learn calls = %d, want 1", len(learnArgs))
+		}
+		if _, ok := learnArgs[0]["scope"]; ok {
+			t.Errorf("scope key must be absent when Scope == \"\", got %v", learnArgs[0])
 		}
 	})
 
@@ -437,4 +553,203 @@ func TestHookConcurrentAfterTurnAndFlush(t *testing.T) {
 	h.mu.Lock()
 	_ = h.buffers
 	h.mu.Unlock()
+}
+
+// TestHookWriteSitesTreatResultErrorAsFailure pins the domain-outcome
+// detection at all three write sites: the MCP adapter surfaces server-side
+// isError rejections as ToolResult.Error with a NIL Go error (issue #1410),
+// so each site must reach the detection check (no panic, call recorded)
+// without discarding the result before it. Counting assertions land in T3.
+func TestHookWriteSitesTreatResultErrorAsFailure(t *testing.T) {
+	reject := func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		return tools.ToolResult{Text: "rejected", Error: errors.New("rejected")}, nil
+	}
+
+	tests := []struct {
+		name  string
+		tier  config.MemoryLearnTier
+		tool  string
+		drive func(h *plurHook)
+	}{
+		{
+			name: "plur_capture",
+			tier: config.MemoryLearnCapture,
+			tool: "plur_capture",
+			drive: func(h *plurHook) {
+				h.AfterTurn(responseTurn(0, "s1", "hello"), nil)
+			},
+		},
+		{
+			name: "plur_learn",
+			tier: config.MemoryLearnFull,
+			tool: "plur_learn",
+			drive: func(h *plurHook) {
+				tun := turn(0, "s1", &orchestrator.TurnState{
+					Response:        &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}},
+					PreparedHistory: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "please remember to use X"}}}},
+				})
+				h.AfterTurn(tun, nil)
+			},
+		},
+		{
+			name: "plur_learn_batch",
+			tier: config.MemoryLearnBatch,
+			tool: "plur_learn_batch",
+			drive: func(h *plurHook) {
+				h.AfterTurn(responseTurn(0, "s1", "first"), nil)
+				h.AfterTurn(responseTurn(1, "s1", "second"), nil)
+				h.FlushSession("s1")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockMCPClient{CallToolFunc: reject}
+			h, _ := newTestHook(t, mock, tt.tier, &stubHistoryManager{})
+			tt.drive(h) // must not panic on result.Error != nil with nil Go err
+
+			if calls := mock.recordedNames(); !containsString(calls, "CallTool:"+tt.tool) {
+				t.Errorf("expected call to %s, got %v", tt.tool, calls)
+			}
+		})
+	}
+}
+
+// TestHookWriteStats_AllFailedToolDead pins the per-tool all-or-nothing dead
+// trigger on the simplest case: capture tier, 3 turns, every write rejected
+// (the real isError convention: ToolResult.Error set, nil Go error). The
+// report must surface the aggregate AND name plur_capture as dead.
+func TestHookWriteStats_AllFailedToolDead(t *testing.T) {
+	reject := func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		return tools.ToolResult{Text: "rejected", Error: errors.New("rejected")}, nil
+	}
+	mock := &mockMCPClient{CallToolFunc: reject}
+	h, _ := newTestHook(t, mock, config.MemoryLearnCapture, &stubHistoryManager{})
+
+	for i := 0; i < 3; i++ {
+		h.AfterTurn(responseTurn(i, "s1", fmt.Sprintf("turn %d", i)), nil)
+	}
+
+	report := h.MemoryWriteReport("s1")
+	if !strings.Contains(report, "memory write failures: 3") {
+		t.Errorf("report = %q, want it to contain %q", report, "memory write failures: 3")
+	}
+	if !strings.Contains(report, "plur_capture failing — learning is disabled") {
+		t.Errorf("report = %q, want it to contain %q", report, "plur_capture failing — learning is disabled")
+	}
+}
+
+// TestHookWriteStats_TransientTolerance pins the non-dead boundary: 10
+// attempts with exactly 9 failures (1 success). The aggregate still surfaces,
+// but no tool is named dead — per-tool all-or-nothing tolerates transients.
+func TestHookWriteStats_TransientTolerance(t *testing.T) {
+	var calls int
+	mock := &mockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		calls++
+		if calls <= 9 {
+			return tools.ToolResult{Text: "rejected", Error: errors.New("rejected")}, nil
+		}
+		return tools.ToolResult{}, nil
+	}}
+	h, _ := newTestHook(t, mock, config.MemoryLearnCapture, &stubHistoryManager{})
+
+	for i := 0; i < 10; i++ {
+		h.AfterTurn(responseTurn(i, "s1", fmt.Sprintf("turn %d", i)), nil)
+	}
+
+	report := h.MemoryWriteReport("s1")
+	if !strings.Contains(report, "memory write failures: 9") {
+		t.Errorf("report = %q, want it to contain %q", report, "memory write failures: 9")
+	}
+	if strings.Contains(report, "failing — learning is disabled") {
+		t.Errorf("report = %q, must NOT name a dead tool (1 success among 10 attempts)", report)
+	}
+}
+
+// TestHookWriteStats_PartialDrift pins the exact shipped scenario: the full
+// tier is the only one that calls two write tools in one session. plur_learn
+// succeeds (frame-match turn) while plur_learn_batch is rejected via
+// FlushSession — partial schema drift on one tool must dead-name ONLY the
+// failing tool.
+func TestHookWriteStats_PartialDrift(t *testing.T) {
+	mock := &mockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		if name == "plur_learn_batch" {
+			return tools.ToolResult{Text: "rejected", Error: errors.New("rejected")}, nil
+		}
+		return tools.ToolResult{}, nil
+	}}
+	h, _ := newTestHook(t, mock, config.MemoryLearnFull, &stubHistoryManager{})
+	tun := turn(0, "s1", &orchestrator.TurnState{
+		Response:        &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}},
+		PreparedHistory: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "please remember to use X"}}}},
+	})
+	h.AfterTurn(tun, nil)
+	h.FlushSession("s1")
+
+	report := h.MemoryWriteReport("s1")
+	if !strings.Contains(report, "plur_learn_batch failing — learning is disabled") {
+		t.Errorf("report = %q, want it to name plur_learn_batch as dead", report)
+	}
+	if strings.Contains(report, "plur_learn failing") {
+		t.Errorf("report = %q, must NOT name plur_learn (it succeeded)", report)
+	}
+}
+
+// TestHookWriteStats_FlushAttemptIncluded proves the flush's own attempt is
+// counted BEFORE the report is read — the T4 flush-then-read ordering in
+// Chat's defer depends on this. Batch tier: 1 buffered turn, FlushSession
+// rejected → 1 failure on plur_learn_batch, named dead.
+func TestHookWriteStats_FlushAttemptIncluded(t *testing.T) {
+	mock := &mockMCPClient{}
+	h, _ := newTestHook(t, mock, config.MemoryLearnBatch, &stubHistoryManager{})
+	h.AfterTurn(responseTurn(0, "s1", "first"), nil)
+
+	mock.CallToolFunc = func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		return tools.ToolResult{Text: "rejected", Error: errors.New("rejected")}, nil
+	}
+	h.FlushSession("s1")
+
+	report := h.MemoryWriteReport("s1")
+	if !strings.Contains(report, "memory write failures: 1") {
+		t.Errorf("report = %q, want it to contain %q", report, "memory write failures: 1")
+	}
+	if !strings.Contains(report, "plur_learn_batch failing — learning is disabled") {
+		t.Errorf("report = %q, want it to name plur_learn_batch as dead", report)
+	}
+}
+
+// TestHookWriteStats_NoFailuresEmpty pins the empty-report contract: a
+// fully-successful session yields "" (the accessor reads no failure signal,
+// so Chat's defer has nothing to surface).
+func TestHookWriteStats_NoFailuresEmpty(t *testing.T) {
+	mock := &mockMCPClient{}
+	h, _ := newTestHook(t, mock, config.MemoryLearnCapture, &stubHistoryManager{})
+
+	for i := 0; i < 3; i++ {
+		h.AfterTurn(responseTurn(i, "s1", fmt.Sprintf("turn %d", i)), nil)
+	}
+
+	if report := h.MemoryWriteReport("s1"); report != "" {
+		t.Errorf("report = %q, want empty string (zero failures)", report)
+	}
+}
+
+// TestHookWriteStats_ReportDeletesEntry pins delete-on-read: after a failed
+// session's report, a second read of the same session returns "" — bounded
+// map growth, the next session starts fresh.
+func TestHookWriteStats_ReportDeletesEntry(t *testing.T) {
+	reject := func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		return tools.ToolResult{Text: "rejected", Error: errors.New("rejected")}, nil
+	}
+	mock := &mockMCPClient{CallToolFunc: reject}
+	h, _ := newTestHook(t, mock, config.MemoryLearnCapture, &stubHistoryManager{})
+	h.AfterTurn(responseTurn(0, "s1", "hello"), nil)
+
+	if first := h.MemoryWriteReport("s1"); first == "" {
+		t.Fatal("first report must be non-empty (1 failure recorded)")
+	}
+	if second := h.MemoryWriteReport("s1"); second != "" {
+		t.Errorf("second report = %q, want empty string (delete-on-read)", second)
+	}
 }
