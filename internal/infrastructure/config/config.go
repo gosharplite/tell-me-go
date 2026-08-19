@@ -17,6 +17,7 @@ import (
 	"github.com/go-viper/mapstructure/v2"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/spf13/viper"
+	yaml "gopkg.in/yaml.v3"
 )
 
 // isDebug reports whether the default slog logger is at Debug level.
@@ -55,6 +56,19 @@ func load(path string) (*domain_config.Config, error) {
 	setDefaults(&cfg)
 
 	if err := unmarshalConfig(v, &cfg); err != nil {
+		return nil, err
+	}
+
+	// Case-preserving MCP_SERVERS.*.ENV bypass (issue #1407): Viper
+	// lowercases nested map keys during Unmarshal, mangling conventionally-
+	// cased child environment variable names (PLUR_TOOL_PROFILE would reach
+	// the stdio child as plur_tool_profile). Re-parse the raw YAML and stamp
+	// the decoded Env maps byte-for-byte, rejecting case-colliding sibling
+	// keys deterministically. The missing-file path is already tolerated
+	// upstream (readConfigFile returns nil for os.IsNotExist), so a read
+	// error here simply skips the bypass and defaults stand. The double file
+	// read is an accepted startup/hot-reload-only cost.
+	if err := applyCasePreservingMCPServerEnvFile(path, &cfg); err != nil {
 		return nil, err
 	}
 
@@ -113,6 +127,184 @@ func validationLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelWarn}))
 }
 
+// envPrefix and envKeyReplacer are the app-owned environment-binding
+// contract consumed by BOTH configureViper and the case-preserving ENV
+// bypass (envNameForMCPServerLeaf). Viper applies them to resolve
+// TELL_ME_* overrides; the bypass reconstructs the same names.
+const envPrefix = "TELL_ME"
+
+var envKeyReplacer = strings.NewReplacer("::", "_", "-", "_")
+
+// envNameForMCPServerLeaf builds the TELL_ME_* name Viper's AutomaticEnv
+// resolves for MCP_SERVERS.<name>.ENV.<leaf>, mirroring Viper's two steps —
+// mergeWithEnvPrefix (ToUpper of prefix+"_"+path) then envKeyReplacer — from
+// the app-owned declarations above. Lockstep is pinned end-to-end by
+// TestLoad_MCPStdio_EnvOverrideWins.
+func envNameForMCPServerLeaf(name, leaf string) string {
+	key := envPrefix + "_" + strings.ToUpper("mcp_servers::"+name+"::env::"+strings.ToLower(leaf))
+	return envKeyReplacer.Replace(key)
+}
+
+// scalarString renders a raw-YAML scalar as its config-string form, matching
+// mapstructure's weak-typing parity: nil → "" (zero value), string → as-is,
+// int/bool/float → fmt.Sprint (123 → "123", true → "true").
+func scalarString(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return x
+	default:
+		return fmt.Sprint(x)
+	}
+}
+
+// isScalarValue reports whether v is a YAML scalar (nil, string, number,
+// bool) rather than a nested mapping or sequence. ENV values must be scalars
+// — a nested structure cannot become a child environment variable.
+func isScalarValue(v any) bool {
+	switch reflect.ValueOf(v).Kind() {
+	case reflect.Map, reflect.Slice, reflect.Array, reflect.Struct, reflect.Func, reflect.Chan:
+		return false
+	default:
+		return true
+	}
+}
+
+// stringKeyMap converts a yaml.v3-decoded mapping node into a map[string]any,
+// preserving exact key casing. yaml.v3 decodes a nested mapping as
+// map[string]interface{} when every key is a string, but falls back to
+// map[interface{}]interface{} when any key is non-string (e.g. an unquoted
+// YAML null such as `Null:` or `~`, which parse as a nil key). Non-string
+// keys cannot name configuration or environment entries, so they are dropped
+// — mirroring Viper, which also cannot represent them.
+func stringKeyMap(v any) (map[string]any, bool) {
+	switch m := v.(type) {
+	case map[string]any:
+		return m, true
+	case map[interface{}]interface{}:
+		out := make(map[string]any, len(m))
+		for k, val := range m {
+			if s, ok := k.(string); ok {
+				out[s] = val
+			}
+		}
+		return out, true
+	default:
+		return nil, false
+	}
+}
+
+// caseInsensitiveMatch returns the single raw child of node whose key
+// EqualFold-matches needle, or (nil, nil) when none exists. More than one
+// match is a deterministic ambiguity — the load fails naming both raw keys
+// (Viper's random collapse winner is never trusted).
+func caseInsensitiveMatch(node map[string]any, needle, context string) (map[string]any, error) {
+	names := make([]string, 0, 2)
+	var matched map[string]any
+	for k, v := range node {
+		if strings.EqualFold(k, needle) {
+			names = append(names, k)
+			if m, ok := stringKeyMap(v); ok {
+				matched = m
+			}
+		}
+	}
+	switch len(names) {
+	case 0:
+		return nil, nil
+	case 1:
+		return matched, nil
+	default:
+		return nil, fmt.Errorf("%s key collision: raw keys %q and %q both map to the same key — rename one", context, names[0], names[1])
+	}
+}
+
+// buildMCPServerEnvMap rebuilds a server's Env map from the raw ENV node's
+// children. The raw leaf key IS the byte-for-byte target key — the one level
+// where the raw name is the correct Go map key. Rebuilding from raw also
+// purges the phantom lowercase survivor Viper leaves when Path and PATH both
+// exist.
+func buildMCPServerEnvMap(serverName string, envNode map[string]any) (map[string]string, error) {
+	env := make(map[string]string, len(envNode))
+	for k, rv := range envNode {
+		if !isScalarValue(rv) {
+			return nil, fmt.Errorf("MCP_SERVERS.%s.ENV.%s must be a scalar value, got map/sequence", serverName, k)
+		}
+		name := envNameForMCPServerLeaf(serverName, k)
+		if override, ok := os.LookupEnv(name); ok && override != "" {
+			env[k] = os.ExpandEnv(override) // env-wins; empty treated as unset (AllowEmptyEnv parity)
+		} else {
+			env[k] = os.ExpandEnv(scalarString(rv))
+		}
+	}
+	return env, nil
+}
+
+// applyCasePreservingMCPServerEnv re-applies MCP_SERVERS.*.ENV from the raw
+// YAML bytes after Viper's lossy decode, preserving ENV keys byte-for-byte
+// and rejecting case-colliding sibling keys deterministically. Viper
+// v1.21.0 lowercases every config map key recursively (insensitiviseMap)
+// during Unmarshal, which mangles the conventionally-cased variable names
+// that stdio children consume via their process environment (issue #1407).
+// A Go map decoded by yaml.v3 preserves exact key casing and case-differing
+// siblings, so each decoded server's Env map is rebuilt from the raw ENV
+// node. Sibling keys that differ only in case are rejected with an error
+// naming both raw keys; nothing is normalized or silently collapsed.
+func applyCasePreservingMCPServerEnv(raw []byte, cfg *domain_config.Config) error {
+	var root map[string]any
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return fmt.Errorf("parse raw config for MCP_SERVERS ENV bypass: %w", err)
+	}
+	rawMCPServers, err := caseInsensitiveMatch(root, "MCP_SERVERS", "MCP_SERVERS")
+	if err != nil {
+		return err
+	}
+	if rawMCPServers == nil {
+		return nil // no MCP block — nothing to preserve
+	}
+	// Server level: iterate the DECODED server keys — never stamp a raw-cased
+	// server name into cfg.MCPServers, because a raw-cased stamp on an absent
+	// key would insert a phantom zero-valued server that fails validation
+	// misleadingly. A nil serverNode (raw server value not a mapping) falls
+	// through to the ENV navigation, which ranges over the empty node and
+	// skips the server (matching the old case-0 continue).
+	for serverName := range cfg.MCPServers {
+		serverNode, err := caseInsensitiveMatch(rawMCPServers, serverName, "MCP_SERVERS")
+		if err != nil {
+			return err
+		}
+		envNode, err := caseInsensitiveMatch(serverNode, "ENV", "MCP_SERVERS."+serverName+" ENV")
+		if err != nil {
+			return err
+		}
+		if envNode == nil {
+			continue // no ENV node — leave the decoded Env untouched
+		}
+		env, err := buildMCPServerEnvMap(serverName, envNode)
+		if err != nil {
+			return err
+		}
+		// The struct stores values, not pointers, so assign back via the map.
+		srv := cfg.MCPServers[serverName]
+		srv.Env = env
+		cfg.MCPServers[serverName] = srv
+	}
+	return nil
+}
+
+// applyCasePreservingMCPServerEnvFile reads the raw config bytes and applies
+// the ENV case-preserving bypass. A read error skips the bypass and defaults
+// stand (readConfigFile already tolerates a missing file upstream); the
+// double read is an accepted startup/hot-reload-only cost (ADR-069).
+func applyCasePreservingMCPServerEnvFile(path string, cfg *domain_config.Config) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return applyCasePreservingMCPServerEnv(raw, cfg)
+}
+
 // configureViper creates a Viper instance, loads the YAML file, and binds environment variables.
 func configureViper(path string) (*viper.Viper, error) {
 	slog.Debug("========================================")
@@ -127,9 +319,9 @@ func configureViper(path string) (*viper.Viper, error) {
 	}
 
 	// Set Environment Overrides (Standardized to TELL_ME_)
-	v.SetEnvPrefix("TELL_ME")
+	v.SetEnvPrefix(envPrefix)
 	// Replace custom delimiter and dashes so TELL_ME_PROVIDERS_GOOGLE_API_KEY maps to Providers::Google::APIKey
-	v.SetEnvKeyReplacer(strings.NewReplacer("::", "_", "-", "_"))
+	v.SetEnvKeyReplacer(envKeyReplacer)
 	v.AutomaticEnv()
 
 	// Bind Legacy GOSHARP_* variables for backward compatibility

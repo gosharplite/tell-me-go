@@ -161,6 +161,7 @@ An external Model Context Protocol (MCP) server providing dynamic tool capabilit
 - **mcp-token-not-logged** — Credentials and derived Authorization headers for `MCPServer`s must never be logged or serialized by the MCP credential plumbing (config validation, DI factory, client transport).
 - **mcp-readonly-defaults** — An `MCPServer` targeting a read-only endpoint defaults to `requiresConsent: false` and concurrent execution (`serial: false`).
 - **mcp-stdio-trusted-defaults** — A stdio `MCPServer` (command set) defaults to `requiresConsent: false` (trusted local spawn) and `serial: true`; an explicit `REQUIRES_CONSENT: true` opts back in.
+- **mcp-env-keys-byte-for-byte** — `MCPServer.env` keys reach the spawned stdio child byte-for-byte: the config loader never lowercases or otherwise transforms ENV keys, and sibling keys that differ only by case (Plur/plur, ENV/env) are rejected deterministically at load.
 
 ### `Memory`
 
@@ -761,6 +762,7 @@ The agent initializes external tools from configured MCP servers over Streamable
 - **mcp-server-key-format** — MCP server keys must be 1 to 24 characters matching `^[a-z0-9-]+$`.
 - **mcp-readonly-defaults** — An `MCPServer` targeting a read-only endpoint defaults to `requiresConsent: false` and concurrent execution (`serial: false`).
 - **mcp-stdio-trusted-defaults** — A stdio `MCPServer` (command set) defaults to `requiresConsent: false` (trusted local spawn) and `serial: true`; an explicit `REQUIRES_CONSENT: true` opts back in.
+- **mcp-env-keys-byte-for-byte** — `MCPServer.env` keys reach the spawned stdio child byte-for-byte: the config loader never lowercases or otherwise transforms ENV keys, and sibling keys that differ only by case (Plur/plur, ENV/env) are rejected deterministically at load.
 - **tool-timeout** — Execution duration must not exceed `Config.toolTimeout` seconds.
 - **tool-unique-name** — Each `Tool` has a unique name.
 
