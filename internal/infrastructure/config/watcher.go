@@ -77,6 +77,7 @@ type fileConfigWatcher struct {
 	defaultToolTurns     int
 	defaultHistoryTurns  int
 	defaultWindow        int
+	memory               domain_config.MemoryConfig
 }
 
 // NewFileConfigWatcher creates a new fileConfigWatcher with default values.
@@ -96,6 +97,7 @@ func NewFileConfigWatcher(mainLoader domain_config.ConfigLoader, sessionLoader d
 		defaultToolTurns:     toolTurns,
 		defaultHistoryTurns:  historyTurns,
 		defaultWindow:        defaultWindow,
+		memory:               domain_config.DefaultMemoryConfig(),
 	}
 }
 
@@ -241,6 +243,8 @@ func (cw *fileConfigWatcher) applyMainConfig(cfg *domain_config.Config, info os.
 	cw.maxHistoryTurns = cfg.MaxHistoryTurns
 
 	cw.contextWindow = resolveContextWindow(cfg, model, cw.defaultWindow)
+
+	cw.memory = cfg.Memory
 }
 
 // applySessionLimits applies non-nil session config overrides to the watcher's
@@ -291,6 +295,15 @@ func (cw *fileConfigWatcher) GetContextWindow() int {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	return cw.contextWindow
+}
+
+// GetMemoryConfig returns the current cached MEMORY configuration. It is the
+// hot-reload surface for ENABLED/LEARN/INJECT_BUDGET/MAX_LEARNS_PER_SESSION;
+// SERVER is restart-level.
+func (cw *fileConfigWatcher) GetMemoryConfig() domain_config.MemoryConfig {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+	return cw.memory
 }
 
 // getDefaultWindow returns the default context window value.

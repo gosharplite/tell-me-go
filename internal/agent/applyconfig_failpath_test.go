@@ -35,6 +35,9 @@ func (s *stubConfigWatcher) SetLimits(_, _, _ int)       {}
 func (s *stubConfigWatcher) GetLimits() (int, int, int)  { return s.tokens, s.toolTurns, s.historyTurns }
 func (s *stubConfigWatcher) ApplyLimits(_ events.Limits) {}
 func (s *stubConfigWatcher) GetContextWindow() int       { return 1000000 }
+func (s *stubConfigWatcher) GetMemoryConfig() domain_config.MemoryConfig {
+	return domain_config.DefaultMemoryConfig()
+}
 
 // ---------------------------------------------------------------------------
 // TestApplyConfig_FailFastChain

@@ -18,6 +18,7 @@ type noOpConfigWatcher struct {
 	maxToolTurns     int
 	maxHistoryTurns  int
 	contextWindow    int
+	memory           MemoryConfig
 }
 
 // NewNoOpConfigWatcher creates a ConfigWatcher with static default values.
@@ -27,6 +28,7 @@ func NewNoOpConfigWatcher(tokens, toolTurns, historyTurns int) ConfigWatcher {
 		maxToolTurns:     toolTurns,
 		maxHistoryTurns:  historyTurns,
 		contextWindow:    1000000,
+		memory:           DefaultMemoryConfig(),
 	}
 }
 
@@ -57,6 +59,12 @@ func (cw *noOpConfigWatcher) GetContextWindow() int {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	return cw.contextWindow
+}
+
+func (cw *noOpConfigWatcher) GetMemoryConfig() MemoryConfig {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+	return cw.memory
 }
 
 func (cw *noOpConfigWatcher) ApplyLimits(l events.Limits) {
