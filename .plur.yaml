@@ -1,0 +1,4 @@
+# PLUR project config — tell-me-go
+# Default scope for this repo: learnings and injection route to project:tell-me-go
+# (see packages/core/src/project-config.ts in plur-ai/plur for the schema).
+scope: "project:tell-me-go"
