@@ -92,7 +92,7 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"(*renderer).makeSubscriber":                                {Line: 48, Complexity: 11, FilePath: "internal/ui/tui/progress/renderer.go"},
 		"TestMediaBlocks":                                           {Line: 18, Complexity: 11, FilePath: "internal/infrastructure/llm/openai/client_vision_test.go"},
 		"TestRunCommand_NonExitErrorWaitPath":                       {Line: 817, Complexity: 11, FilePath: "internal/tools/workspace/process_executor_stream_test.go"},
-		"TestBasicAuthTransport":                                    {Line: 645, Complexity: 11, FilePath: "internal/infrastructure/mcp/client_test.go"},
+		"TestBasicAuthTransport":                                    {Line: 646, Complexity: 11, FilePath: "internal/infrastructure/mcp/client_test.go"},
 		"TestFakeToolchainRunner_PresetValues":                      {Line: 36, Complexity: 28, FilePath: "internal/tools/toolstest/fake_toolchain_runner_test.go"},
 		"TestFakeToolchainRunner_ZeroDefaults":                      {Line: 249, Complexity: 38, FilePath: "internal/tools/toolstest/fake_toolchain_runner_test.go"},
 		"TestToSDKSchema_EmptyType_OmitsTypeKey":                    {Line: 20, Complexity: 19, FilePath: "internal/infrastructure/llm/gemini/tools_test.go"},
@@ -100,11 +100,12 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"TestToOpenAITools_EmptyTypeNested_OmitsEmptyTypeKey":       {Line: 124, Complexity: 16, FilePath: "internal/infrastructure/llm/openai/tools_test.go"},
 		"TestConvertSchema_NestedUnrepresentable_BecomesUntypedAny": {Line: 241, Complexity: 12, FilePath: "internal/tools/integrations/mcp/schema_test.go"},
 		"(*MCPServerConfig).validate":                               {Line: 103, Complexity: 20, FilePath: "internal/domain/config/mcp_config.go"},
-		"TestMCPFactory_ConcurrentBuild":                            {Line: 683, Complexity: 11, FilePath: "internal/infrastructure/di/mcp_factory_test.go"},
-		"TestMCPFactory_ConcurrentBuild_FailingServerSkips":         {Line: 743, Complexity: 15, FilePath: "internal/infrastructure/di/mcp_factory_test.go"},
+		"TestMCPFactory_ConcurrentBuild":                            {Line: 684, Complexity: 11, FilePath: "internal/infrastructure/di/mcp_factory_test.go"},
+		"TestMCPFactory_ConcurrentBuild_FailingServerSkips":         {Line: 744, Complexity: 15, FilePath: "internal/infrastructure/di/mcp_factory_test.go"},
 		"TestStdio_RoundTrip":                                       {Line: 112, Complexity: 11, FilePath: "internal/infrastructure/mcp/stdio_client_integration_test.go"},
 		"TestStdio_LauncherTreePassThrough":                         {Line: 216, Complexity: 13, FilePath: "internal/infrastructure/mcp/stdio_client_integration_test.go"},
-		"TestStdio_ChildDeathMidSession":                            {Line: 278, Complexity: 11, FilePath: "internal/infrastructure/mcp/stdio_client_integration_test.go"},
+		"TestStdio_ChildDeathMidSession":                            {Line: 278, Complexity: 13, FilePath: "internal/infrastructure/mcp/stdio_client_integration_test.go"},
+		"TestResolveCommand":                                        {Line: 25, Complexity: 13, FilePath: "internal/infrastructure/mcp/stdio_client_test.go"},
 	}
 
 	require.Equal(t, expectedCataloged, cataloged)
