@@ -558,6 +558,7 @@ Significant architectural decisions are documented in our [Architecture Decision
 *   **[ADR-066](docs/adr/2026-08-infrastructure-application-dependency-inversion.md)** — infrastructure→application dependency inversion: six-type port relocation, `internal/app` construction seam, factory slim, and the ADR-carved `di → ui` exception (issue #1364).
 *   **[ADR-067](docs/adr/2026-08-mcp-client-architecture.md)** — MCP client architecture: remote MCP server consumption via streamable HTTP and `tools.MCPClient` domain port (issue #1373).
 *   **[ADR-068](docs/adr/2026-09-automatic-plur-memory-integration.md)** — automatic PLUR memory integration: `plurInjector` context transformer (priority 15, marker-keyed replace-in-place) and `plurHook` TurnHook (four-tier `LEARN`) over the `tools.MCPClient` domain port (issue #1404).
+*   **[ADR-069](docs/adr/2026-09-mcp-stdio-env-key-case-preservation.md)** — MCP stdio ENV key case preservation: total Viper bypass, byte-for-byte child env keys, deterministic collision rejection (issue #1407).
 
 For the evolution of the shell-based environment management tooling — from simple bash aliases through Toby, Dobby, Porter, Sprawl, Winky, Flopsy, and Niffler — see [Evolution of Environment Management](docs/architect/environments/environment-management-evolution.md).
 
