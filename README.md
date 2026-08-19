@@ -369,6 +369,17 @@ the server's own subprocess resolution, e.g. uvx finding `mcp-server-git`).
 `${VAR}` is expanded at config load in `COMMAND`, `ARGS`, `DIR`, and `ENV`
 values.
 
+`ENV` keys reach the spawned child **byte-for-byte** — the exact written
+casing is preserved (`PLUR_TOOL_PROFILE` stays `PLUR_TOOL_PROFILE`), so
+case-sensitive servers read their variables as authored. Values support
+`${VAR}` expansion. A `TELL_ME_MCP_SERVERS_<NAME>_ENV_<KEY>` environment
+variable overrides the YAML value for a **declared** `ENV` key (env-over-file,
+like all `TELL_ME_*` overrides); it cannot invent a variable the `ENV` block
+did not declare, and an **empty** override value leaves the YAML value in
+place. An override for a name shared by case-differing YAML keys (`Path` and
+`PATH`) applies to **all casings** of that name — both become the override
+value; keys reach the child byte-for-byte regardless of source.
+
 For executables inside a venv or toolchain directory, use an absolute or
 `${VAR}`-expanded `COMMAND`:
 
