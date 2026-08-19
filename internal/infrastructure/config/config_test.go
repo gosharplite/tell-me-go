@@ -1222,8 +1222,9 @@ MCP_SERVERS:
 // for []string elements or map[string]string values, this test fails and the
 // hook needs a change (the values are compared against the expanded forms).
 func TestLoad_MCPStdio_EnvExpansion(t *testing.T) {
-	t.Setenv("TELL_ME_MODE", "")              // neutralize ambient env pollution
-	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
+	t.Setenv("TELL_ME_MODE", "")                    // neutralize ambient env pollution
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "")       // neutralize ambient env pollution
+	t.Setenv("TELL_ME_MCP_SERVERS_FS_ENV_PATH", "") // neutralize the ENV leaf under test
 	t.Setenv("UVX_PATH", "/venv/bin")
 	t.Setenv("ARG_VAL", "expanded-arg")
 	t.Setenv("CUSTOM_PATH", "/custom/bin")
@@ -1254,15 +1255,262 @@ MCP_SERVERS:
 	if len(fs.Args) != 1 || fs.Args[0] != "--flag=expanded-arg" {
 		t.Errorf("ARGS element not expanded: got %v, want [--flag=expanded-arg]", fs.Args)
 	}
-	// Viper lowercases nested map keys, so assert on the value rather than
-	// the key casing to pin the expansion itself.
-	expanded := false
-	for _, v := range fs.Env {
-		if v == "/custom/bin" {
-			expanded = true
-		}
+	// The case-preserving ENV bypass (issue #1407) re-applies ENV from the
+	// raw YAML byte-for-byte, so the key casing is now an invariant: the
+	// expanded value must be reachable at Env["PATH"] directly.
+	if got := fs.Env["PATH"]; got != "/custom/bin" {
+		t.Errorf("ENV value not expanded: Env[PATH] = %q, want %q", got, "/custom/bin")
 	}
-	if !expanded {
-		t.Errorf("ENV value not expanded: got %v, want a value of /custom/bin", fs.Env)
+}
+
+// TestLoad_MCPStdio_EnvKeyCasePreserved pins issue #1407: ENV map keys for
+// stdio MCP servers must survive config load byte-for-byte, because the
+// spawned child process consumes them as case-sensitive environment variable
+// names. Viper v1.21.0 lowercases every nested map key during Unmarshal; the
+// case-preserving bypass re-applies ENV from the raw YAML after the decode.
+// PLUR_TOOL_PROFILE must stay exactly as written, Path and PATH must coexist
+// as distinct keys, a null value must surface as the zero string, and no
+// phantom lowercase key (path) may appear.
+//
+// DEVIATION (documented for Architect review): the task's YAML block wrote
+// the null leaf as an unquoted `Null:` — but in YAML, unquoted Null is the
+// null scalar, so yaml.v3 parses it as a nil KEY (not the string "Null"),
+// which cannot name an environment variable and is dropped (Viper drops it
+// too). The key is quoted ("Null":) to preserve the task's own assertions —
+// a key literally named "Null" whose null VALUE surfaces as "".
+func TestLoad_MCPStdio_EnvKeyCasePreserved(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "")                                 // neutralize ambient env pollution
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "")                    // neutralize ambient env pollution
+	t.Setenv("TELL_ME_MCP_SERVERS_FS_ENV_PLUR_TOOL_PROFILE", "") // neutralize the leaf under test
+	t.Setenv("TELL_ME_MCP_SERVERS_FS_ENV_PATH", "")              // neutralizes both Path and PATH (same env name)
+	t.Setenv("TELL_ME_MCP_SERVERS_FS_ENV_NULL", "")              // neutralize the leaf under test
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test_mcp_env_case.yaml")
+	yamlContent := `
+MCP_SERVERS:
+  fs:
+    COMMAND: "uvx"
+    ENV:
+      PLUR_TOOL_PROFILE: "full"
+      Path: "a"
+      PATH: "b"
+      "Null":
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := load(configPath)
+	if err != nil {
+		t.Fatalf("load() failed: %v", err)
+	}
+
+	fs := cfg.MCPServers["fs"]
+	if got := fs.Env["PLUR_TOOL_PROFILE"]; got != "full" {
+		t.Errorf("Env[PLUR_TOOL_PROFILE] = %q, want %q", got, "full")
+	}
+	if got := fs.Env["Path"]; got != "a" {
+		t.Errorf("Env[Path] = %q, want %q", got, "a")
+	}
+	if got := fs.Env["PATH"]; got != "b" {
+		t.Errorf("Env[PATH] = %q, want %q", got, "b")
+	}
+	if got := fs.Env["Null"]; got != "" {
+		t.Errorf("Env[Null] = %q, want empty string", got)
+	}
+	if len(fs.Env) != 4 {
+		t.Errorf("len(Env) = %d, want 4 (no phantom lowercase keys); got %v", len(fs.Env), fs.Env)
+	}
+}
+
+// TestLoad_MCPStdio_EnvOverrideWins pins the bypass's env-wins contract for
+// MCP_SERVERS.*.ENV leaves: a non-empty TELL_ME_MCP_SERVERS_*_ENV_* override
+// beats the YAML value, an empty override is treated as unset (AllowEmptyEnv
+// parity — the file value stands), and a case-colliding override applies to
+// every casing of the name because the reconstructed env name lowercases the
+// leaf before uppercasing the full path.
+func TestLoad_MCPStdio_EnvOverrideWins(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "")              // neutralize ambient env pollution
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
+
+	writeConfig := func(t *testing.T, envYAML string) string {
+		t.Helper()
+		tmpDir := t.TempDir()
+		configPath := filepath.Join(tmpDir, "test_mcp_env_override.yaml")
+		yamlContent := "MCP_SERVERS:\n  fs:\n    COMMAND: \"uvx\"\n    ENV:\n" + envYAML
+		if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+			t.Fatalf("failed to write test config: %v", err)
+		}
+		return configPath
+	}
+
+	t.Run("non-empty override wins over YAML", func(t *testing.T) {
+		t.Setenv("TELL_ME_MCP_SERVERS_FS_ENV_FOO", "env")
+		cfg, err := load(writeConfig(t, "      FOO: \"yaml\"\n"))
+		if err != nil {
+			t.Fatalf("load() failed: %v", err)
+		}
+		if got := cfg.MCPServers["fs"].Env["FOO"]; got != "env" {
+			t.Errorf("Env[FOO] = %q, want %q", got, "env")
+		}
+	})
+
+	t.Run("empty override treated as unset", func(t *testing.T) {
+		t.Setenv("TELL_ME_MCP_SERVERS_FS_ENV_FOO", "")
+		cfg, err := load(writeConfig(t, "      FOO: \"yaml\"\n"))
+		if err != nil {
+			t.Fatalf("load() failed: %v", err)
+		}
+		if got := cfg.MCPServers["fs"].Env["FOO"]; got != "yaml" {
+			t.Errorf("Env[FOO] = %q, want %q", got, "yaml")
+		}
+	})
+
+	t.Run("case-collision override applies to all casings", func(t *testing.T) {
+		t.Setenv("TELL_ME_MCP_SERVERS_FS_ENV_PATH", "env")
+		cfg, err := load(writeConfig(t, "      Path: \"a\"\n      PATH: \"b\"\n"))
+		if err != nil {
+			t.Fatalf("load() failed: %v", err)
+		}
+		env := cfg.MCPServers["fs"].Env
+		if got := env["Path"]; got != "env" {
+			t.Errorf("Env[Path] = %q, want %q", got, "env")
+		}
+		if got := env["PATH"]; got != "env" {
+			t.Errorf("Env[PATH] = %q, want %q", got, "env")
+		}
+	})
+}
+
+// TestLoad_MCPStdio_StructuralCollisionRejected pins that the bypass rejects
+// case-colliding sibling keys deterministically. Viper collapses such keys
+// with a random iteration-order winner; the bypass reads the raw YAML, which
+// preserves both keys, so the rejection is deterministic and names both raw
+// keys verbatim in the error text.
+func TestLoad_MCPStdio_StructuralCollisionRejected(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "")              // neutralize ambient env pollution
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
+
+	tests := []struct {
+		name        string
+		fileContent string
+		wantKeys    []string // both raw keys must appear in the error text
+	}{
+		{
+			name:        "server-key collision",
+			fileContent: "MCP_SERVERS:\n  Plur:\n    URL: \"https://a\"\n  plur:\n    URL: \"https://b\"\n",
+			wantKeys:    []string{"Plur", "plur"},
+		},
+		{
+			name:        "ENV-key collision",
+			fileContent: "MCP_SERVERS:\n  fs:\n    COMMAND: \"uvx\"\n    ENV:\n      A: \"1\"\n    env:\n      B: \"2\"\n",
+			wantKeys:    []string{"ENV", "env"},
+		},
+		{
+			name: "top-level collision",
+			fileContent: "MCP_SERVERS:\n  fs:\n    COMMAND: \"uvx\"\n" +
+				"mcp_servers:\n  fs:\n    COMMAND: \"uvx\"\n",
+			wantKeys: []string{"MCP_SERVERS", "mcp_servers"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			path := filepath.Join(tmpDir, "test_collision.yaml")
+			if err := os.WriteFile(path, []byte(tt.fileContent), 0644); err != nil {
+				t.Fatalf("failed to write test config: %v", err)
+			}
+
+			_, err := load(path)
+			if err == nil {
+				t.Fatalf("load() expected error naming %v, got nil", tt.wantKeys)
+			}
+			for _, key := range tt.wantKeys {
+				if !strings.Contains(err.Error(), key) {
+					t.Errorf("load() error = %q, want substring %q", err.Error(), key)
+				}
+			}
+		})
+	}
+}
+
+// TestLoad_MCPStdio_EnvNonScalarRejected pins that a nested map or sequence
+// as an ENV value fails the load. mapstructure rejects the non-scalar during
+// Unmarshal — before the bypass runs — so only err != nil is asserted, never
+// a message, which would over-pin the decoder's wording.
+func TestLoad_MCPStdio_EnvNonScalarRejected(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "")              // neutralize ambient env pollution
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
+
+	tests := []struct {
+		name     string
+		envValue string
+	}{
+		{name: "nested map", envValue: "FOO:\n        a: 1"},
+		{name: "sequence", envValue: "FOO: [1]"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			path := filepath.Join(tmpDir, "test_non_scalar.yaml")
+			fileContent := "MCP_SERVERS:\n  fs:\n    COMMAND: \"uvx\"\n    ENV:\n      " + tt.envValue + "\n"
+			if err := os.WriteFile(path, []byte(fileContent), 0644); err != nil {
+				t.Fatalf("failed to write test config: %v", err)
+			}
+
+			_, err := load(path)
+			if err == nil {
+				t.Fatal("load() expected error for non-scalar ENV value, got nil")
+			}
+		})
+	}
+}
+
+// TestLoad_MCPStdio_ServerKeyNormalized pins the no-over-reject contract: a
+// raw server key with non-lowercase casing (Plur) decodes to the normalized
+// lowercase key (plur), its ENV values are preserved, and the bypass never
+// stamps the raw-cased name into the decoded map (which would insert a
+// phantom zero-valued server that fails validation misleadingly).
+//
+// DEVIATION (documented for Architect review): the task's spec put ENV under
+// a URL-only server, but domain validation (mcp_config.go, #1396) rejects
+// ARGS/DIR/ENV without COMMAND — "loads successfully" is impossible with URL
+// + ENV. COMMAND is used instead so the server is a valid stdio server; the
+// no-over-reject and ENV-preservation assertions are unchanged.
+func TestLoad_MCPStdio_ServerKeyNormalized(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "")                   // neutralize ambient env pollution
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "")      // neutralize ambient env pollution
+	t.Setenv("TELL_ME_MCP_SERVERS_PLUR_ENV_A", "") // neutralize the leaf under test
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test_mcp_server_normalized.yaml")
+	yamlContent := `
+MCP_SERVERS:
+  Plur:
+    COMMAND: "uvx"
+    ENV:
+      A: 1
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := load(configPath)
+	if err != nil {
+		t.Fatalf("load() failed: %v", err)
+	}
+
+	srv, ok := cfg.MCPServers["plur"]
+	if !ok {
+		t.Fatalf("expected decoded server key %q, got %v", "plur", cfg.MCPServers)
+	}
+	if got := srv.Env["A"]; got != "1" {
+		t.Errorf("Env[A] = %q, want %q", got, "1")
+	}
+	if _, ok := cfg.MCPServers["Plur"]; ok {
+		t.Error("raw-cased server key 'Plur' must not be stamped into the decoded map")
 	}
 }
