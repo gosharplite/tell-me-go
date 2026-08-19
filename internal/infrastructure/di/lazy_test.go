@@ -173,9 +173,11 @@ func TestLazyRegistry_ConcurrentInit_ErrorCached(t *testing.T) {
 type mockToolchainFactory struct {
 	BuildRegistryFunc      func(params toolchainParams) (tools.Registry, error)
 	BuildHealthCheckerFunc func() ports.HealthChecker
+	GetMCPClientFunc       func(name string) (tools.MCPClient, bool)
 
 	buildRegistryCalls      int
 	buildHealthCheckerCalls int
+	getMCPClientCalls       int
 }
 
 func (m *mockToolchainFactory) BuildRegistry(params toolchainParams) (tools.Registry, error) {
@@ -195,6 +197,14 @@ func (m *mockToolchainFactory) BuildHealthChecker() ports.HealthChecker {
 }
 
 func (m *mockToolchainFactory) CloseMCPClients() error { return nil }
+
+func (m *mockToolchainFactory) GetMCPClient(name string) (tools.MCPClient, bool) {
+	m.getMCPClientCalls++
+	if m.GetMCPClientFunc != nil {
+		return m.GetMCPClientFunc(name)
+	}
+	return nil, false
+}
 
 // stubHealthChecker is a minimal ports.HealthChecker for tests.
 type stubHealthChecker struct{}

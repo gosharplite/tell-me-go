@@ -56,6 +56,8 @@ type mockSessionDeps struct {
 	sessionProvider ports.SessionProvider
 	skillRepo       domain_skills.SkillRepository
 	summarizer      ports.Summarizer
+	mcpClients      map[string]tools.MCPClient
+	mcpClientCalls  []string
 }
 
 func (d *mockSessionDeps) GetGateway() llm.LLMGateway              { return d.gw }
@@ -79,7 +81,12 @@ func (d *mockSessionDeps) GetClient() llm.LLMClient                             
 func (d *mockSessionDeps) GetSkillRepository() domain_skills.SkillRepository    { return d.skillRepo }
 func (d *mockSessionDeps) GetSummarizer() ports.Summarizer                      { return d.summarizer }
 func (d *mockSessionDeps) GetConfigWatcher() domain_config.ConfigWatcher        { return nil }
-func (d *mockSessionDeps) RegisterTrace(path string)                            {}
+func (d *mockSessionDeps) GetMCPClient(name string) (tools.MCPClient, bool) {
+	d.mcpClientCalls = append(d.mcpClientCalls, name)
+	c, ok := d.mcpClients[name]
+	return c, ok
+}
+func (d *mockSessionDeps) RegisterTrace(path string) {}
 
 var _ ports.ChatterComposer = (*mockSessionDeps)(nil)
 
@@ -161,6 +168,20 @@ type mockTracker struct {
 	pricing.CostTracker
 }
 
+// fakeMCPClient is a minimal tools.MCPClient double so tests can exercise
+// the MemoryServer seam without contacting a live MCP endpoint.
+type fakeMCPClient struct{}
+
+func (f *fakeMCPClient) ListTools(ctx context.Context) ([]tools.MCPToolDefinition, error) {
+	return nil, nil
+}
+
+func (f *fakeMCPClient) CallTool(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+	return tools.ToolResult{}, nil
+}
+
+func (f *fakeMCPClient) Close() error { return nil }
+
 func TestNewChatter(t *testing.T) {
 	deps, cfg := setupNilDepTest(t)
 
@@ -193,6 +214,65 @@ func TestNewChatter(t *testing.T) {
 		_, err := NewChatter(context.Background(), deps, cfg)
 		if err == nil || !strings.Contains(err.Error(), "failed to retrieve tool registry") {
 			t.Errorf("expected 'failed to retrieve tool registry' error, got: %v", err)
+		}
+	})
+}
+
+// TestNewChatter_MemoryClientLookup exercises the memory integration seam
+// (ADR-068): when cfg.MemoryServer is set, NewChatter must look the client
+// up via deps.GetMCPClient after the registry build and still succeed
+// (a nil client is legal); when MemoryServer is empty, the lookup must not
+// happen at all.
+func TestNewChatter_MemoryClientLookup(t *testing.T) {
+	t.Run("memory server configured returns client", func(t *testing.T) {
+		deps, cfg := setupNilDepTest(t)
+		deps.mcpClients = map[string]tools.MCPClient{"plur": &fakeMCPClient{}}
+		cfg.MemoryServer = "plur"
+
+		chatter, err := NewChatter(context.Background(), deps, cfg)
+		if err != nil {
+			t.Fatalf("NewChatter failed: %v", err)
+		}
+		if chatter == nil {
+			t.Fatal("expected chatter to be non-nil")
+		}
+		if len(deps.mcpClientCalls) != 1 || deps.mcpClientCalls[0] != "plur" {
+			t.Errorf("GetMCPClient calls = %v, want [plur]", deps.mcpClientCalls)
+		}
+	})
+
+	t.Run("memory server configured but client skipped degrades to nil", func(t *testing.T) {
+		// Server key set but the deps stash has no entry: GetMCPClient
+		// returns (nil, false). NewChatter must still succeed — the nil
+		// client yields an inert memory integration, never a panic.
+		deps, cfg := setupNilDepTest(t)
+		cfg.MemoryServer = "plur"
+
+		chatter, err := NewChatter(context.Background(), deps, cfg)
+		if err != nil {
+			t.Fatalf("NewChatter failed: %v", err)
+		}
+		if chatter == nil {
+			t.Fatal("expected chatter to be non-nil")
+		}
+		if len(deps.mcpClientCalls) != 1 || deps.mcpClientCalls[0] != "plur" {
+			t.Errorf("GetMCPClient calls = %v, want [plur]", deps.mcpClientCalls)
+		}
+	})
+
+	t.Run("empty memory server skips lookup", func(t *testing.T) {
+		deps, cfg := setupNilDepTest(t)
+		cfg.MemoryServer = ""
+
+		chatter, err := NewChatter(context.Background(), deps, cfg)
+		if err != nil {
+			t.Fatalf("NewChatter failed: %v", err)
+		}
+		if chatter == nil {
+			t.Fatal("expected chatter to be non-nil")
+		}
+		if len(deps.mcpClientCalls) != 0 {
+			t.Errorf("GetMCPClient calls = %v, want none", deps.mcpClientCalls)
 		}
 	})
 }

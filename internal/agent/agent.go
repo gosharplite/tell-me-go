@@ -65,6 +65,14 @@ type agent struct {
 	initCtx          context.Context
 	ecosystemIntro   string
 
+	// memoryClient and memorySeed are the memory integration seam (ADR-068):
+	// the MCP client for MEMORY.SERVER plus the seed MemoryConfig. They are
+	// stored here by WithMemoryClient for the later injector/hook wiring
+	// task; no behavior consumes them yet. A nil client is legal and yields
+	// an inert memory integration.
+	memoryClient tools.MCPClient
+	memorySeed   domain_config.MemoryConfig
+
 	config atomic.Pointer[runtimeConfig]
 }
 
