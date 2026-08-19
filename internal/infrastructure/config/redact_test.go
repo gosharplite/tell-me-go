@@ -93,6 +93,9 @@ func TestRedactRawContent(t *testing.T) {
 		{"stdio ARGS non-secret list fail-closed", `ARGS: ["-y", "@modelcontextprotocol/server-filesystem"]`, "ARGS: [REDACTED]"},
 		{"stdio ENV block collapses and drops sub-lines", "ENV:\n  FOO: sk-5678\n  BAR: other\n", "ENV: [REDACTED]\n"},
 		{"max_tokens passes through byte-identically", "max_tokens: 4096", "max_tokens: 4096"},
+		{"colonless non-secret passes through", "just some prose", "just some prose"},
+		{"flow sub-key nested braces redacts through closing brace", "HEADERS: {X: y, Authorization: {a: b}}", "HEADERS: {X: y, [REDACTED]}"},
+		{"flow sub-key unclosed brace redacts to end", "HEADERS: {Authorization: sk-1", "HEADERS: {[REDACTED]"},
 		{"multi-line mixed content", "MODE: test\nMODEL: gpt-4\nAPI_KEY: sk-123\n", "MODE: test\nMODEL: gpt-4\nAPI_KEY: [REDACTED]\n"},
 	}
 

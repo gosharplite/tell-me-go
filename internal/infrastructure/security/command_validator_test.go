@@ -968,3 +968,28 @@ func TestSplit_PipelineContinuationSegment(t *testing.T) {
 		})
 	}
 }
+
+// TestCommandValidator_isSafeGoTestPipe_SplitError covers the split-error
+// branch in isSafeGoTestPipe (command_validator.go:304-306): when Split
+// fails to parse the command (unterminated quote), the pipe check must
+// fail closed and return false.
+func TestCommandValidator_isSafeGoTestPipe_SplitError(t *testing.T) {
+	t.Parallel()
+	v := NewCommandValidator(nil, nil)
+	cv := v.(*commandValidator)
+
+	// Unterminated single quote: shlex.Split returns an error.
+	if got := cv.isSafeGoTestPipe("go test -run 'unclosed | TestBar"); got {
+		t.Error("isSafeGoTestPipe should return false when Split errors (unterminated single quote)")
+	}
+
+	// Unterminated double quote: shlex.Split returns an error.
+	if got := cv.isSafeGoTestPipe(`go test -run "unclosed | TestBar`); got {
+		t.Error("isSafeGoTestPipe should return false when Split errors (unterminated double quote)")
+	}
+
+	// Complement: a well-formed -run regex alternation is safe.
+	if got := cv.isSafeGoTestPipe("go test -run 'TestFoo|TestBar' ./..."); !got {
+		t.Error("isSafeGoTestPipe should return true for valid -run regex alternation")
+	}
+}

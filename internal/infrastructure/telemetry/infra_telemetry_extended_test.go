@@ -663,17 +663,14 @@ func TestRegisterMetrics_FirstRegistrationFails(t *testing.T) {
 // RegisterMetrics handler closure coverage (Phase 8)
 // ---------------------------------------------------------------------------
 
-// TestRegisterMetrics_UnmarshalArgsErrorUnreachable documents that the
-// UnmarshalArgs error path inside the RegisterMetrics closure is unreachable
-// because estimateCostArgs is an empty struct. json.Marshal of any
-// map[string]interface{} always succeeds and json.Unmarshal into an empty
-// struct always succeeds regardless of JSON content — unknown fields are
-// silently ignored. No test can trigger this branch without violating the
-// Go type system.
-func TestRegisterMetrics_UnmarshalArgsErrorUnreachable(t *testing.T) {
+// TestRegisterMetrics_UnmarshalArgs_ValidArgsSucceed proves that
+// estimateCostArgs{} accepts any well-formed, marshalable args map: unknown
+// fields and nested values are silently ignored by json.Unmarshal, so the
+// closure's happy path runs for all valid LLM-provided arguments.
+func TestRegisterMetrics_UnmarshalArgs_ValidArgsSucceed(t *testing.T) {
 	t.Parallel()
 
-	// Prove estimateCostArgs{} always unmarshals cleanly.
+	// Prove estimateCostArgs{} always unmarshals cleanly for marshalable input.
 	var eArgs estimateCostArgs
 	for _, args := range []map[string]interface{}{
 		nil,
@@ -685,5 +682,42 @@ func TestRegisterMetrics_UnmarshalArgsErrorUnreachable(t *testing.T) {
 		if err := tools.UnmarshalArgs(args, &eArgs); err != nil {
 			t.Fatalf("unexpected error for estimateCostArgs with %v: %v", args, err)
 		}
+	}
+}
+
+// TestRegisterMetrics_UnmarshalArgsError covers the error branch inside the
+// estimate_cost handler closure (metrics.go:82-84). Although estimateCostArgs
+// is an empty struct, tools.UnmarshalArgs still fails when json.Marshal
+// cannot serialize the args map — e.g. a value of an unsupported type such
+// as a channel. The closure wraps that failure as "invalid arguments".
+func TestRegisterMetrics_UnmarshalArgsError(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockRegistry{}
+	sm := &mockSM{}
+	tempDir := t.TempDir()
+	logFile := filepath.Join(tempDir, "test.log")
+	traceFile := filepath.Join(tempDir, "test.trace.jsonl")
+
+	if err := RegisterMetrics(reg, sm, logFile, traceFile, "test-model", "test-mode", nil); err != nil {
+		t.Fatalf("RegisterMetrics failed: %v", err)
+	}
+
+	handler := reg.handlers["estimate_cost"]
+	if handler == nil {
+		t.Fatal("estimate_cost handler not registered")
+	}
+
+	// A channel is not JSON-serializable, so json.Marshal fails inside
+	// tools.UnmarshalArgs and the closure returns the wrapped error.
+	res, err := handler(context.Background(), map[string]interface{}{"bad": make(chan int)}, nil)
+	if err == nil {
+		t.Fatal("expected UnmarshalArgs error, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid arguments") {
+		t.Errorf("error should contain 'invalid arguments', got: %v", err)
+	}
+	if res.Text != "" {
+		t.Errorf("expected empty ToolResult.Text on error, got %q", res.Text)
 	}
 }

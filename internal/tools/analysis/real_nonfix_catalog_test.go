@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
@@ -91,7 +92,7 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"(*renderer).makeSubscriber":                                {Line: 48, Complexity: 11, FilePath: "internal/ui/tui/progress/renderer.go"},
 		"TestMediaBlocks":                                           {Line: 18, Complexity: 11, FilePath: "internal/infrastructure/llm/openai/client_vision_test.go"},
 		"TestRunCommand_NonExitErrorWaitPath":                       {Line: 817, Complexity: 11, FilePath: "internal/tools/workspace/process_executor_stream_test.go"},
-		"TestBasicAuthTransport":                                    {Line: 645, Complexity: 11, FilePath: "internal/infrastructure/mcp/client_test.go"},
+		"TestBasicAuthTransport":                                    {Line: 646, Complexity: 11, FilePath: "internal/infrastructure/mcp/client_test.go"},
 		"TestFakeToolchainRunner_PresetValues":                      {Line: 36, Complexity: 28, FilePath: "internal/tools/toolstest/fake_toolchain_runner_test.go"},
 		"TestFakeToolchainRunner_ZeroDefaults":                      {Line: 249, Complexity: 38, FilePath: "internal/tools/toolstest/fake_toolchain_runner_test.go"},
 		"TestToSDKSchema_EmptyType_OmitsTypeKey":                    {Line: 20, Complexity: 19, FilePath: "internal/infrastructure/llm/gemini/tools_test.go"},
@@ -99,11 +100,12 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"TestToOpenAITools_EmptyTypeNested_OmitsEmptyTypeKey":       {Line: 124, Complexity: 16, FilePath: "internal/infrastructure/llm/openai/tools_test.go"},
 		"TestConvertSchema_NestedUnrepresentable_BecomesUntypedAny": {Line: 241, Complexity: 12, FilePath: "internal/tools/integrations/mcp/schema_test.go"},
 		"(*MCPServerConfig).validate":                               {Line: 103, Complexity: 20, FilePath: "internal/domain/config/mcp_config.go"},
-		"TestMCPFactory_ConcurrentBuild":                            {Line: 683, Complexity: 11, FilePath: "internal/infrastructure/di/mcp_factory_test.go"},
-		"TestMCPFactory_ConcurrentBuild_FailingServerSkips":         {Line: 743, Complexity: 15, FilePath: "internal/infrastructure/di/mcp_factory_test.go"},
+		"TestMCPFactory_ConcurrentBuild":                            {Line: 684, Complexity: 11, FilePath: "internal/infrastructure/di/mcp_factory_test.go"},
+		"TestMCPFactory_ConcurrentBuild_FailingServerSkips":         {Line: 744, Complexity: 15, FilePath: "internal/infrastructure/di/mcp_factory_test.go"},
 		"TestStdio_RoundTrip":                                       {Line: 112, Complexity: 11, FilePath: "internal/infrastructure/mcp/stdio_client_integration_test.go"},
 		"TestStdio_LauncherTreePassThrough":                         {Line: 216, Complexity: 13, FilePath: "internal/infrastructure/mcp/stdio_client_integration_test.go"},
-		"TestStdio_ChildDeathMidSession":                            {Line: 278, Complexity: 11, FilePath: "internal/infrastructure/mcp/stdio_client_integration_test.go"},
+		"TestStdio_ChildDeathMidSession":                            {Line: 278, Complexity: 13, FilePath: "internal/infrastructure/mcp/stdio_client_integration_test.go"},
+		"TestResolveCommand":                                        {Line: 25, Complexity: 13, FilePath: "internal/infrastructure/mcp/stdio_client_test.go"},
 	}
 
 	require.Equal(t, expectedCataloged, cataloged)
@@ -149,6 +151,23 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"service.go EditLastTurn body", "internal/agent/service.go", 189, 191},
 		{"repository.go GetID accessor", "internal/domain/ports/repository.go", 108, 108},
 		{"agent.go configRefreshHook no-op stubs", "internal/agent/agent.go", 383, 384},
+		{"client.go marshalInputSchema json.Marshal", "internal/infrastructure/mcp/client.go", 258, 260},
+		{"client.go ListTools marshalInputSchema propagation", "internal/infrastructure/mcp/client.go", 120, 122},
+		{"stdio_client.go ListTools marshalInputSchema propagation", "internal/infrastructure/mcp/stdio_client.go", 162, 165},
+		{"stdio_client.go StdoutPipe error", "internal/infrastructure/mcp/stdio_client.go", 82, 85},
+		{"stdio_client.go StdinPipe error", "internal/infrastructure/mcp/stdio_client.go", 87, 90},
+		{"stdio_client.go resolveCommand generic error", "internal/infrastructure/mcp/stdio_client.go", 347, 347},
+		{"stdio_client.go Close session.Close error", "internal/infrastructure/mcp/stdio_client.go", 240, 242},
+		{"global_prompt_tracker.go prepareCompactedEntries", "internal/infrastructure/history/global_prompt_tracker.go", 420, 422},
+		{"policy.go confirmAction call-site error", "internal/infrastructure/security/policy.go", 95, 98},
+		{"manager.go RegisterSafePath Abs error", "internal/infrastructure/security/manager.go", 136, 139},
+		{"manager.go RegisterReadOnlyPath Abs error", "internal/infrastructure/security/manager.go", 161, 164},
+		{"state.go SetInfo marshal error", "internal/infrastructure/persistence/state.go", 65, 68},
+		{"metrics.go appendSummaryToLog marshal", "internal/infrastructure/telemetry/metrics.go", 176, 178},
+		{"toolchain_factory.go execRunner closure", "internal/infrastructure/di/toolchain_factory.go", 145, 147},
+		{"sqlite_store.go Update RowsAffected", "internal/infrastructure/persistence/sqlite_store.go", 207, 209},
+		{"sqlite_store.go Delete RowsAffected", "internal/infrastructure/persistence/sqlite_store.go", 224, 226},
+		{"mcp_factory.go gh token resolver success", "internal/infrastructure/di/mcp_factory.go", 71, 71},
 	}
 
 	for _, tt := range tests {
@@ -389,4 +408,48 @@ func TestDetailedCoverageReport_OpenAIPackageCataloged(t *testing.T) {
 	require.Contains(t, report, "[CATALOGED GAPS (ACCEPTED)]")
 	require.Contains(t, report, "files.go (Lines 38-40)")
 	require.Contains(t, report, "buildFileUploadBody multipart error branches")
+}
+
+// TestDetailedCoverageReport_ConfigPackageCataloged is the end-to-end
+// regression for the cataloged normalizeKeyToken dead-branch entry: the
+// structurally unreachable branches at redact.go:53-55 must appear under
+// [CATALOGED GAPS (ACCEPTED)] with the dead-branch title, and never as an
+// actionable gap. Same full report path as the sibling
+// TestDetailedCoverageReport_* tests, scoped to the config package.
+func TestDetailedCoverageReport_ConfigPackageCataloged(t *testing.T) {
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	// Run from the module root so the coverage profile records repo-relative
+	// paths; restore on cleanup (all arch-tagged tests are sequential).
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoRoot))
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	// Mirror production wiring (manager.go newAnalysisManager).
+	executor := &exec.RealExecutor{}
+	m := &healthManager{
+		SP:          &mockSecurityProvider{},
+		Exec:        executor,
+		Runner:      toolchain.NewGoRunner(executor),
+		clk:         clock.RealClock{},
+		catalogPath: defaultNonFixCatalogPath,
+	}
+
+	report, err := m.getDetailedCoverageReport(context.Background(), "./internal/infrastructure/config", nil, nil)
+	require.NoError(t, err)
+
+	// The only uncovered block in the config package (redact.go:53-55) is
+	// ACCEPTED, so it renders under [CATALOGED GAPS (ACCEPTED)] with the
+	// dead-branch title ...
+	require.Contains(t, report, "[CATALOGED GAPS (ACCEPTED)]")
+	require.Contains(t, report, "redact.go (Lines 53-55)")
+	require.Contains(t, report, "normalizeKeyToken dead branches")
+	// ... and the positional guard proves the interval is cataloged, not
+	// actionable: actionable buckets render BEFORE the cataloged section, so
+	// the gap must appear strictly after it.
+	gapIdx := strings.Index(report, "redact.go (Lines 53-55)")
+	catalogedIdx := strings.Index(report, "[CATALOGED GAPS (ACCEPTED)]")
+	require.Greater(t, gapIdx, catalogedIdx, "redact.go (Lines 53-55) must appear under [CATALOGED GAPS (ACCEPTED)], not as an actionable gap")
 }

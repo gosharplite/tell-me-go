@@ -640,6 +640,7 @@ catalog a new gap no one reviewed. Policy:
   - **Fault-injection required**: `sqlite_store.Update`/`Delete` (`RowsAffected` driver error),
     `state.SetInfo` (`AtomicWrite` disk fault), `getConcurrencyLimit` (`runtime.NumCPU() < 1`
     structurally unreachable), `processWatcherEvents` (goroutine timing).
+  Re-anchored 2026-09: sqlite_store RowsAffected refs 200/218 → 207-209/224-226 (actual gap lines); state.go:56 ref dropped (AtomicWrite branch covered).
 - **See**: Inline architect-acceptance comments at each gap site:
   `internal/tools/analysis/propagate_named_interface_assertions.go:62`,
   `internal/tools/analysis/propagate_transitive.go:32`,
@@ -648,9 +649,7 @@ catalog a new gap no one reviewed. Policy:
   `internal/tools/workspace/process_executor.go:356`,
   `internal/tools/workspace/pipeline.go:56`,
   `internal/tools/analysis/complexity.go:125`,
-  `internal/infrastructure/persistence/sqlite_store.go:200`,
-  `internal/infrastructure/persistence/sqlite_store.go:218`,
-  `internal/infrastructure/persistence/state.go:56`,
+  `internal/infrastructure/persistence/sqlite_store.go:207-209,224-226`,
   `internal/ui/tui/browser.go:141`,
   `internal/pkg/filepathutil/normalize.go:61`
 
@@ -867,20 +866,20 @@ catalog a new gap no one reviewed. Policy:
 ### internal/infrastructure/mcp/client_test.go — TestBasicAuthTransport (CC=11)
 
 - **Status**: ACCEPTED (2026-08)
-- **Rationale**: Table-driven transport test pinning the Basic auth header contract across three subtest closures (header set with exact base64, no-header when username empty, no-header when token empty), each building its own roundTripFunc assertion closure. CC comes from subtest enumeration and assertion boilerplate, not branching business logic. Same acceptance class as `TestMediaBlocks` (CC=11) — assertion boilerplate across a coverage matrix.
-- **See**: `internal/infrastructure/mcp/client_test.go:645`
+- **Rationale**: Table-driven transport test pinning the Basic auth header contract across three subtest closures (header set with exact base64, no-header when username empty, no-header when token empty), each building its own roundTripFunc assertion closure. CC comes from subtest enumeration and assertion boilerplate, not branching business logic. Same acceptance class as `TestMediaBlocks` (CC=11) — assertion boilerplate across a coverage matrix. Re-anchored 2026-09: 645→646 (+1 import shift in client_test.go).
+- **See**: `internal/infrastructure/mcp/client_test.go:646`
 
 ### internal/infrastructure/di/mcp_factory_test.go — TestMCPFactory_ConcurrentBuild (CC=11)
 
 - **Status**: ACCEPTED (2026-08, #1396)
-- **Rationale**: Channel-gated concurrency proof for the factory's phase-2 construction: per-server fake calls block on release channels while a started-channel deadline select proves all N constructions entered before any completed. CC comes from harness/assertion boilerplate (deadline select, started-counter check, per-server dep assertions), not branching business logic. Splitting would duplicate the channel-gated harness. Same acceptance class as `TestGetModelTurn` (CC=16) and `TestFakeToolchainRunner_PresetValues` (CC=28).
-- **See**: `internal/infrastructure/di/mcp_factory_test.go:683`
+- **Rationale**: Channel-gated concurrency proof for the factory's phase-2 construction: per-server fake calls block on release channels while a started-channel deadline select proves all N constructions entered before any completed. CC comes from harness/assertion boilerplate (deadline select, started-counter check, per-server dep assertions), not branching business logic. Splitting would duplicate the channel-gated harness. Same acceptance class as `TestGetModelTurn` (CC=16) and `TestFakeToolchainRunner_PresetValues` (CC=28). Re-anchored 2026-09: 683→684 (+1 import shift in mcp_factory_test.go).
+- **See**: `internal/infrastructure/di/mcp_factory_test.go:684`
 
 ### internal/infrastructure/di/mcp_factory_test.go — TestMCPFactory_ConcurrentBuild_FailingServerSkips (CC=15)
 
 - **Status**: ACCEPTED (2026-08, #1396)
-- **Rationale**: Same channel-gated harness as `TestMCPFactory_ConcurrentBuild` plus sequential setup and per-server assertions over N servers (failing server absent, others present, exactly one `mcp_client_init_failed` log). CC is harness/assertion boilerplate, not branching business logic. Splitting would duplicate the expensive harness. Same acceptance class as `TestFakeToolchainRunner_PresetValues` (CC=28).
-- **See**: `internal/infrastructure/di/mcp_factory_test.go:743`
+- **Rationale**: Same channel-gated harness as `TestMCPFactory_ConcurrentBuild` plus sequential setup and per-server assertions over N servers (failing server absent, others present, exactly one `mcp_client_init_failed` log). CC is harness/assertion boilerplate, not branching business logic. Splitting would duplicate the expensive harness. Same acceptance class as `TestFakeToolchainRunner_PresetValues` (CC=28). Re-anchored 2026-09: 743→744 (+1 import shift in mcp_factory_test.go).
+- **See**: `internal/infrastructure/di/mcp_factory_test.go:744`
 
 ### internal/infrastructure/mcp/stdio_client_integration_test.go — TestStdio_RoundTrip (CC=11)
 
@@ -894,11 +893,17 @@ catalog a new gap no one reviewed. Policy:
 - **Rationale**: Sequential launcher test (spawn → stderr poll for pid → ListTools → Close → deadline-bounded liveness poll with `syscall.Kill`). CC is the poll/assertion sequence, not branching business logic. Splitting would duplicate the child-process/launcher setup. Same acceptance class as `TestHistoryNavigation_CompleteWorkflow` (CC=15) — sequential workflow where steps depend on prior state.
 - **See**: `internal/infrastructure/mcp/stdio_client_integration_test.go:216`
 
-### internal/infrastructure/mcp/stdio_client_integration_test.go — TestStdio_ChildDeathMidSession (CC=11)
+### internal/infrastructure/mcp/stdio_client_integration_test.go — TestStdio_ChildDeathMidSession (CC=13)
 
 - **Status**: ACCEPTED (2026-08, #1396)
-- **Rationale**: Sequential death-mid-session integration test over a real child process (die call → race-tolerant death-indication assertion → deadline-bounded poll loop that deterministically closes the async-reap window by waiting for the sticky child-exit error → post-sticky pointer-equality assertions). CC comes from the poll/branch structure (the poll's if/break, the deadline guard, and the two sticky assertions), not branching business logic — and the poll is the test's synchronization mechanism, not refactorable: splitting it would both duplicate the expensive child-process setup and destroy the deterministic reaper synchronization it provides. Same acceptance class as `TestStdio_RoundTrip` (CC=11) and `TestStdio_LauncherTreePassThrough` (CC=13) in the same file.
+- **Rationale**: Sequential death-mid-session integration test over a real child process (die call → race-tolerant death-indication assertion → deadline-bounded poll loop that deterministically closes the async-reap window by waiting for the sticky child-exit error → post-sticky pointer-equality assertions). CC comes from the poll/branch structure (the poll's if/break, the deadline guard, and the two sticky assertions), not branching business logic — and the poll is the test's synchronization mechanism, not refactorable: splitting it would both duplicate the expensive child-process setup and destroy the deterministic reaper synchronization it provides. Same acceptance class as `TestStdio_RoundTrip` (CC=11) and `TestStdio_LauncherTreePassThrough` (CC=13) in the same file. CC re-verified 2026-09: 11→13 (ListTools sticky-error extension).
 - **See**: `internal/infrastructure/mcp/stdio_client_integration_test.go:278`
+
+### internal/infrastructure/mcp/stdio_client_test.go — TestResolveCommand (CC=13)
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: Table-driven resolution-contract test pinning the COMMAND resolution rules (separator-bearing passthrough, bare-name LookPath, empty-command failure, nonexistent-bare-command annotation). CC comes from case enumeration and assertion boilerplate, not branching business logic. CC rose 10→13 (2026-09) when two not-found subtests were added — still the same acceptance class as `TestGetModelTurn` (CC=16) and `TestMediaBlocks` (CC=11): assertion boilerplate across a coverage matrix.
+- **See**: `internal/infrastructure/mcp/stdio_client_test.go:25`
 
 ---
 
@@ -1338,8 +1343,8 @@ to reason about.
 ### di/mcp_factory.go — gh auth token resolver
 
 - **Status**: ACCEPTED (2026-09)
-- **Rationale**: the tokenResolver closure shells out to `gh auth token` via exec.Command at the composition root; triggering the error requires `gh` to be missing or failing mid-resolution — environment fault injection disproportionate to the value. Same acceptance class as the 2026-07 fault-injection gaps. Re-anchored 2026-08 (#1396): lines drifted 60-65 → 67-70 as the stdio factory refactor replaced the newClient seam with newClientFor.
-- **See**: `internal/infrastructure/di/mcp_factory.go:67-70`
+- **Rationale**: the tokenResolver closure shells out to `gh auth token` via exec.Command at the composition root; triggering the error requires `gh` to be missing or failing mid-resolution — environment fault injection disproportionate to the value. Same acceptance class as the 2026-07 fault-injection gaps. Re-anchored 2026-08 (#1396): lines drifted 60-65 → 67-70 as the stdio factory refactor replaced the newClient seam with newClientFor. Extended 2026-09: See widened to 66-71 — the success path (:71) is equally environment-dependent.
+- **See**: `internal/infrastructure/di/mcp_factory.go:66-71`
 
 ### di/toolchain_factory.go — registerSkillsShTools error
 
@@ -1363,4 +1368,74 @@ to reason about.
 - **Rationale**: `uploadFile`'s `if err != nil { return "", err }` branch after `buildFileUploadBody` (`files.go:77-79`) propagates the (never-returned) error from the four multipart branches cataloged in Entry A above. Since Entry A's branches are structurally unreachable, this propagation branch is equally unreachable — the same root cause. Same acceptance class as the cataloged `llm/provider_health.go` buildRequest error branch (structurally-unreachable, root-caused by getPingEndpoint's exhaustive switch).
 - **See**: `internal/infrastructure/llm/openai/files.go:77-79`
 
-*Last Updated: 2026-09 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment); 2026-09 factory seams triage: coverage pin for llm/factory.go createAuthenticator default-case; 2026-09 catalog hygiene: coverage pins for llm/failover.go ExtractDocument delegation wrapper + llm/provider_health.go getPingEndpoint panic and buildRequest error branch (structurally unreachable); re-anchored NewID (222-224 → 234-236) and Task accessors (105,108,111 → 112,116); coverage test for BuildSuggestionService tracker fallback; 2026-09 #1378: four test-complexity catalog additions (TestToSDKSchema_EmptyType_OmitsTypeKey CC=19, TestToOpenAISchema_EmptyTypeOmitsKey CC=11, TestToOpenAITools_EmptyTypeNested_OmitsEmptyTypeKey CC=16, TestConvertSchema_NestedUnrepresentable_BecomesUntypedAny CC=12) — MCP empty-type schema tests; #1387: buildFileUploadBody multipart + propagation coverage-pin catalog entries (Entry A/B)))*
+## Coverage Gaps (ACCEPTED — 2026-09 redact hygiene)
+
+### infrastructure/config/redact.go — normalizeKeyToken dead branches (structurally unreachable)
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: The two normalization branches in `normalizeKeyToken` — `strings.TrimPrefix(s, "- ")` (redact.go:52) and `if i := strings.Index(s, ":"); i >= 0 { s = s[:i] }` (redact.go:53-55) — are structurally unreachable through its only call site (`redactRawContent`, redact.go:199): the caller strips any leading "- " sequence prefix via `stripSequencePrefix` (redact.go:185) before the key is extracted, and the argument `rest[:colonIdx]` (redact.go:199) is the slice before the *first* colon of the line, which by construction can never contain ':'. The branches are defensive normalizers for hypothetical callers that do not exist. Same acceptance class as the cataloged `json.Marshal` entries on all-string structs (`structurally-unreachable`).
+- **See**: `internal/infrastructure/config/redact.go:53-55` (normalizeKeyToken dead branches; flagged gap 53-55), sole call site `redact.go:199`
+
+## Coverage Gaps (ACCEPTED — 2026-09 triage completion)
+
+### mcp/client.go + stdio_client.go — marshalInputSchema json.Marshal error + propagations (structurally unreachable)
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: `marshalInputSchema` json.Marshals the SDK-provided `InputSchema`, which is wire-decoded JSON (`map[string]any` / `RawMessage`) — `json.Marshal` cannot fail on it. The two ListTools propagation branches (`client.go:120-122`, `stdio_client.go:162-165`) root-cause to the same impossible error. Same acceptance class as the cataloged `json.Marshal` entries on all-string structs (`structurally-unreachable`).
+- **See**: `internal/infrastructure/mcp/client.go:258-260` (marshalInputSchema body), `:120-122` (Client.ListTools propagation), `internal/infrastructure/mcp/stdio_client.go:162-165` (StdioClient.ListTools propagation)
+
+### mcp/stdio_client.go — StdoutPipe/StdinPipe errors (structurally unreachable)
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: Both pipes are obtained exactly once, before `Start()` (the code comments: "Both pipes must be obtained before Start; any error here leaves nothing to clean up"). `os/exec` `StdoutPipe`/`StdinPipe` only error after `Start` or on a double call — structurally unreachable in correct code. Same acceptance class as the cataloged `process_executor.go` StdoutPipe/StderrPipe entries (`structurally-unreachable`).
+- **See**: `internal/infrastructure/mcp/stdio_client.go:82-85,87-90`
+
+### mcp/stdio_client.go — resolveCommand generic LookPath error (defensive guard)
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: `exec.LookPath` returns `ErrNotFound` for missing commands (covered — the friendly annotated branch at `stdio_client.go:344-346`); the remaining non-ErrNotFound error branch (`:347`) requires environment/path-length edge cases (e.g. ENAMETOOLONG) that callers never hit. Same acceptance class as defensive guards on internal pipeline state (2026-07 Batch Triage).
+- **See**: `internal/infrastructure/mcp/stdio_client.go:347`
+
+### mcp/stdio_client.go — Close session.Close error branch (reachable-but-racy; timing fault-injection)
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: Empirically proven REACHABLE, not dead: on a child-death flow, if `Close()`'s `session.Close()` runs before the SDK read-loop teardown finishes, it returns "file already closed" and `closeErr` is set (isolated `-count=1` run covers `240-242`; full-suite runs race with teardown → nondeterministic count). Deterministically covering it would require controlling SDK teardown timing — timing fault-injection disproportionate to the value. Same acceptance class as the cataloged `processWatcherEvents` goroutine-timing entry (2026-07 Batch Triage).
+- **See**: `internal/infrastructure/mcp/stdio_client.go:240-242`
+
+### history/global_prompt_tracker.go — prepareCompactedEntries failure branch (structurally unreachable)
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: `writeCompactedData` cannot return false when writing to `bytes.Buffer` — `json.Marshal` on the all-string `promptEntry` never fails and `bytes.Buffer.Write` never errors. The inline architect-acceptance comment at `global_prompt_tracker.go:416-419` already documents this. Same acceptance class as the cataloged Append/writeCompactedData entries in the same file (`structurally-unreachable`).
+- **See**: `internal/infrastructure/history/global_prompt_tracker.go:420-422`
+
+### security/policy.go — confirmAction error branches at five tool call sites (structurally unreachable)
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: `confirmAction` never returns an error (its own error return is already cataloged as structurally unreachable at `policy.go:293-295`). The five call-site `if err != nil { return tools.ToolResult{}, err }` branches — Write (`:95-98`), Remove (`:134-137`), Read (`:192-195`), RemoveRead (`:231-234`), SessionUpdate (`:343-346`) — propagate a never-returned error; same root cause.
+- **See**: `internal/infrastructure/security/policy.go:95-98,134-137,192-195,231-234,343-346`
+
+### security/manager.go — filepath.Abs error branches in RegisterSafePath/RegisterReadOnlyPath (defensive guard)
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: `filepath.Abs` fails only when the current working directory is unavailable (deleted-cwd, Linux-only technique — same acceptance class as the cataloged `cmd/tell-me-go` buildApp `os.Getwd` entry). Caller-supplied paths resolve normally. Defensive guard.
+- **See**: `internal/infrastructure/security/manager.go:136-139,161-164`
+
+### persistence/state.go — SetInfo json.MarshalIndent error (structurally unreachable)
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: The cloned `SessionInfo` holds only string/map fields — `json.MarshalIndent` cannot fail. The inline architect-acceptance comment at `state.go:59-63` already documents this (and the AtomicWrite fault-injection sibling). Same acceptance class as the cataloged `json.Marshal` entries (`structurally-unreachable`).
+- **See**: `internal/infrastructure/persistence/state.go:65-68`
+
+### telemetry/metrics.go — appendSummaryToLog json.Marshal(summary) (structurally unreachable)
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: `summary` is `llm.Metrics` — all primitive fields (string/int32/int/float64/bool). `json.Marshal` cannot fail. Same acceptance class as the cataloged `json.Marshal` entries (`structurally-unreachable`).
+- **See**: `internal/infrastructure/telemetry/metrics.go:176-178`
+
+### di/toolchain_factory.go — registerSkillsShTools execRunner closure (fault-injection required)
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: The `execRunner` closure (real `osexec.CommandContext(...).CombinedOutput()`) is composition-root glue passed to `NewSkillManager`; the skillssh exec paths are exercised with the fake runner in the skillssh package tests. Driving the real toolchain path requires a live git/go environment — integration-level fault injection disproportionate to the value. Same acceptance class as the cataloged registerSkillsShTools error entry in the same file.
+- **See**: `internal/infrastructure/di/toolchain_factory.go:145-147`
+
+*Last Updated: 2026-09 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment); 2026-09 factory seams triage: coverage pin for llm/factory.go createAuthenticator default-case; 2026-09 catalog hygiene: coverage pins for llm/failover.go ExtractDocument delegation wrapper + llm/provider_health.go getPingEndpoint panic and buildRequest error branch (structurally unreachable); re-anchored NewID (222-224 → 234-236) and Task accessors (105,108,111 → 112,116); coverage test for BuildSuggestionService tracker fallback; 2026-09 #1378: four test-complexity catalog additions (TestToSDKSchema_EmptyType_OmitsTypeKey CC=19, TestToOpenAISchema_EmptyTypeOmitsKey CC=11, TestToOpenAITools_EmptyTypeNested_OmitsEmptyTypeKey CC=16, TestConvertSchema_NestedUnrepresentable_BecomesUntypedAny CC=12) — MCP empty-type schema tests; #1387: buildFileUploadBody multipart + propagation coverage-pin catalog entries (Entry A/B); redact hygiene: normalizeKeyToken dead-branch coverage entry (structurally-unreachable); 2026-09 triage completion: ten coverage entries (mcp marshalInputSchema/pipes/resolveCommand/Close-race, global_prompt_tracker prepare, policy confirmAction call-sites, manager Abs guards, state SetInfo marshal, telemetry summary marshal, toolchain execRunner); re-anchors (sqlite RowsAffected 200/218 → 207-209/224-226, state.go:56 dropped, gh token resolver 66-70 → 66-71); partition-test rows (17); complexity-drift repair: TestBasicAuthTransport 645→646, TestMCPFactory_ConcurrentBuild 683→684, ..._FailingServerSkips 743→744 (import-shift re-anchors), TestStdio_ChildDeathMidSession CC 11→13, TestResolveCommand 10→13 new entry (stdio_client_test.go:25)))*

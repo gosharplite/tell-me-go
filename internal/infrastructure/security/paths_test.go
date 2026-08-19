@@ -1453,3 +1453,32 @@ func TestSystemDependentBranches_Documented(t *testing.T) {
 			"on all platforms. Cross-platform coverage achieved.")
 	})
 }
+
+// TestPathPolicy_RemovePath_ModeMismatch covers the mode-mismatch branch in
+// RemovePath (paths.go:301-303): removing a path with the wrong expected mode
+// must fail with "mode mismatch" and leave the path registered.
+func TestPathPolicy_RemovePath_ModeMismatch(t *testing.T) {
+	t.Parallel()
+	p := newPathPolicy(nil)
+
+	path := filepath.Join(t.TempDir(), "mode_mismatch")
+
+	// Register as read-write (writable=true).
+	p.RegisterPath(path, true)
+	abs, err := filepath.Abs(filepath.Clean(path))
+	require.NoError(t, err)
+
+	// Removing with the wrong mode (read-only) must fail and keep the path.
+	err = p.RemovePath(path, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mode mismatch")
+
+	got := p.GetPaths(true)
+	require.Len(t, got, 1)
+	assert.Equal(t, abs, got[0])
+
+	// Complement: removing with the correct mode succeeds.
+	err = p.RemovePath(path, true)
+	require.NoError(t, err)
+	assert.Empty(t, p.GetPaths(true))
+}

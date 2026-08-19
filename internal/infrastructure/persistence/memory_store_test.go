@@ -342,6 +342,39 @@ func TestMemoryListStore_GetByID_NotFound(t *testing.T) {
 }
 
 // =============================================================================
+// GetByID with existing ID — returns the matched item (found path)
+// =============================================================================
+
+func TestMemoryListStore_GetByID_Found(t *testing.T) {
+	t.Parallel()
+	store := newMemoryListStore[ports.Task]()
+
+	// Seed one item, then fetch it by its exact ID.
+	ctx := context.Background()
+	want := ports.Task{ID: 1, Content: "only task", Status: "pending"}
+	if err := store.Append(ctx, want); err != nil {
+		t.Fatalf("setup Append failed: %v", err)
+	}
+
+	got, err := store.GetByID(ctx, want.ID)
+	if err != nil {
+		t.Fatalf("GetByID for existing ID failed: %v", err)
+	}
+	if got.ID != want.ID || got.Content != want.Content || got.Status != want.Status {
+		t.Errorf("GetByID returned %+v; want %+v", got, want)
+	}
+
+	// Complement: the not-found path still wraps ErrTaskNotFound.
+	_, err = store.GetByID(ctx, 999)
+	if err == nil {
+		t.Fatal("expected error for non-existent ID, got nil")
+	}
+	if !errors.Is(err, ports.ErrTaskNotFound) {
+		t.Errorf("error should wrap ErrTaskNotFound, got: %v", err)
+	}
+}
+
+// =============================================================================
 // Update with non-existent ID — returns ErrTaskNotFound
 // =============================================================================
 
