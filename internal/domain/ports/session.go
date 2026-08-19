@@ -96,6 +96,11 @@ type ChatterConfig struct {
 	// ConfigPath is the filesystem path to the main YAML configuration file.
 	// Used by the config watcher to detect and apply runtime config changes.
 	ConfigPath string
+	// MemoryServer is the key of the MCP_SERVERS entry backing the memory
+	// integration (threaded from Config.Memory.Server by the session manager,
+	// exactly as ProviderName/Model/Mode are threaded). Empty means memory is
+	// not configured; deterministic seam — no refresh-ordering coupling.
+	MemoryServer string
 }
 
 // ChatterFactory defines the functional signature for creating a Chatter instance.
@@ -121,6 +126,11 @@ type ChatterComposer interface {
 	GetSummarizer() Summarizer
 	// GetConfigWatcher returns the runtime configuration watcher. May be nil (agent uses no-op fallback).
 	GetConfigWatcher() domain_config.ConfigWatcher
+	// GetMCPClient returns the live MCP client for a configured server key.
+	// It returns (nil, false) when the server was skipped at DI construction
+	// (client construction/token failure) — callers must treat this as
+	// "server unavailable" and degrade (log + disable), never panic.
+	GetMCPClient(name string) (tools.MCPClient, bool)
 	// RegisterTrace subscribes an execution trace recorder for the given file path.
 	RegisterTrace(path string)
 }

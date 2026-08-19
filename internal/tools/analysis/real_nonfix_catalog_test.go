@@ -106,6 +106,14 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"TestStdio_LauncherTreePassThrough":                         {Line: 216, Complexity: 13, FilePath: "internal/infrastructure/mcp/stdio_client_integration_test.go"},
 		"TestStdio_ChildDeathMidSession":                            {Line: 278, Complexity: 13, FilePath: "internal/infrastructure/mcp/stdio_client_integration_test.go"},
 		"TestResolveCommand":                                        {Line: 25, Complexity: 13, FilePath: "internal/infrastructure/mcp/stdio_client_test.go"},
+		"(*plurHook).AfterTurn":                                     {Line: 80, Complexity: 21, FilePath: "internal/agent/memory/hook.go"},
+		"(*plurInjector).Transform":                                 {Line: 64, Complexity: 16, FilePath: "internal/agent/memory/injector.go"},
+		"metadataIDs":                                               {Line: 226, Complexity: 11, FilePath: "internal/agent/memory/injector.go"},
+		"TestHookBatch":                                             {Line: 209, Complexity: 14, FilePath: "internal/agent/memory/hook_test.go"},
+		"TestHookFull":                                              {Line: 273, Complexity: 15, FilePath: "internal/agent/memory/hook_test.go"},
+		"TestInjectorEnabledInsert":                                 {Line: 108, Complexity: 22, FilePath: "internal/agent/memory/injector_test.go"},
+		"TestNewChatter_MemoryClientLookup":                         {Line: 226, Complexity: 12, FilePath: "internal/app/chatter_test.go"},
+		"newServer":                                                 {Line: 104, Complexity: 13, FilePath: "tests/e2e/testdata/fakeplur/main.go"},
 	}
 
 	require.Equal(t, expectedCataloged, cataloged)
@@ -135,7 +143,7 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		start int
 		end   int
 	}{
-		{"config.go call-site error branch", "internal/domain/config/config.go", 250, 252},
+		{"config.go call-site error branch", "internal/domain/config/config.go", 251, 253},
 		{"task_service.go AppendTask body", "internal/domain/services/task_service.go", 101, 103},
 		{"manager.go groupTurns error branch", "internal/agent/session/context/manager.go", 526, 528},
 		{"manager.go capBestBlock error branch", "internal/agent/session/context/manager.go", 571, 573},
@@ -233,7 +241,7 @@ func TestDetailedCoverageReport_CatalogedGapsNotActionable(t *testing.T) {
 	require.NotContains(t, report, "[HIGH PRIORITY GAPS]")
 	// ... and the formerly-HIGH block is reported as an ACCEPTED cataloged gap.
 	require.Contains(t, report, "[CATALOGED GAPS (ACCEPTED)]")
-	require.Contains(t, report, "config.go (Lines 250-252)")
+	require.Contains(t, report, "config.go (Lines 251-253)")
 	require.Contains(t, report, "validateProviderUniqueness")
 }
 

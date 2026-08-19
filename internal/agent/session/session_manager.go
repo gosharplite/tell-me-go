@@ -121,6 +121,7 @@ func (o *sessionManager) Run(ctx context.Context, sc SessionConfig, sd ports.Cha
 		LogPath:      paths.LogPath,
 		TracePath:    paths.TracePath,
 		ConfigPath:   sc.GetConfigPath(),
+		MemoryServer: cfg.Memory.Server,
 	}
 	chatAgent, err := o.AgentFactory(ctx, sd, chatterCfg)
 	if err != nil {

@@ -26,6 +26,11 @@ type TurnTrace struct {
 	InferenceDuration time.Duration        `json:"inference_duration"`
 	ToolExecutions    []ToolExecutionTrace `json:"tool_executions"`
 	FinalStatus       string               `json:"final_status"`
+
+	// Warnings collects non-fatal diagnostics from the context pipeline (e.g.
+	// injected_engrams:<ids>) — a general field reusable by any transformer,
+	// not specific to memory (ADR-068 §8).
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type contextKey struct{}
@@ -61,6 +66,19 @@ func (t *TurnTrace) RecordToolExecution(trace ToolExecutionTrace) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.ToolExecutions = append(t.ToolExecutions, trace)
+}
+
+// AddWarnings appends non-fatal diagnostics to the trace under lock.
+// Consumed by the orchestrator's finalizeTurnTrace to surface context
+// pipeline warnings (e.g. injected_engrams:<ids>) on the telemetry
+// trace (ADR-068 §8).
+func (t *TurnTrace) AddWarnings(warnings ...string) {
+	if t == nil || len(warnings) == 0 {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.Warnings = append(t.Warnings, warnings...)
 }
 
 // CumulativeToolDuration returns the sum of all tool execution durations.

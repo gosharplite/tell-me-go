@@ -38,6 +38,17 @@ Categories of `Provider` error that affect retry and failover behaviour. Disting
 | `server_error` | A transient 5xx from the `Provider`; may succeed on retry or failover. |
 | `timeout` | The `Provider` did not respond within `Config.httpTimeout`. |
 
+### `MemoryLearnTier`
+
+The automatic-learning tier of `Memory`. Mutually exclusive — exactly one tier is active. `batch` is the default.
+
+| Value | Definition |
+| --- | --- |
+| `off` | No automatic learning; `Memory` is read-only (injection may still be enabled). |
+| `capture` | Per-turn `plur_capture` episodes are recorded; no batch flush, no LLM extraction. |
+| `batch` | Episodes are captured and flushed as a `plur_learn_batch` at session end; zero LLM cost. Default tier. |
+| `full` | Episodes plus gated per-turn direct `plur_learn` on correction frames, bounded by `maxLearnsPerSession`. |
+
 ## Entities
 
 ### `Config`
@@ -48,6 +59,7 @@ The YAML configuration loaded at startup. Defines the active `Provider`, the ful
 
 - `Pricing` — 1:n — owned — Per-model cost rates from the built-in pricing table, overridable per model via the MODELS section. Realized in code as `Config.Models` (`map[string]ModelConfig`, each entry embedding `pricing.ModelPricing`).
 - `MCPServer` — 1:n — owned — Configured external MCP servers (YAML key MCP_SERVERS). Realized in code as Config.MCPServers (map[string]MCPServerConfig).
+- `Memory` — 1:1 — owned — The MEMORY configuration section; realized in code as Config.Memory (MemoryConfig).
 
 **Attributes**
 
@@ -149,6 +161,33 @@ An external Model Context Protocol (MCP) server providing dynamic tool capabilit
 - **mcp-token-not-logged** — Credentials and derived Authorization headers for `MCPServer`s must never be logged or serialized by the MCP credential plumbing (config validation, DI factory, client transport).
 - **mcp-readonly-defaults** — An `MCPServer` targeting a read-only endpoint defaults to `requiresConsent: false` and concurrent execution (`serial: false`).
 - **mcp-stdio-trusted-defaults** — A stdio `MCPServer` (command set) defaults to `requiresConsent: false` (trusted local spawn) and `serial: true`; an explicit `REQUIRES_CONSENT: true` opts back in.
+
+### `Memory`
+
+Local-first shared memory for AI agents, exposed as an MCP server (PLUR). Relevant engrams are injected automatically into the assembled `Context` before each `Turn`, and learnings/episodes are captured automatically after each `Turn` — instead of relying on the agent to call plur tools explicitly. Governed by the `Config` MEMORY section.
+
+**Relationships**
+
+- `MCPServer` — 1:1 — referenced — The MCP server backing recall and learning; `server` is a key into MCP_SERVERS (session-fixed).
+- `Context` — 1:n — referenced — Recall blocks injected into the `Context` system message each `Turn` (marker-delimited, replace-in-place).
+
+**Attributes**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `enabled` | boolean | Master switch; default false (opt-in); hot-reloadable. |
+| `server` | string | Key of the MCP_SERVERS entry backing the memory; session-fixed (restart-level). |
+| `injectBudget` | integer | Token budget for `plur_inject_hybrid` per `Turn`; hot-reloadable. |
+| `learnTier` | MemoryLearnTier | Learning tier: off, capture, batch, or full; default batch; hot-reloadable. |
+| `scope` | string | Optional scope override passed to injection/learning calls; precedence: override-if-set → .plur.yaml → one surfaced warning. |
+| `maxLearnsPerSession` | integer | Flood bound for the `full` tier's per-turn direct learns; hot-reloadable. |
+
+**Invariants**
+
+- **memory-injection-fail-open** — `Memory` never breaks a `Turn`: on any injection error, timeout, or disable, the injected block is stripped and the `Turn` proceeds unchanged.
+- **memory-injection-budgeted** — Injected `Memory` recall is counted against the `Context` token budget before the gatekeeper runs; the injected block never exceeds `injectBudget`.
+- **memory-single-block** — At most one `Memory` block is present in the assembled `Context` system message; fresh recall replaces, never appends.
+- **memory-learn-tier-exclusive** — Exactly one MemoryLearnTier is active; `batch` and `full` are never combined.
 
 ### `Pricing`
 
@@ -352,6 +391,7 @@ erDiagram
     Context {}
     History {}
     MCPServer {}
+    Memory {}
     Pricing {}
     Provider {}
     SafePath {}
@@ -363,7 +403,10 @@ erDiagram
     Turn {}
     Config ||--o{ Pricing : ""
     Config ||--o{ MCPServer : ""
+    Config ||--|| Memory : ""
     MCPServer ||--o{ Tool : ""
+    Memory ||..|| MCPServer : ""
+    Memory ||..o{ Context : ""
     Session ||--o{ Turn : ""
     Session }o..|| Config : ""
     Session }o..|| Provider : ""
@@ -720,4 +763,29 @@ The agent initializes external tools from configured MCP servers over Streamable
 - **mcp-stdio-trusted-defaults** — A stdio `MCPServer` (command set) defaults to `requiresConsent: false` (trusted local spawn) and `serial: true`; an explicit `REQUIRES_CONSENT: true` opts back in.
 - **tool-timeout** — Execution duration must not exceed `Config.toolTimeout` seconds.
 - **tool-unique-name** — Each `Tool` has a unique name.
+
+### Automatic memory injection and learning
+
+A correction taught in one persona's `Session` is automatically recalled into another persona's `Context`: `Memory` injects relevant engrams before each `Turn` (marker-delimited, replace-in-place) and captures episodes after each `Turn`; on any injection error the block is stripped and the `Turn` proceeds unchanged.
+
+**Actors:** Memory, Config, MCPServer, Context, Session, Turn
+
+**Steps**
+
+1. A user corrects persona A: "please remember: always use X".
+2. Persona A's `Memory` captures the correction as an episode (`plur_learn` under the `full` tier).
+3. Persona B starts a fresh `Session`; `Memory` calls `plur_inject_hybrid` with the user prompt as task.
+4. The recalled engram is injected as a single marker-delimited block in the `Context` system message.
+5. `Context` is counted against the token budget; the block never exceeds `injectBudget`.
+6. On the next `Turn`, fresh recall replaces the previous block — never appends.
+7. If the injection call fails, the block is stripped and the `Turn` proceeds unchanged.
+
+**Invariants touched**
+
+- **memory-injection-fail-open** — `Memory` never breaks a `Turn`: on any injection error, timeout, or disable, the injected block is stripped and the `Turn` proceeds unchanged.
+- **memory-injection-budgeted** — Injected `Memory` recall is counted against the `Context` token budget before the gatekeeper runs; the injected block never exceeds `injectBudget`.
+- **memory-single-block** — At most one `Memory` block is present in the assembled `Context` system message; fresh recall replaces, never appends.
+- **memory-learn-tier-exclusive** — Exactly one MemoryLearnTier is active; `batch` and `full` are never combined.
+- **context-within-budget** — `tokenCount` must not exceed the model's `Pricing.contextWindow`.
+- **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
 

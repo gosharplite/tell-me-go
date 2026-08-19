@@ -5,7 +5,9 @@ package telemetry
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -149,4 +151,34 @@ func TestTurnTrace_CumulativeToolDuration(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestTurnTrace_WarningsJSON pins the JSON contract of the general Warnings
+// field (ADR-068 §8): present with the "warnings" key when populated, and
+// omitted (omitempty) when empty.
+func TestTurnTrace_WarningsJSON(t *testing.T) {
+	t.Run("warnings present marshal with key", func(t *testing.T) {
+		tt := NewTurnTrace()
+		tt.Warnings = []string{"injected_engrams:e1,e2"}
+
+		data, err := json.Marshal(tt)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		if !strings.Contains(string(data), `"warnings":["injected_engrams:e1,e2"]`) {
+			t.Errorf("marshaled JSON = %s; want warnings key present", data)
+		}
+	})
+
+	t.Run("empty warnings omit key", func(t *testing.T) {
+		tt := NewTurnTrace() // Warnings is nil
+
+		data, err := json.Marshal(tt)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		if strings.Contains(string(data), "warnings") {
+			t.Errorf("marshaled JSON = %s; want warnings key omitted (omitempty)", data)
+		}
+	})
 }

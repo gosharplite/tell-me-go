@@ -167,6 +167,7 @@ type Config struct {
 	SelectedProvider   string                     `yaml:"SELECTED_PROVIDER"`
 	Providers          map[string]LLMProvider     `yaml:"PROVIDERS"`
 	MCPServers         map[string]MCPServerConfig `yaml:"MCP_SERVERS"`
+	Memory             MemoryConfig               `yaml:"MEMORY"`
 	FailoverOrder      []string                   `yaml:"FAILOVER_ORDER"`
 }
 
@@ -277,6 +278,13 @@ func (c *Config) ValidateMCPServers() error {
 		}
 	}
 	return nil
+}
+
+// ValidateMemory validates the MEMORY section. It is invoked at config load
+// and on every hot-reload re-parse (via the loader), mirroring
+// ValidateMCPServers.
+func (c *Config) ValidateMemory() error {
+	return c.Memory.validate()
 }
 
 // ValidateBounds checks every non-negative int field on Config and returns

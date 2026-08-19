@@ -51,6 +51,12 @@ type mcpFactory struct {
 	// clients tracks every successfully constructed MCP client so that
 	// session teardown can close them cleanly.
 	clients []tools.MCPClient
+
+	// byName stashes every successfully constructed MCP client keyed by its
+	// configured server name so the client survives tool registration (the
+	// plugin.MCPServerDependency map produced by Build is not retained). It
+	// is guarded by mu, like clients.
+	byName map[string]tools.MCPClient
 }
 
 // newMCPFactory constructs the default MCP dependency factory. The default
@@ -63,6 +69,7 @@ func newMCPFactory(logger *slog.Logger) *mcpFactory {
 	}
 	return &mcpFactory{
 		logger: logger,
+		byName: make(map[string]tools.MCPClient),
 		tokenResolver: func() (string, error) {
 			out, err := exec.Command("gh", "auth", "token").Output()
 			if err != nil {
@@ -160,7 +167,13 @@ func (f *mcpFactory) Build(servers map[string]config.MCPServerConfig) map[string
 			continue
 		}
 		f.mu.Lock()
+		if f.byName == nil {
+			// Zero-value / struct-literal factories (tests) have a nil
+			// byName; map assignment would panic, so initialize lazily.
+			f.byName = make(map[string]tools.MCPClient)
+		}
 		f.clients = append(f.clients, res.client)
+		f.byName[res.name] = res.client
 		f.mu.Unlock()
 		deps[res.name] = plugin.MCPServerDependency{
 			Client:          res.client,
@@ -184,6 +197,16 @@ func (f *mcpFactory) Close() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// Client returns the stashed client for a server name, or (nil, false)
+// when the server was skipped during Build or never configured. Safe to
+// call concurrently with Build/Close.
+func (f *mcpFactory) Client(name string) (tools.MCPClient, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.byName[name]
+	return c, ok
 }
 
 // resolveServerToken resolves the credentials (username, token) for a single

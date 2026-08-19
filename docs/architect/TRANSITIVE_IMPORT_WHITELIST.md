@@ -60,6 +60,9 @@ allowed: config, events, llm, persistence, pricing, security, skills, telemetry,
 ## consumer: internal/agent/skills
 allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
 # P1+P2+P5: skill-injection deps
+## consumer: internal/agent/memory
+allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
+# P1+P2+P5: memory adapters (plurInjector/plurHook) via orchestrator + sessctx deps
 ## consumer: internal/cli
 allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
 # P1+P2+P5: CLI command deps

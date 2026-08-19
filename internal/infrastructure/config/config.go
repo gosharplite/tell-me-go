@@ -90,6 +90,15 @@ func load(path string) (*domain_config.Config, error) {
 		return nil, err
 	}
 
+	// Domain-level MEMORY validation: SERVER presence when ENABLED, budget
+	// and flood-bound bounds, and the LEARN tier set. Hard errors fail the
+	// load. This single hook covers both static load and every watcher
+	// hot-reload re-parse (Refresh → Loader.Load → load); a failed load
+	// leaves the watcher's prior state intact per ADR-029 §5.
+	if err := cfg.ValidateMemory(); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
 }
 
@@ -227,6 +236,7 @@ func setDefaults(cfg *domain_config.Config) {
 	cfg.HTTPTimeoutSeconds = domain_config.DefaultHTTPTimeoutSeconds
 	cfg.ShowThoughts = true
 	cfg.ShowTools = true
+	cfg.Memory = domain_config.DefaultMemoryConfig()
 }
 
 func syncLegacyFields(cfg *domain_config.Config) {

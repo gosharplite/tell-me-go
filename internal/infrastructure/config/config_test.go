@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -828,6 +829,109 @@ func TestLoad_ValidateMCPServersError(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tt.wantErrSub) {
 				t.Fatalf("load() error = %q, want substring %q", err.Error(), tt.wantErrSub)
+			}
+		})
+	}
+}
+
+// TestLoad_MemoryConfig_RoundTripAndValidation pins the MEMORY section
+// round-trip through Viper + mapstructure into domain Config.Memory and the
+// loader's invocation of ValidateMemory (config.go). A full MEMORY block
+// parses into the expected MemoryConfig; a bad LEARN tier and ENABLED with
+// an explicitly empty SERVER both fail the load with MEMORY.-prefixed
+// messages.
+//
+// DEVATION (Architect adjudication, T3): the spec's "ENABLED: true with no
+// SERVER fails Load" cannot hold — setDefaults seeds Server "plur", and
+// mapstructure merges absent keys, so an absent SERVER keeps the seeded
+// default (ADR-068 §5's "install once" default; the *dynamic* stage — server
+// missing from MCP_SERVERS — handles real absence, ADR-068 §5 two-stage
+// fallback). The static check fires on an explicitly empty SERVER, which is
+// what the third case pins; the second case documents that omitting SERVER
+// entirely yields the seeded default.
+func TestLoad_MemoryConfig_RoundTripAndValidation(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "")              // neutralize ambient env pollution
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
+
+	tests := []struct {
+		name        string
+		fileContent string
+		want        *domain_config.MemoryConfig
+		wantErr     bool
+		errFrag     string
+	}{
+		{
+			name: "full MEMORY block round-trips",
+			fileContent: "MEMORY:\n" +
+				"  ENABLED: true\n" +
+				"  SERVER: plur\n" +
+				"  INJECT_BUDGET: 5000\n" +
+				"  LEARN: full\n" +
+				"  SCOPE: team-x\n" +
+				"  MAX_LEARNS_PER_SESSION: 5\n",
+			want: &domain_config.MemoryConfig{
+				Enabled:             true,
+				Server:              "plur",
+				InjectBudget:        5000,
+				LearnTier:           domain_config.MemoryLearnFull,
+				Scope:               "team-x",
+				MaxLearnsPerSession: 5,
+			},
+		},
+		{
+			name: "invalid LEARN tier rejected",
+			fileContent: "MEMORY:\n" +
+				"  ENABLED: true\n" +
+				"  SERVER: plur\n" +
+				"  LEARN: weekly\n",
+			wantErr: true,
+			errFrag: `MEMORY.LEARN must be one of "off", "capture", "batch", "full"`,
+		},
+		{
+			name: "ENABLED with explicit empty SERVER rejected",
+			fileContent: "MEMORY:\n" +
+				"  ENABLED: true\n" +
+				"  SERVER: \"\"\n",
+			wantErr: true,
+			errFrag: "MEMORY.SERVER must not be empty when ENABLED is true",
+		},
+		{
+			name: "ENABLED without SERVER keeps the seeded plur default",
+			fileContent: "MEMORY:\n" +
+				"  ENABLED: true\n",
+			want: &domain_config.MemoryConfig{
+				Enabled:             true,
+				Server:              "plur",
+				InjectBudget:        2000,
+				LearnTier:           domain_config.MemoryLearnBatch,
+				MaxLearnsPerSession: 3,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			path := filepath.Join(tmpDir, "test_memory.yaml")
+			if err := os.WriteFile(path, []byte(tt.fileContent), 0644); err != nil {
+				t.Fatalf("failed to write test config: %v", err)
+			}
+
+			cfg, err := load(path)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("load() expected error containing %q, got nil", tt.errFrag)
+				}
+				if !strings.Contains(err.Error(), tt.errFrag) {
+					t.Fatalf("load() error = %q, want substring %q", err.Error(), tt.errFrag)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("load() failed: %v", err)
+			}
+			if !reflect.DeepEqual(cfg.Memory, *tt.want) {
+				t.Errorf("Memory = %+v; want %+v", cfg.Memory, *tt.want)
 			}
 		})
 	}

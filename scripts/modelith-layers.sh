@@ -25,6 +25,7 @@ exceptions() {
 Turn|hybrid domain+application — the orchestrator Turn carries runtime deps
 Context|package of cooperating types, not a single struct (by design)
 Provider|LLMProvider lives in config; model documents the concept
+Memory|MemoryConfig lives in config; model documents the concept
 Pricing|consolidated into domain/pricing types (ModelPricing, PricingData)
 Tool|tool declarations in domain/tools package
 History|persistence lives in infrastructure; model documents the domain view
@@ -35,7 +36,7 @@ EOF
 
 entities=$(grep -E '^  [A-Z][A-Za-z]+:$' "$MODEL" \
   | sed 's/^  //;s/:$//' \
-  | grep -v '^ProviderType$' | grep -v '^LLMError$' | grep -v '^ToolCategory$' | grep -v '^APIFamily$')
+  | grep -v '^ProviderType$' | grep -v '^LLMError$' | grep -v '^ToolCategory$' | grep -v '^APIFamily$' | grep -v '^MemoryLearnTier$')
 
 # ── 2. Build exception map ─────────────────────────────────────────────────
 

@@ -1146,3 +1146,48 @@ func TestInferenceStep_InvokeModel_InferenceStartedEvent_PublishError(t *testing
 	assert.True(t, sl.CalledWith("Error", "Failed to publish InferenceStartedEvent; UI may not show inference status"),
 		"expected logger to capture InferenceStartedEvent publish failure")
 }
+
+// TestEngine_FinalizeTurnTrace_Warnings verifies the finalizeTurnTrace
+// contract after the ADR-068 §8 signature change: the trace's Warnings are
+// populated from Turn.State.Metadata.Warnings under lock, an absent/nil
+// Metadata leaves them empty, and the error path still sets FinalStatus.
+func TestEngine_FinalizeTurnTrace_Warnings(t *testing.T) {
+	mockClock := &agenttest.MockClock{}
+	mockClock.SetCurrentTime(time.Now())
+	e := &Engine{clock: mockClock}
+
+	t.Run("metadata warnings populate trace", func(t *testing.T) {
+		trace := telemetry.NewTurnTrace()
+		turn := &Turn{
+			State: &TurnState{
+				Metadata: &sessctx.ContextMetadata{
+					Warnings: []string{"injected_engrams:e1,e2", "injected_engrams:e3"},
+				},
+			},
+		}
+		e.finalizeTurnTrace(trace, turn, nil)
+
+		assert.Equal(t, "success", trace.FinalStatus)
+		require.Len(t, trace.Warnings, 2)
+		assert.Equal(t, "injected_engrams:e1,e2", trace.Warnings[0])
+		assert.Equal(t, "injected_engrams:e3", trace.Warnings[1])
+	})
+
+	t.Run("nil metadata leaves warnings empty", func(t *testing.T) {
+		trace := telemetry.NewTurnTrace()
+		turn := &Turn{State: &TurnState{}} // Metadata is nil
+		e.finalizeTurnTrace(trace, turn, nil)
+
+		assert.Equal(t, "success", trace.FinalStatus)
+		assert.Empty(t, trace.Warnings)
+	})
+
+	t.Run("error sets final status error", func(t *testing.T) {
+		trace := telemetry.NewTurnTrace()
+		turn := &Turn{State: &TurnState{}}
+		e.finalizeTurnTrace(trace, turn, errors.New("boom"))
+
+		assert.Equal(t, "error", trace.FinalStatus)
+		assert.Empty(t, trace.Warnings)
+	})
+}
