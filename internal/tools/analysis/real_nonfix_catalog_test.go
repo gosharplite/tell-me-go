@@ -135,7 +135,7 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		start int
 		end   int
 	}{
-		{"config.go call-site error branch", "internal/domain/config/config.go", 250, 252},
+		{"config.go call-site error branch", "internal/domain/config/config.go", 251, 253},
 		{"task_service.go AppendTask body", "internal/domain/services/task_service.go", 101, 103},
 		{"manager.go groupTurns error branch", "internal/agent/session/context/manager.go", 526, 528},
 		{"manager.go capBestBlock error branch", "internal/agent/session/context/manager.go", 571, 573},
@@ -233,7 +233,7 @@ func TestDetailedCoverageReport_CatalogedGapsNotActionable(t *testing.T) {
 	require.NotContains(t, report, "[HIGH PRIORITY GAPS]")
 	// ... and the formerly-HIGH block is reported as an ACCEPTED cataloged gap.
 	require.Contains(t, report, "[CATALOGED GAPS (ACCEPTED)]")
-	require.Contains(t, report, "config.go (Lines 250-252)")
+	require.Contains(t, report, "config.go (Lines 251-253)")
 	require.Contains(t, report, "validateProviderUniqueness")
 }
 

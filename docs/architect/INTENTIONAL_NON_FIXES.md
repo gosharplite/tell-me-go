@@ -301,7 +301,7 @@ catalog a new gap no one reviewed. Policy:
   error-return branch flagged by coverage tools does not exist in the current
   single-file architecture. Structurally unreachable — same acceptance class
   as `json.Marshal` on all-string structs in `global_prompt_tracker.go`.
-- **See**: `internal/domain/config/config.go:224-229` (definition), `:250-252` (call-site error branch, covered by this entry)
+- **See**: `internal/domain/config/config.go:224-229` (definition), `:251-253` (call-site error branch, covered by this entry)
 
 ### domain/events/events.go — NoOpEventBus no-op stubs at 0%
 
