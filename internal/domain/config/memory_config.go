@@ -29,6 +29,11 @@ const defaultMemoryMaxLearnsPerSession = 3
 // (YAML key MEMORY). Mirrors MCPServerConfig's placement: domain-owned config
 // with yaml tags, validated at load and on every hot-reload re-parse.
 type MemoryConfig struct {
+	// Enabled is the master switch for the whole memory integration — it
+	// gates BOTH injection (Seam A, plurInjector) and learning (Seam B,
+	// plurHook): when false, no recall is injected and no episodes are
+	// captured/buffered/flushed regardless of LEARN (issue #1414).
+	// Hot-reloadable.
 	Enabled             bool            `yaml:"ENABLED"`
 	Server              string          `yaml:"SERVER"`                 // key of the MCP_SERVERS entry backing memory; session-fixed (restart-level)
 	InjectBudget        int             `yaml:"INJECT_BUDGET"`          // tokens for plur_inject_hybrid per turn; hot-reloadable
@@ -57,6 +62,8 @@ func normalizeTier(t MemoryLearnTier) MemoryLearnTier {
 
 // EffectiveLearnTier resolves the active tier, normalizing case/whitespace
 // and defaulting an empty value to batch (mirrors MCPServerConfig.EffectiveAuth).
+// It does NOT consult Enabled — call sites gate on Enabled first (AfterTurn
+// returns before tier dispatch when disabled, issue #1414).
 func (c *MemoryConfig) EffectiveLearnTier() MemoryLearnTier {
 	if c.LearnTier == "" {
 		return MemoryLearnBatch
