@@ -571,3 +571,82 @@ func TestJoinTextParts(t *testing.T) {
 		})
 	}
 }
+
+// newTestInjectorWithLogger builds a plurInjector like newTestInjector but
+// with the given logger (e.g. a *recordingLogger for Warn assertions) —
+// DefaultMemoryConfig (budget 2000), Enabled = enabled, stored in an
+// *atomic.Pointer[config.MemoryConfig].
+func newTestInjectorWithLogger(t *testing.T, client tools.MCPClient, enabled bool, logger ports.Logger) (*plurInjector, *atomic.Pointer[config.MemoryConfig]) {
+	t.Helper()
+	memCfg := config.DefaultMemoryConfig()
+	memCfg.Enabled = enabled
+	cfgPtr := &atomic.Pointer[config.MemoryConfig]{}
+	cfgPtr.Store(&memCfg)
+	return NewPlurInjector(client, cfgPtr, logger).(*plurInjector), cfgPtr
+}
+
+// TestInjectorGuardChainDisabledBeforeNilClient pins the ADR-068 §5
+// two-stage-fallback ordering (issue #1419): with ENABLED=false AND a nil
+// client, the disabled content-driven strip runs FIRST — the marker Part is
+// removed and PersistHistory is set (site 1), no MCP call is made, and the
+// memory_client_unavailable Warn must NOT fire (len(logger.warns) == 0).
+// Under nil-first ordering a disabled hook with a nil client would skip the
+// strip and leave a stale marker block.
+func TestInjectorGuardChainDisabledBeforeNilClient(t *testing.T) {
+	logger := &recordingLogger{}
+	mock := &mockMCPClient{}
+	inj, _ := newTestInjectorWithLogger(t, mock, false, logger)
+	inj.client = nil // DI-fixed nil client — the two-stage fallback must still strip
+	req := &sessctx.ContextRequest{History: []*llm.Content{
+		{Role: "system", Parts: []*llm.Part{{Text: "base"}, {Text: memoryHeader + "\n\nstale\n" + memoryFooter}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "hi"}}},
+	}}
+	if err := inj.Transform(context.Background(), req); err != nil {
+		t.Fatalf("Transform error: %v", err)
+	}
+	if countMarkerParts(req.History) != 0 {
+		t.Error("marker must be stripped on the disabled path even with a nil client")
+	}
+	if !req.PersistHistory {
+		t.Error("PersistHistory must be set by the disabled strip (site 1)")
+	}
+	if calls := mock.recordedNames(); len(calls) != 0 {
+		t.Errorf("disabled path must not call MCP, got %v", calls)
+	}
+	logger.mu.Lock()
+	warns := len(logger.warns)
+	logger.mu.Unlock()
+	if warns != 0 {
+		t.Errorf("nil-client Warn must NOT fire on the disabled path (two-stage fallback), got %d warns", warns)
+	}
+}
+
+// TestInjectorNilClientWarns pins the enabled-path nil-client runtime guard
+// Warn surface: memory_client_unavailable fires with phase "inject", the
+// reason key is present, history and PersistHistory are untouched, and no
+// MCP call is made.
+func TestInjectorNilClientWarns(t *testing.T) {
+	logger := &recordingLogger{}
+	mock := &mockMCPClient{}
+	inj, _ := newTestInjectorWithLogger(t, mock, true, logger)
+	inj.client = nil
+	req := &sessctx.ContextRequest{History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hi"}}}}}
+	if err := inj.Transform(context.Background(), req); err != nil {
+		t.Fatalf("nil client must no-op, got err %v", err)
+	}
+	if len(req.History) != 1 {
+		t.Errorf("history mutated with nil client: %d entries", len(req.History))
+	}
+	if req.PersistHistory {
+		t.Error("PersistHistory must remain unchanged")
+	}
+	if calls := mock.recordedNames(); len(calls) != 0 {
+		t.Errorf("nil-client path must not call MCP, got %v", calls)
+	}
+	if v, ok := logger.warnValue("memory_client_unavailable", "phase"); !ok || v != "inject" {
+		t.Errorf("memory_client_unavailable phase = %v (present=%v), want %q", v, ok, "inject")
+	}
+	if _, ok := logger.warnValue("memory_client_unavailable", "reason"); !ok {
+		t.Error("memory_client_unavailable must carry the reason key")
+	}
+}

@@ -104,36 +104,76 @@ func (c *MCPServerConfig) EffectiveTimeout() time.Duration {
 }
 
 // validate reports hard configuration errors for a single MCP server.
+// It is a thin orchestrator over the six check-group sub-validators,
+// preserving the documented most-specific-error-wins order: COMMAND/URL
+// mutual exclusion → URL-empty → ARGS/DIR/ENV-require-COMMAND → stdio
+// bearer/basic conflict → TIMEOUT → auth switch → positive bearer/basic
+// credential rules.
 func (c *MCPServerConfig) validate(name string) error {
-	// A server is either a local stdio child process (COMMAND) or a remote
-	// Streamable HTTP endpoint (URL) — never both, never neither.
+	if err := c.validateTransportShape(name); err != nil {
+		return err
+	}
+	if err := c.validateCommandFields(name); err != nil {
+		return err
+	}
+	auth := c.EffectiveAuth()
+	if err := c.validateAuthTransportConflict(name, auth); err != nil {
+		return err
+	}
+	if err := c.validateExecutionLimits(name); err != nil {
+		return err
+	}
+	if err := c.validateAuthMode(name, auth); err != nil {
+		return err
+	}
+	return c.validateCredentials(name, auth)
+}
+
+// validateTransportShape enforces that a server is either a local stdio
+// child process (COMMAND) or a remote Streamable HTTP endpoint (URL) —
+// never both, never neither.
+func (c *MCPServerConfig) validateTransportShape(name string) error {
 	if c.IsStdio() && strings.TrimSpace(c.URL) != "" {
 		return fmt.Errorf("MCP_SERVERS.%s.COMMAND and URL are mutually exclusive", name)
 	}
 	if !c.IsStdio() && strings.TrimSpace(c.URL) == "" {
 		return fmt.Errorf("MCP_SERVERS.%s.URL must not be empty (or set COMMAND for a stdio server)", name)
 	}
+	return nil
+}
 
-	// ARGS/DIR/ENV are stdio-only knobs: without COMMAND they are inert
-	// configuration noise, so reject them.
+// validateCommandFields rejects ARGS/DIR/ENV without COMMAND: they are
+// stdio-only knobs, inert configuration noise under a URL endpoint.
+func (c *MCPServerConfig) validateCommandFields(name string) error {
 	if !c.IsStdio() && (len(c.Args) > 0 || strings.TrimSpace(c.Dir) != "" || len(c.Env) > 0) {
 		return fmt.Errorf("MCP_SERVERS.%s.ARGS/DIR/ENV require COMMAND", name)
 	}
+	return nil
+}
 
-	auth := c.EffectiveAuth()
-
-	// Mode conflict: stdio servers transmit no credentials, so bearer/basic
-	// (which resolve credentials over HTTP) are invalid under COMMAND. This
-	// check precedes the positive credential rules so the mode conflict — the
-	// more specific diagnosis — wins over missing-TOKEN errors.
+// validateAuthTransportConflict rejects bearer/basic auth under a stdio
+// (COMMAND) server: stdio servers transmit no credentials. This check
+// precedes the TIMEOUT check and the positive credential rules so the mode
+// conflict — the more specific diagnosis — wins over missing-TOKEN errors.
+func (c *MCPServerConfig) validateAuthTransportConflict(name, auth string) error {
 	if c.IsStdio() && (auth == MCPAuthBearer || auth == MCPAuthBasic) {
 		return fmt.Errorf("MCP_SERVERS.%s.AUTH bearer/basic requires an HTTP endpoint; stdio (COMMAND) servers transmit no credentials", name)
 	}
+	return nil
+}
 
+// validateExecutionLimits rejects a negative TIMEOUT.
+func (c *MCPServerConfig) validateExecutionLimits(name string) error {
 	if c.Timeout < 0 {
 		return fmt.Errorf("MCP_SERVERS.%s.TIMEOUT must be >= 0, got %d", name, c.Timeout)
 	}
+	return nil
+}
 
+// validateAuthMode rejects an unknown effective auth mode. The six-mode
+// switch is retained verbatim as a grouped case (no set-lookup) — a
+// behavior pin from the MCP CC decomposition.
+func (c *MCPServerConfig) validateAuthMode(name, auth string) error {
 	switch auth {
 	case MCPAuthAuto, MCPAuthGH, MCPAuthBearer, MCPAuthBasic, MCPAuthNone:
 		// valid
@@ -141,14 +181,17 @@ func (c *MCPServerConfig) validate(name string) error {
 		return fmt.Errorf("MCP_SERVERS.%s.AUTH must be one of %q, %q, %q, %q, %q, got %q",
 			name, MCPAuthAuto, MCPAuthGH, MCPAuthBearer, MCPAuthBasic, MCPAuthNone, auth)
 	}
+	return nil
+}
 
+// validateCredentials enforces the positive bearer/basic credential rules:
+// bearer requires TOKEN; basic requires USERNAME and TOKEN.
+func (c *MCPServerConfig) validateCredentials(name, auth string) error {
 	if auth == MCPAuthBearer && strings.TrimSpace(c.Token) == "" {
 		return fmt.Errorf("MCP_SERVERS.%s.TOKEN must not be empty when AUTH is bearer", name)
 	}
-
 	if auth == MCPAuthBasic && (strings.TrimSpace(c.Username) == "" || strings.TrimSpace(c.Token) == "") {
 		return fmt.Errorf("MCP_SERVERS.%s.USERNAME and TOKEN must not be empty when AUTH is basic", name)
 	}
-
 	return nil
 }

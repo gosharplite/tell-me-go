@@ -644,3 +644,40 @@ func TestConfig_ValidateMCPServers_Stdio(t *testing.T) {
 	}}
 	require.NoError(t, cfg.ValidateMCPServers())
 }
+
+// TestMCPServerConfig_Validate_DualViolationOrderingPins pins the
+// most-specific-error-wins ordering across dual violations with
+// require.EqualError (exact full error string — complementary to the
+// assert.Contains fragments in the table tests). Each input is mutually
+// distinct, so no two pins can fire on one input:
+//
+//   - TIMEOUT-wins: TIMEOUT precedes the auth switch (bogus auth + negative
+//     timeout → the TIMEOUT error, not the AUTH error).
+//   - URL-empty-wins: URL-empty precedes the ARGS check (no URL, no COMMAND,
+//     stray ARGS → the URL-empty error, not the ARGS/DIR/ENV error).
+//   - conflict-wins: the stdio bearer/basic conflict precedes TIMEOUT
+//     (COMMAND + bearer + negative timeout → the conflict error).
+func TestMCPServerConfig_Validate_DualViolationOrderingPins(t *testing.T) {
+	t.Parallel()
+
+	t.Run("TIMEOUT_wins_over_auth_switch", func(t *testing.T) {
+		t.Parallel()
+		cfg := MCPServerConfig{URL: "https://example.com/mcp", Auth: "bogus", Timeout: -1}
+		err := cfg.validate("server")
+		require.EqualError(t, err, "MCP_SERVERS.server.TIMEOUT must be >= 0, got -1")
+	})
+
+	t.Run("URL_empty_wins_over_args_check", func(t *testing.T) {
+		t.Parallel()
+		cfg := MCPServerConfig{Args: []string{"--foo"}}
+		err := cfg.validate("server")
+		require.EqualError(t, err, "MCP_SERVERS.server.URL must not be empty (or set COMMAND for a stdio server)")
+	})
+
+	t.Run("stdio_conflict_wins_over_timeout", func(t *testing.T) {
+		t.Parallel()
+		cfg := MCPServerConfig{Command: "npx", Auth: "bearer", Timeout: -1}
+		err := cfg.validate("server")
+		require.EqualError(t, err, "MCP_SERVERS.server.AUTH bearer/basic requires an HTTP endpoint; stdio (COMMAND) servers transmit no credentials")
+	})
+}
