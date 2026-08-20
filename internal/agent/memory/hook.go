@@ -92,8 +92,12 @@ func (h *plurHook) BeforeTurn(turn *orchestrator.Turn) {}
 func (h *plurHook) OnPhaseTransition(from, to orchestrator.TurnPhase, state *orchestrator.TurnState) {
 }
 
-// AfterTurn classifies the turn outcome and dispatches to the active LEARN tier; it returns on every path — memory errors are logged and ignored.
-// The Enabled master-switch gate mirrors the injector's disable path (fail-open silent return, ADR-068 §5) — ENABLED: false means no learning regardless of tier.
+// AfterTurn classifies the turn outcome and dispatches to the active LEARN
+// tier; it returns on every path — memory errors are logged and ignored. The
+// Enabled master-switch gate mirrors the injector's disable path (fail-open
+// silent return, ADR-068 §5) — ENABLED: false means no learning regardless
+// of tier. Decomposed into the isDuplicateTurn / clientUnavailable /
+// buildEpisode / dispatchTier helpers (issue #1419) to hold CC ≤ 8.
 func (h *plurHook) AfterTurn(turn *orchestrator.Turn, err error) {
 	cfg := h.cfg.Load()
 	if cfg == nil || !cfg.Enabled {
@@ -103,87 +107,17 @@ func (h *plurHook) AfterTurn(turn *orchestrator.Turn, err error) {
 	if tier == config.MemoryLearnOff {
 		return
 	}
-
-	// Turn-scoped dedupe (belt-and-suspenders against double-fire).
-	h.mu.Lock()
-	if turn.SessionID == h.lastSessionID && turn.Index == h.lastIndex {
-		h.mu.Unlock()
+	if h.isDuplicateTurn(turn) {
 		return
 	}
-	h.lastSessionID = turn.SessionID
-	h.lastIndex = turn.Index
-	h.mu.Unlock()
-
-	// Nil-client runtime guard (hot-reload LEARN != off with a DI-fixed nil
-	// client → fail-open no-op).
-	if h.client == nil {
-		if h.logger != nil {
-			h.logger.Warn("memory_client_unavailable", "reason", "nil MCP client", "phase", "learn")
-		}
+	if h.clientUnavailable("learn") {
 		return
 	}
-
-	// Three-way classification keyed on the hook's err argument — never
-	// Turn.State.LastError, which is stale on the empty-response retry path.
-	var ep episode
-	switch {
-	case turn.State.Response != nil:
-		// (i) Response present (any err): learn from this turn's response.
-		text := joinTextParts(turn.State.Response)
-		if text == "" {
-			return
-		}
-		ep = episode{Text: text, Mode: turn.Mode, SessionID: turn.SessionID, Timestamp: h.clock.Now()}
-		if err != nil {
-			ep.Error = err.Error()
-		}
-	case err != nil:
-		// (ii) No response + error: error episode sourced from PreparedHistory
-		// (never GetLastModelTurn — it would return the previous turn's
-		// response). Transient errors (retry exhaustion) are skipped.
-		if orchestrator.IsTransient(err) {
-			if h.logger != nil {
-				h.logger.Debug("memory_skip_transient_episode", "error", err, "turn", turn.Index)
-			}
-			return
-		}
-		ep = episode{
-			Error:     err.Error(),
-			Prompt:    lastUserText(turn.State.PreparedHistory),
-			Mode:      turn.Mode,
-			SessionID: turn.SessionID,
-			Timestamp: h.clock.Now(),
-		}
-	default:
-		// (iii) No response, no error: the phase loop exited cleanly, so
-		// GetLastModelTurn is provably this turn's response. The text-parts
-		// filter suppresses intermediate tool-iteration turns.
-		detachedCtx, cancel := context.WithTimeout(context.Background(), detachedTimeout)
-		_, content, gerr := h.history.GetLastModelTurn(detachedCtx)
-		cancel()
-		if gerr != nil || content == nil {
-			if h.logger != nil {
-				h.logger.Warn("memory_get_last_model_turn_failed", "error", gerr, "turn", turn.Index)
-			}
-			return
-		}
-		text := joinTextParts(content)
-		if text == "" {
-			return
-		}
-		ep = episode{Text: text, Mode: turn.Mode, SessionID: turn.SessionID, Timestamp: h.clock.Now()}
+	ep, ok := h.buildEpisode(turn, err)
+	if !ok {
+		return
 	}
-
-	// Tier dispatch (mutually exclusive; default batch).
-	switch tier {
-	case config.MemoryLearnCapture:
-		h.capture(turn, ep)
-	case config.MemoryLearnBatch:
-		h.bufferAppend(turn.SessionID, ep)
-	case config.MemoryLearnFull:
-		h.bufferAppend(turn.SessionID, ep)
-		h.maybeLearn(turn, cfg)
-	}
+	h.dispatchTier(tier, turn, ep, cfg)
 }
 
 // capture writes a single episode via plur_capture (capture tier). The
@@ -231,8 +165,9 @@ func (h *plurHook) bufferAppend(sessionID string, ep episode) {
 
 // maybeLearn runs the gated direct learn (full tier only): signal is the
 // user message only; the matcher is the correction-frame regex; flood bounds
-// are MAX_LEARNS_PER_SESSION plus per-session sha256 exact-match dedupe.
-// plur_ingest is never auto-fired.
+// are MAX_LEARNS_PER_SESSION plus per-session sha256 exact-match dedupe
+// (claimLearnSlot). plur_ingest is never auto-fired. The write-lock acquire
+// and the err-branch logger stay inline (ADR-068 §4, issue #1419).
 func (h *plurHook) maybeLearn(turn *orchestrator.Turn, cfg *config.MemoryConfig) {
 	signal := lastUserText(turn.State.PreparedHistory)
 	if !learnFramePattern.MatchString(signal) {
@@ -242,24 +177,9 @@ func (h *plurHook) maybeLearn(turn *orchestrator.Turn, cfg *config.MemoryConfig)
 	hash := sha256.Sum256([]byte(strings.ToLower(statement)))
 	hashKey := fmt.Sprintf("%x", hash[:])
 
-	h.mu.Lock()
-	if h.learnHashes[turn.SessionID] == nil {
-		h.learnHashes[turn.SessionID] = make(map[string]struct{})
-	}
-	if _, dup := h.learnHashes[turn.SessionID][hashKey]; dup {
-		h.mu.Unlock()
+	if !h.claimLearnSlot(turn.SessionID, hashKey, cfg) {
 		return
 	}
-	if h.learnCounts[turn.SessionID] >= cfg.MaxLearnsPerSession {
-		if h.logger != nil {
-			h.logger.Debug("memory_learn_flood_bound", "session", turn.SessionID, "limit", cfg.MaxLearnsPerSession)
-		}
-		h.mu.Unlock()
-		return
-	}
-	h.learnHashes[turn.SessionID][hashKey] = struct{}{}
-	h.learnCounts[turn.SessionID]++
-	h.mu.Unlock()
 
 	args := map[string]interface{}{
 		"statement": statement,
@@ -297,67 +217,27 @@ func (h *plurHook) maybeLearn(turn *orchestrator.Turn, cfg *config.MemoryConfig)
 // failure the claimed episodes are restored (retained for the next flush
 // opportunity) and ring-bound drops are reported on the failure Warn —
 // fail-open means log-and-move-on, never delete-then-fail (issue #1412).
+// Decomposed into claimEpisodes / clientUnavailable / buildEngramPayload /
+// restoreOnFailure / finalizeOnSuccess (issue #1419).
 func (h *plurHook) FlushSession(sessionID string) {
-	// Master-switch gate: a disabled session must not flush a stale buffer.
-	// Drain-and-drop without writing — episodes captured while enabled are
-	// deliberately discarded when the user turns memory off mid-session
-	// (issue #1414). Silent, mirroring the injector's disable path.
-	if cfg := h.cfg.Load(); cfg == nil || !cfg.Enabled {
-		h.mu.Lock()
-		delete(h.buffers, sessionID)
-		h.mu.Unlock()
-		return
-	}
-
-	// Claim: snapshot AND remove the buffered episodes under one lock, so a
-	// concurrent flush can never double-write the same episodes (issue
-	// #1412). The claim is restored on write failure (retained for the next
-	// flush opportunity); on success it stays removed. The MCP call goes
-	// outside the lock — never hold the lock across I/O.
-	h.mu.Lock()
-	buf, ok := h.buffers[sessionID]
+	episodes, ok := h.claimEpisodes(sessionID)
 	if !ok {
-		h.mu.Unlock()
 		return
 	}
-	episodes := buf.claim()
-	if len(episodes) == 0 {
-		delete(h.buffers, sessionID)
-		h.mu.Unlock()
-		return
-	}
-	h.mu.Unlock()
 
 	// Nil-client guard: permanent misconfiguration — the claim is NOT
 	// restored (retention can never succeed; drain-and-drop keeps today's
-	// fail-open no-op and bounds map growth). ADR-068 §5.
-	if h.client == nil {
+	// fail-open no-op and bounds map growth). The drain-and-drop delete stays
+	// at the call site — never inside the helper (ADR-068 §5).
+	if h.clientUnavailable("learn_batch") {
 		h.mu.Lock()
 		delete(h.buffers, sessionID)
 		h.mu.Unlock()
-		if h.logger != nil {
-			h.logger.Warn("memory_client_unavailable", "reason", "nil MCP client", "phase", "learn_batch")
-		}
 		return
 	}
 
-	// Native per-engram scope (never silently dropped) — read the shared
-	// hot-reloadable config; nil cfg fails open with no scope.
-	var scope string
-	if cfg := h.cfg.Load(); cfg != nil {
-		scope = strings.TrimSpace(cfg.Scope)
-	}
-	engrams := make([]engramPayload, 0, len(episodes))
-	for _, ep := range episodes {
-		e := engramPayload{
-			Statement: ep.Text, // non-empty by skip-at-append (T1)
-			Tags:      []string{"session:" + ep.SessionID, "mode:" + ep.Mode},
-		}
-		if scope != "" {
-			e.Scope = scope
-		}
-		engrams = append(engrams, e)
-	}
+	scope := h.effectiveScope()
+	engrams := buildEngramPayload(episodes, scope)
 	if len(engrams) == 0 { // belt-and-suspenders — never send engrams: []
 		return
 	}
@@ -372,35 +252,11 @@ func (h *plurHook) FlushSession(sessionID string) {
 	}
 	result, err := h.client.CallTool(detachedCtx, "plur_learn_batch", payload)
 	if err != nil || result.Error != nil {
-		// Retain on failure: restore the claimed episodes at the front
-		// (newer appends stay after them) and report ring-bound drops.
-		h.mu.Lock()
-		b, exists := h.buffers[sessionID]
-		if !exists {
-			b = &sessionBuffer{}
-			h.buffers[sessionID] = b
-		}
-		b.restore(episodes)
-		dropped := b.dropped
-		h.mu.Unlock()
-		if h.logger != nil {
-			h.logger.Warn("memory_learn_batch_failed", "error", firstNonNil(err, result.Error), "session", sessionID, "retained", len(episodes), "dropped", dropped)
-		}
+		h.restoreOnFailure(sessionID, episodes, firstNonNil(err, result.Error))
 		h.recordWrite(sessionID, "plur_learn_batch", result, err)
 		return
 	}
-	// Success: the claimed episodes were written. Drop the entry when the
-	// buffer is empty (episodes appended during the call survive); otherwise
-	// the retention window closed, so the drop counter resets.
-	h.mu.Lock()
-	if b, exists := h.buffers[sessionID]; exists {
-		if len(b.episodes) == 0 {
-			delete(h.buffers, sessionID)
-		} else {
-			b.dropped = 0
-		}
-	}
-	h.mu.Unlock()
+	h.finalizeOnSuccess(sessionID)
 	h.recordWrite(sessionID, "plur_learn_batch", result, err)
 }
 
@@ -472,3 +328,220 @@ func firstNonNil(err error, resultErr error) error {
 
 // compile-time interface assertion.
 var _ orchestrator.TurnHook = (*plurHook)(nil)
+
+// isDuplicateTurn implements the turn-scoped dedupe (belt-and-suspenders
+// against double-fire): the same SessionID+Index twice returns true and is
+// skipped. Both the read and the record happen under one lock.
+func (h *plurHook) isDuplicateTurn(turn *orchestrator.Turn) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if turn.SessionID == h.lastSessionID && turn.Index == h.lastIndex {
+		return true
+	}
+	h.lastSessionID = turn.SessionID
+	h.lastIndex = turn.Index
+	return false
+}
+
+// clientUnavailable reports whether the MCP client is nil (permanent
+// misconfiguration: DI-fixed, hot-reload cannot reintroduce it) and records
+// the memory_client_unavailable Warn with the given phase. Check + log ONLY
+// — no side effects: the FlushSession drain-and-drop delete stays at its
+// call site. The Transform guard in injector.go stays untouched.
+func (h *plurHook) clientUnavailable(phase string) bool {
+	if h.client == nil {
+		if h.logger != nil {
+			h.logger.Warn("memory_client_unavailable", "reason", "nil MCP client", "phase", phase)
+		}
+		return true
+	}
+	return false
+}
+
+// fetchLastModelTurn implements branch (iii) of buildEpisode: no response,
+// no error — the phase loop exited cleanly, so GetLastModelTurn is provably
+// this turn's response. The text-parts filter suppresses intermediate
+// tool-iteration turns. Detached bounded ctx (ADR-068 §2).
+func (h *plurHook) fetchLastModelTurn(turn *orchestrator.Turn) (episode, bool) {
+	detachedCtx, cancel := context.WithTimeout(context.Background(), detachedTimeout)
+	_, content, gerr := h.history.GetLastModelTurn(detachedCtx)
+	cancel()
+	if gerr != nil || content == nil {
+		if h.logger != nil {
+			h.logger.Warn("memory_get_last_model_turn_failed", "error", gerr, "turn", turn.Index)
+		}
+		return episode{}, false
+	}
+	text := joinTextParts(content)
+	if text == "" {
+		return episode{}, false
+	}
+	return episode{Text: text, Mode: turn.Mode, SessionID: turn.SessionID, Timestamp: h.clock.Now()}, true
+}
+
+// buildEpisode classifies the turn outcome into an episode (or none),
+// keyed on the hook's err argument — never Turn.State.LastError, which is
+// stale on the empty-response retry path. Branch (i): Response present
+// (any err) — learn from this turn's response, annotating the error.
+// Branch (ii): no response + error — error episode sourced from
+// PreparedHistory; transient errors (retry exhaustion) are skipped.
+// Branch (iii): no response, no error — fetchLastModelTurn.
+func (h *plurHook) buildEpisode(turn *orchestrator.Turn, err error) (episode, bool) {
+	switch {
+	case turn.State.Response != nil:
+		text := joinTextParts(turn.State.Response)
+		if text == "" {
+			return episode{}, false
+		}
+		ep := episode{Text: text, Mode: turn.Mode, SessionID: turn.SessionID, Timestamp: h.clock.Now()}
+		if err != nil {
+			ep.Error = err.Error()
+		}
+		return ep, true
+	case err != nil:
+		if orchestrator.IsTransient(err) {
+			if h.logger != nil {
+				h.logger.Debug("memory_skip_transient_episode", "error", err, "turn", turn.Index)
+			}
+			return episode{}, false
+		}
+		return episode{
+			Error:     err.Error(),
+			Prompt:    lastUserText(turn.State.PreparedHistory),
+			Mode:      turn.Mode,
+			SessionID: turn.SessionID,
+			Timestamp: h.clock.Now(),
+		}, true
+	default:
+		return h.fetchLastModelTurn(turn)
+	}
+}
+
+// dispatchTier routes the built episode to the active LEARN tier
+// (mutually exclusive; batch is the default). The mandatory shape — an
+// inline tier switch in AfterTurn would hold AfterTurn at CC=10 with zero
+// margin (issue #1419).
+func (h *plurHook) dispatchTier(tier config.MemoryLearnTier, turn *orchestrator.Turn, ep episode, cfg *config.MemoryConfig) {
+	switch tier {
+	case config.MemoryLearnCapture:
+		h.capture(turn, ep)
+	case config.MemoryLearnBatch:
+		h.bufferAppend(turn.SessionID, ep)
+	case config.MemoryLearnFull:
+		h.bufferAppend(turn.SessionID, ep)
+		h.maybeLearn(turn, cfg)
+	}
+}
+
+// claimEpisodes drains the per-session ring buffer: snapshot AND remove the
+// buffered episodes under one lock, so a concurrent flush can never
+// double-write the same episodes (issue #1412). Absorbs the master-switch
+// gate (issue #1414): a disabled session must not flush a stale buffer —
+// drain-and-drop without writing, silent, mirroring the injector's disable
+// path. The claim is restored on write failure; on success it stays removed.
+func (h *plurHook) claimEpisodes(sessionID string) ([]episode, bool) {
+	if cfg := h.cfg.Load(); cfg == nil || !cfg.Enabled {
+		h.mu.Lock()
+		delete(h.buffers, sessionID)
+		h.mu.Unlock()
+		return nil, false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	buf, ok := h.buffers[sessionID]
+	if !ok {
+		return nil, false
+	}
+	episodes := buf.claim()
+	if len(episodes) == 0 {
+		delete(h.buffers, sessionID)
+		return nil, false
+	}
+	return episodes, true
+}
+
+// buildEngramPayload maps episodes 1:1 into plur_learn_batch items —
+// pure function, no lock/map side effects. Nil/empty input yields an empty
+// slice (the 1:1 invariant: every buffered episode has non-empty Text by
+// skip-at-append). Scope is set per-engram only when non-empty.
+func buildEngramPayload(episodes []episode, scope string) []engramPayload {
+	engrams := make([]engramPayload, 0, len(episodes))
+	for _, ep := range episodes {
+		e := engramPayload{
+			Statement: ep.Text,
+			Tags:      []string{"session:" + ep.SessionID, "mode:" + ep.Mode},
+		}
+		if scope != "" {
+			e.Scope = scope
+		}
+		engrams = append(engrams, e)
+	}
+	return engrams
+}
+
+// restoreOnFailure retains the claimed episodes on a failed batch write:
+// restore at the front (newer appends stay after them) and report the
+// ring-bound drop count on the failure Warn (issue #1412). Re-creates the
+// map entry if a concurrent flush deleted it.
+func (h *plurHook) restoreOnFailure(sessionID string, episodes []episode, err error) {
+	h.mu.Lock()
+	b, exists := h.buffers[sessionID]
+	if !exists {
+		b = &sessionBuffer{}
+		h.buffers[sessionID] = b
+	}
+	b.restore(episodes)
+	dropped := b.dropped
+	h.mu.Unlock()
+	if h.logger != nil {
+		h.logger.Warn("memory_learn_batch_failed", "error", err, "session", sessionID, "retained", len(episodes), "dropped", dropped)
+	}
+}
+
+// finalizeOnSuccess closes the retention window after a successful batch
+// write: drop the entry when the buffer is empty (episodes appended during
+// the call survive); otherwise the drop counter resets.
+func (h *plurHook) finalizeOnSuccess(sessionID string) {
+	h.mu.Lock()
+	if b, exists := h.buffers[sessionID]; exists {
+		if len(b.episodes) == 0 {
+			delete(h.buffers, sessionID)
+		} else {
+			b.dropped = 0
+		}
+	}
+	h.mu.Unlock()
+}
+
+// effectiveScope reads the native per-engram scope (never silently dropped)
+// from the shared hot-reloadable config; nil cfg fails open with no scope.
+func (h *plurHook) effectiveScope() string {
+	if cfg := h.cfg.Load(); cfg != nil {
+		return strings.TrimSpace(cfg.Scope)
+	}
+	return ""
+}
+
+// claimLearnSlot enforces the full-tier flood bounds atomically under one
+// lock: per-session exact-match sha256 dedupe first, then the
+// MAX_LEARNS_PER_SESSION bound. Both counters are updated only after both
+// checks pass.
+func (h *plurHook) claimLearnSlot(sessionID, hashKey string, cfg *config.MemoryConfig) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.learnHashes[sessionID] == nil {
+		h.learnHashes[sessionID] = make(map[string]struct{})
+	}
+	if _, dup := h.learnHashes[sessionID][hashKey]; dup {
+		return false
+	}
+	if h.learnCounts[sessionID] >= cfg.MaxLearnsPerSession {
+		if h.logger != nil {
+			h.logger.Debug("memory_learn_flood_bound", "session", sessionID, "limit", cfg.MaxLearnsPerSession)
+		}
+		return false
+	}
+	h.learnHashes[sessionID][hashKey] = struct{}{}
+	h.learnCounts[sessionID]++
+	return true
+}
