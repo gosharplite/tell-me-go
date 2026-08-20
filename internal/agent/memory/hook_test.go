@@ -507,10 +507,17 @@ func TestHookTurnDedupe(t *testing.T) {
 }
 
 // TestHookNilClient verifies the nil-client runtime guard: no panic, no MCP
-// call.
+// call, and the memory_client_unavailable Warn recorded with phase "learn"
+// (the AfterTurn side of the parameterized clientUnavailable helper — the
+// FlushSession side is pinned by TestHookFlushNilClientDrainAndDrop).
 func TestHookNilClient(t *testing.T) {
-	h, _ := newTestHook(t, nil, config.MemoryLearnCapture, &stubHistoryManager{})
+	logger := &recordingLogger{}
+	h, _ := newTestHookWithLogger(t, nil, config.MemoryLearnCapture, &stubHistoryManager{}, logger)
 	h.AfterTurn(responseTurn(0, "s1", "hello"), nil) // must not panic
+
+	if v, ok := logger.warnValue("memory_client_unavailable", "phase"); !ok || v != "learn" {
+		t.Errorf("nil-client AfterTurn must record the memory_client_unavailable Warn with phase %q, got %v (present=%v)", "learn", v, ok)
+	}
 }
 
 func TestHookNilClientFlush(t *testing.T) {
@@ -1052,7 +1059,7 @@ func TestHookFlushDropsStaleBufferWhenDisabledMidSession(t *testing.T) {
 }
 
 // TestHookAfterTurnEmptyResponseText pins the branch-(i) empty-text early
-// return (hook.go:133-135): a Response present but containing no text parts
+// return (hook.go:392-394): a Response present but containing no text parts
 // (e.g. only FunctionCall / thought parts) produces no episode — no MCP
 // call, no buffered episode. Branch-(iii) equivalent is covered by
 // TestHookCaptureBranchIII ("model turn without text parts filtered").
@@ -1079,7 +1086,7 @@ func TestHookAfterTurnEmptyResponseText(t *testing.T) {
 }
 
 // TestHookFlushEmptyDrainNoop pins the FlushSession empty-drain no-op
-// (hook.go:324-328): a buffer entry with zero episodes is deleted without
+// (hook.go:456-459): a buffer entry with zero episodes is deleted without
 // any MCP call. Reachable in production via a concurrent flush draining the
 // entry between claim and write completion.
 func TestHookFlushEmptyDrainNoop(t *testing.T) {
@@ -1102,9 +1109,9 @@ func TestHookFlushEmptyDrainNoop(t *testing.T) {
 }
 
 // TestHookFlushNilClientDrainAndDrop pins the FlushSession nil-client guard
-// (hook.go:334-342, ADR-068 §5): with buffered episodes and a nil client,
+// (hook.go:232-237, ADR-068 §5): with buffered episodes and a nil client,
 // the claim is NOT restored — drain-and-drop deletes the entry, no MCP call,
-// and the memory_client_unavailable Warn is recorded.
+// and the memory_client_unavailable Warn is recorded with phase "learn_batch".
 func TestHookFlushNilClientDrainAndDrop(t *testing.T) {
 	logger := &recordingLogger{}
 	mock := &mockMCPClient{}
@@ -1123,8 +1130,8 @@ func TestHookFlushNilClientDrainAndDrop(t *testing.T) {
 	if present {
 		t.Error("nil-client flush must drain-and-drop the buffer entry")
 	}
-	if _, ok := logger.warnValue("memory_client_unavailable", "phase"); !ok {
-		t.Error("nil-client flush must record the memory_client_unavailable Warn")
+	if v, ok := logger.warnValue("memory_client_unavailable", "phase"); !ok || v != "learn_batch" {
+		t.Errorf("nil-client flush must record the memory_client_unavailable Warn with phase %q, got %v (present=%v)", "learn_batch", v, ok)
 	}
 }
 
@@ -1132,8 +1139,8 @@ func TestHookFlushNilClientDrainAndDrop(t *testing.T) {
 // concurrency edges deterministically (ADR-036, channel-gated — no
 // time.Sleep): a concurrent second flush deleting the drained (empty) buffer
 // entry mid-call forces the failure path's !exists restore branch
-// (hook.go:379-382), and an AfterTurn appending during a successful call
-// forces the success path's non-empty-buffer branch (hook.go:399-401, drop
+// (hook.go:489-492), and an AfterTurn appending during a successful call
+// forces the success path's non-empty-buffer branch (hook.go:506-512, drop
 // counter reset, entry kept).
 func TestHookFlushConcurrentRestoreAndSuccessAppend(t *testing.T) {
 	t.Run("failure path restores into fresh buffer after concurrent drain", func(t *testing.T) {
@@ -1206,4 +1213,54 @@ func TestHookFlushConcurrentRestoreAndSuccessAppend(t *testing.T) {
 			t.Errorf("dropped = %d, want 0 (retention window closed cleanly)", buf.dropped)
 		}
 	})
+}
+
+// TestBuildEngramPayloadContract pins the buildEngramPayload helper
+// contract (issue #1419): nil/empty input yields an empty slice (the 1:1
+// invariant), non-empty episodes map 1:1 into engrams with the
+// {statement, tags} wire shape, and Scope is set only when non-empty. The
+// helper is a pure function — no lock/map side effects. (The engrams-empty
+// guard in FlushSession is provably dead by the 1:1 invariant, so no
+// behavioral pin is claimed for it — the orchestrator-level guard is
+// separately pinned by TestHookFlushEmptyDrainNoop's provenance.)
+func TestBuildEngramPayloadContract(t *testing.T) {
+	if got := buildEngramPayload(nil, ""); len(got) != 0 {
+		t.Errorf("buildEngramPayload(nil, \"\") = %d engrams, want 0", len(got))
+	}
+	if got := buildEngramPayload([]episode{}, "scope"); len(got) != 0 {
+		t.Errorf("buildEngramPayload([], \"scope\") = %d engrams, want 0", len(got))
+	}
+
+	eps := []episode{
+		{Text: "first", SessionID: "s1", Mode: "coder"},
+		{Text: "second", SessionID: "s1", Mode: "coder"},
+	}
+	got := buildEngramPayload(eps, "")
+	want := []engramPayload{
+		{Statement: "first", Tags: []string{"session:s1", "mode:coder"}},
+		{Statement: "second", Tags: []string{"session:s1", "mode:coder"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("buildEngramPayload(2 eps, \"\") = %+v, want %+v (1:1 Statement, Tags, Scope unset)", got, want)
+	}
+
+	gotScoped := buildEngramPayload([]episode{{Text: "one", SessionID: "s1", Mode: "coder"}}, "team-x")
+	wantScoped := []engramPayload{{Statement: "one", Tags: []string{"session:s1", "mode:coder"}, Scope: "team-x"}}
+	if !reflect.DeepEqual(gotScoped, wantScoped) {
+		t.Errorf("buildEngramPayload scope = %+v, want %+v (Scope set only when non-empty)", gotScoped, wantScoped)
+	}
+}
+
+// TestHookClientUnavailableNoLogger pins the clientUnavailable helper's
+// no-logger path (issue #1419): a nil client with a nil logger returns true
+// without panicking, and a non-nil client returns false.
+func TestHookClientUnavailableNoLogger(t *testing.T) {
+	h := &plurHook{client: nil, logger: nil}
+	if !h.clientUnavailable("learn") {
+		t.Error("clientUnavailable must return true for nil client with nil logger (no panic)")
+	}
+	h = &plurHook{client: &mockMCPClient{}, logger: nil}
+	if h.clientUnavailable("learn") {
+		t.Error("clientUnavailable must return false for a non-nil client")
+	}
 }

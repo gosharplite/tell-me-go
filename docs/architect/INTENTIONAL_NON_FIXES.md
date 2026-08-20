@@ -1209,11 +1209,12 @@ to reason about.
   the same structural-guard acceptance class as the rest of this function.
 - **See**: `internal/ui/history.go:26`
 
-### internal/domain/config/mcp_config.go — (*MCPServerConfig).validate (CC=20)
+### internal/domain/config/mcp_config.go — (*MCPServerConfig).validate (CC=20) → RESOLVED
 
-- **Status**: ACCEPTED (2026-08, #1396)
-- **Rationale**: Sequential validation with structural guards only: the issue-mandated most-specific-error-wins check order (COMMAND/URL mutual exclusion, ARGS/DIR/ENV-require-COMMAND, bearer/basic mode conflict, TIMEOUT, the 6-case auth-mode switch, and the positive credential rules) — every branch is a one-line error return whose message is pinned by the T1 table tests. CC is driven by guard count + the auth switch, not branching business logic. Extracting helpers would fragment a coherent, message-pinned validation sequence for cosmetic CC reduction — same acceptance class as `renderHistory` (CC=12) and `(*HistoryEditor).Edit` (CC=10) in this section. A future extraction refactor is possible but is tracked, not this PR. Re-anchored 2026-09 (#1407): the Env field doc-comment + gofmt realignment in mcp_config.go drifted the See: from 103 to 107 (CC unchanged at 20).
-- **See**: `internal/domain/config/mcp_config.go:107`
+- **Status**: RESOLVED (2026-09, refactored below CC=10 threshold)
+- **Complexity after fix**: `validateTransportShape` CC=5, `validateCommandFields` CC=5, `validateAuthTransportConflict` CC=4, `validateExecutionLimits` CC=2, `validateAuthMode` CC=3, `validateCredentials` CC=6; `validate` orchestrator CC=6 (was 20).
+- **What was refactored**: Extracted the six check groups into private sub-validators called by a thin `validate(name)` orchestrator in the documented most-specific-error-wins order; the six-mode auth switch retained verbatim as a grouped case (no set-lookup).
+- **See**: `internal/domain/config/mcp_config.go` (`validate`, `validateTransportShape`, `validateCommandFields`, `validateAuthTransportConflict`, `validateExecutionLimits`, `validateAuthMode`, `validateCredentials`)
 
 ### ui/tui/browser.go — (*rootBrowserModel).handleActionKeys (CC=15) → RESOLVED
 
@@ -1280,81 +1281,33 @@ to reason about.
   dispatch where CC is switch/branch count, not branching business logic.
 - **See**: `internal/agent/orchestrator/engine_phases.go:129`
 
-### internal/agent/memory/hook.go — (*plurHook).AfterTurn (CC=22)
+### internal/agent/memory/hook.go — (*plurHook).AfterTurn (CC=22) → RESOLVED
 
-- **Status**: ACCEPTED (2026-09, issue #1404)
-- **Rationale**: Sequential guarded classification: three-way switch on the
-  hook err (nil / correction-frame / other) plus LEARN-tier dispatch
-  (off/batch/full), with nil-client and nil-config guards. Every branch is a
-  single-line episode build or tier dispatch — CC is structural
-  guard/branch count, not branching business logic. Extracting would
-  fragment a coherent sequential function for cosmetic CC reduction (same
-  class as `handleDomainEvent` CC=12, `(*RecoveryStep).Process` CC=12). The
-  fail-open guard structure (return on every path; memory errors logged and
-  ignored) is mandated by ADR-068 §2. Re-anchored 2026-09 (#1410): line
-  drifted 80→97 as the T2 branch-(i)/(ii)/(iii) tests and the
-  writeStats/flush instrumentation grew the file above it; CC re-verified 21
-  (unchanged — the classification/assertions did not change).
-  Re-anchored 2026-09 (#1414): CC 21→22 — the master-switch gate
-  (`!cfg.Enabled`, issue #1414) added one decision point on the existing
-  nil-config line; line stays 97 (gate kept on one line).
-- **See**: `internal/agent/memory/hook.go:97`
+- **Status**: RESOLVED (2026-09, refactored below CC=10 threshold)
+- **Complexity after fix**: `AfterTurn` CC=7 (was 22); helpers `isDuplicateTurn` CC=3, `clientUnavailable` CC=3, `fetchLastModelTurn` CC=5, `buildEpisode` CC=8, `dispatchTier` CC=4.
+- **What was refactored**: extracted the turn-scoped dedupe into `isDuplicateTurn`, the nil-client runtime guard into the parameterized `clientUnavailable(phase string)` (AfterTurn phase "learn", FlushSession phase "learn_batch"), the three-way episode classification into `buildEpisode` (branch iii → `fetchLastModelTurn`), and the LEARN-tier dispatch into the mandatory `dispatchTier` shape — an inline tier switch would hold AfterTurn at CC=10 with zero margin.
+- **See**: `internal/agent/memory/hook.go` (`AfterTurn`, `isDuplicateTurn`, `clientUnavailable`, `fetchLastModelTurn`, `buildEpisode`, `dispatchTier`)
 
-### internal/agent/memory/hook.go — (*plurHook).maybeLearn (CC=11)
+### internal/agent/memory/hook.go — (*plurHook).maybeLearn (CC=11) → RESOLVED
 
-- **Status**: ACCEPTED (2026-09, issue #1404)
-- **Rationale**: Gated per-turn `plur_learn` for the full tier: frame-pattern
-  gate on the user signal, per-session exact-match sha256 dedupe, flood
-  bound (`MAX_LEARNS_PER_SESSION`), then the detached-ctx MCP call with
-  fail-open logging (ADR-068 §3). Every branch is a single-line guard or
-  return; CC is structural guard count (frame gate, hash-map init, dedupe
-  hit, flood bound, scope presence), not branching business logic. Same
-  acceptance class as `(*plurHook).AfterTurn` (CC=21) — sequential guarded
-  dispatch mandated by ADR-068 §3, fail-open (memory errors logged and
-  ignored). Grew over the CC=10 threshold in 2026-09 (#1410) when the
-  no-agent/no-`session_id` payload contract and per-write instrumentation
-  were added (T7).
-- **See**: `internal/agent/memory/hook.go:236`
+- **Status**: RESOLVED (2026-09, refactored below CC=10 threshold)
+- **Complexity after fix**: `maybeLearn` CC=8 (was 11); helper `claimLearnSlot` CC=5.
+- **What was refactored**: extracted the per-session exact-match sha256 dedupe + MAX_LEARNS_PER_SESSION flood bound into `claimLearnSlot` (single lock; both counters updated only after both checks pass); the frame gate, scope presence, write-lock acquire (ADR-068 §4) and err-branch logger stay inline in `maybeLearn`.
+- **See**: `internal/agent/memory/hook.go` (`maybeLearn`, `claimLearnSlot`)
 
-### internal/agent/memory/hook.go — (*plurHook).FlushSession (CC=18)
+### internal/agent/memory/hook.go — (*plurHook).FlushSession (CC=18) → RESOLVED
 
-- **Status**: ACCEPTED (2026-09, issue #1404)
-- **Rationale**: Session-end batch flush: claim the buffer under lock
-  (snapshot AND remove the episodes so a concurrent flush can never
-  double-write), issue `plur_learn_batch` outside the lock (never hold the
-  lock across I/O), restore the claimed episodes on write failure (retained
-  for the next flush opportunity) with the `retained`/`dropped` counts
-  reported on the failure Warn, and delete the buffer entry on success
-  (issue #1412); empty-drain no-op and the session-end aggregate / dead-tool
-  notice surface (ADR-068 §8, §10 rows 18–19). Every branch is a single-line
-  guard or delegation; CC is structural guards (no-buffer, empty-drain,
-  claim/restore, per-tool dead trigger, error handling), not branching
-  business logic. Same acceptance class as `(*RecoveryStep).Process` (CC=12)
-  and `renderHistory` (CC=12) — sequential orchestration with error guards.
-  Grew over the CC=10 threshold in 2026-09 (#1410) when the per-tool
-  writeStats aggregation and dead-tool notice were added (T7).
-  Re-anchored 2026-09 (#1412): line drifted 296→300 as the T2 claim/
-  restore/retain-drop refactor grew the file above it; CC re-measured 13→16 —
-  the claim/restore guards and retained/dropped reporting added decision
-  points, still the same structural-guard class.
-  Re-anchored 2026-09 (#1414): CC 16→18 — the master-switch drain-and-drop
-  gate (`cfg == nil || !cfg.Enabled`, issue #1414) added two decision points;
-  line stays 300 (gate inserted inside the body).
-- **See**: `internal/agent/memory/hook.go:300`
+- **Status**: RESOLVED (2026-09, refactored below CC=10 threshold)
+- **Complexity after fix**: `FlushSession` CC=7 (was 18); helpers `claimEpisodes` CC=5, `buildEngramPayload` CC=3, `restoreOnFailure` CC=3, `finalizeOnSuccess` CC=3, `effectiveScope` CC=2.
+- **What was refactored**: extracted the claim (snapshot AND remove under one lock, issue #1412) plus the master-switch drain-and-drop gate (issue #1414) into `claimEpisodes`; the engrams mapping loop into the pure `buildEngramPayload`; the failure-path restore + `retained`/`dropped` reporting into `restoreOnFailure` (re-creates the map entry when a concurrent flush deleted it); the success-path entry deletion / drop-counter reset into `finalizeOnSuccess`; the per-engram scope read into `effectiveScope`. The nil-client drain-and-drop delete and the engrams-empty belt-and-suspenders guard stay at the orchestrator level (re-anchored, never deleted).
+- **See**: `internal/agent/memory/hook.go` (`FlushSession`, `claimEpisodes`, `buildEngramPayload`, `restoreOnFailure`, `finalizeOnSuccess`, `effectiveScope`)
 
-### internal/agent/memory/injector.go — (*plurInjector).Transform (CC=18)
+### internal/agent/memory/injector.go — (*plurInjector).Transform (CC=18) → RESOLVED
 
-- **Status**: ACCEPTED (2026-09, issue #1404)
-- **Rationale**: Sequential fail-open pipeline mandated by ADR-068 §1:
-  disabled-strip, nil-client guard, error-strip, defensive trim, marker
-  insert, observability — each step a single-line guard or delegation, and
-  the function returns nil on every path so the turn is never broken. CC is
-  structural guards, not business logic. Same acceptance class as
-  `renderHistory` (CC=12). CC re-measured 2026-09 (#1410): 16→18 — the
-  `result.Error` strip branch (Seam A blindness, ADR-068 §10 row 17) and its
-  nested logger guard added 2; the line stays 64 since the additions are
-  inside the body.
-- **See**: `internal/agent/memory/injector.go:64`
+- **Status**: RESOLVED (2026-09, refactored below CC=10 threshold)
+- **Complexity after fix**: `Transform` CC=8 (was 18); helpers `fetchEngramPayload` CC=6, `applyMemoryTransformation` CC=5, `observeInjection` CC=4, `resolveUserPrompt` CC=1.
+- **What was refactored**: Extracted the four strip sites per the ownership contract (disabled-strip+persist stays in Transform; transport-error and result.Error strips move into fetchEngramPayload; maxBody<0 strip-without-insert moves into applyMemoryTransformation; success observability moves to observeInjection) into a new injector_pipeline.go; guard chain cfg-nil → disabled → nil-client preserved.
+- **See**: `internal/agent/memory/injector.go` (`Transform`), `internal/agent/memory/injector_pipeline.go`
 
 ### internal/agent/memory/injector.go — metadataIDs (CC=11)
 
@@ -1365,8 +1318,10 @@ to reason about.
   conversion or return; the CC is inherent to the type-switch dispatch
   pattern, not branching business logic. Re-anchored 2026-09 (#1410): line
   drifted 226→237 as the #1410 Transform strip branch grew the file above
-  it; CC re-verified 11 (unchanged).
-- **See**: `internal/agent/memory/injector.go:237`
+  it; CC re-verified 11 (unchanged). Re-anchored 2026-09 (#1419): line
+  drifted 237→177 as the Transform decomposition shrank the file above it;
+  CC re-verified 11 (unchanged).
+- **See**: `internal/agent/memory/injector.go:177`
 
 ---
 
@@ -1671,7 +1626,7 @@ to reason about.
 - **Status**: ACCEPTED (2026-09)
 - **Rationale**: `BeforeTurn` and `OnPhaseTransition` are no-op method bodies
   that exist solely to satisfy the `orchestrator.TurnHook` interface contract
-  (compiled-time asserted at `hook.go:475`). Go's coverage instrumentation
+  (compiled-time asserted at `hook.go:330`). Go's coverage instrumentation
   does not count empty bodies as covered (blocks report count=1 with zero
   statements). Same acceptance class as the cataloged
   `configRefreshHook.BeforeTurn/AfterTurn` no-op stubs (`agent/agent.go`) and
@@ -1698,15 +1653,18 @@ to reason about.
 ### agent/memory/hook.go — FlushSession engrams-empty belt-and-suspenders guard
 
 - **Status**: ACCEPTED (2026-09)
-- **Rationale**: `if len(engrams) == 0 { return }` (hook.go:361-363) is
+- **Rationale**: `if len(engrams) == 0 { return }` (hook.go:241-243) is
   structurally unreachable: episodes are mapped 1:1 into engrams
   (`Statement: ep.Text` — no filter in the mapping loop), skip-at-append
   guarantees every buffered episode has non-empty Text
   (buffer.go:67-69), and the empty-drain `len(episodes) == 0` already
-  returned at hook.go:324. The guard is a defensive belt-and-suspenders
-  against a future filter being added to the mapping loop. Same acceptance
+  returned in `claimEpisodes` (hook.go:456-459). The guard is a defensive
+  belt-and-suspenders against a future filter being added to the mapping
+  loop, kept at the orchestrator level after the build call. Same acceptance
   class as the defensive nil/empty guards on internal pipeline state
-  (2026-07 Batch Triage) — `defensive-guard`.
-- **See**: `internal/agent/memory/hook.go:361-363`
+  (2026-07 Batch Triage) — `defensive-guard`. Re-anchored 2026-09 (#1419):
+  line drifted 361→241 as the hook decomposition shrank FlushSession; guard
+  kept at orchestrator level after the build call.
+- **See**: `internal/agent/memory/hook.go:241-243`
 
 *Last Updated: 2026-09 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment); 2026-09 factory seams triage: coverage pin for llm/factory.go createAuthenticator default-case; 2026-09 catalog hygiene: coverage pins for llm/failover.go ExtractDocument delegation wrapper + llm/provider_health.go getPingEndpoint panic and buildRequest error branch (structurally unreachable); re-anchored NewID (222-224 → 234-236) and Task accessors (105,108,111 → 112,116); coverage test for BuildSuggestionService tracker fallback; 2026-09 #1378: four test-complexity catalog additions (TestToSDKSchema_EmptyType_OmitsTypeKey CC=19, TestToOpenAISchema_EmptyTypeOmitsKey CC=11, TestToOpenAITools_EmptyTypeNested_OmitsEmptyTypeKey CC=16, TestConvertSchema_NestedUnrepresentable_BecomesUntypedAny CC=12) — MCP empty-type schema tests; #1387: buildFileUploadBody multipart + propagation coverage-pin catalog entries (Entry A/B); redact hygiene: normalizeKeyToken dead-branch coverage entry (structurally-unreachable); 2026-09 triage completion: ten coverage entries (mcp marshalInputSchema/pipes/resolveCommand/Close-race, global_prompt_tracker prepare, policy confirmAction call-sites, manager Abs guards, state SetInfo marshal, telemetry summary marshal, toolchain execRunner); re-anchors (sqlite RowsAffected 200/218 → 207-209/224-226, state.go:56 dropped, gh token resolver 66-70 → 66-71); partition-test rows (17); complexity-drift repair: TestBasicAuthTransport 645→646, TestMCPFactory_ConcurrentBuild 683→684, ..._FailingServerSkips 743→744 (import-shift re-anchors), TestStdio_ChildDeathMidSession CC 11→13, TestResolveCommand 10→13 new entry (stdio_client_test.go:25); memory integration: hook.go BeforeTurn/OnPhaseTransition interface-stub entry + TestFirstNonNil/TestAcquireWriteLockUserHomeDirError coverage — partition-test row (1); memory integration round 2: truncateToBytes/AfterTurn-empty-text/acquireWriteLock call-site guard/metadataIDs/lastUserText/joinTextParts/FlushSession edge coverage (harness fix: newTestMemoryHome pre-creates ~/.plur) + flock_unix.go non-EWOULDBLOCK (fault-injection-required) and FlushSession engrams-empty (defensive-guard) catalog entries — partition-test rows (2)))*
