@@ -99,7 +99,6 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"TestToOpenAISchema_EmptyTypeOmitsKey":                      {Line: 21, Complexity: 11, FilePath: "internal/infrastructure/llm/openai/tools_test.go"},
 		"TestToOpenAITools_EmptyTypeNested_OmitsEmptyTypeKey":       {Line: 124, Complexity: 16, FilePath: "internal/infrastructure/llm/openai/tools_test.go"},
 		"TestConvertSchema_NestedUnrepresentable_BecomesUntypedAny": {Line: 241, Complexity: 12, FilePath: "internal/tools/integrations/mcp/schema_test.go"},
-		"(*MCPServerConfig).validate":                               {Line: 107, Complexity: 20, FilePath: "internal/domain/config/mcp_config.go"},
 		"TestMCPFactory_ConcurrentBuild":                            {Line: 684, Complexity: 11, FilePath: "internal/infrastructure/di/mcp_factory_test.go"},
 		"TestMCPFactory_ConcurrentBuild_FailingServerSkips":         {Line: 744, Complexity: 15, FilePath: "internal/infrastructure/di/mcp_factory_test.go"},
 		"TestStdio_RoundTrip":                                       {Line: 112, Complexity: 11, FilePath: "internal/infrastructure/mcp/stdio_client_integration_test.go"},

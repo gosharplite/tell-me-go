@@ -1209,11 +1209,12 @@ to reason about.
   the same structural-guard acceptance class as the rest of this function.
 - **See**: `internal/ui/history.go:26`
 
-### internal/domain/config/mcp_config.go — (*MCPServerConfig).validate (CC=20)
+### internal/domain/config/mcp_config.go — (*MCPServerConfig).validate (CC=20) → RESOLVED
 
-- **Status**: ACCEPTED (2026-08, #1396)
-- **Rationale**: Sequential validation with structural guards only: the issue-mandated most-specific-error-wins check order (COMMAND/URL mutual exclusion, ARGS/DIR/ENV-require-COMMAND, bearer/basic mode conflict, TIMEOUT, the 6-case auth-mode switch, and the positive credential rules) — every branch is a one-line error return whose message is pinned by the T1 table tests. CC is driven by guard count + the auth switch, not branching business logic. Extracting helpers would fragment a coherent, message-pinned validation sequence for cosmetic CC reduction — same acceptance class as `renderHistory` (CC=12) and `(*HistoryEditor).Edit` (CC=10) in this section. A future extraction refactor is possible but is tracked, not this PR. Re-anchored 2026-09 (#1407): the Env field doc-comment + gofmt realignment in mcp_config.go drifted the See: from 103 to 107 (CC unchanged at 20).
-- **See**: `internal/domain/config/mcp_config.go:107`
+- **Status**: RESOLVED (2026-09, refactored below CC=10 threshold)
+- **Complexity after fix**: `validateTransportShape` CC=5, `validateCommandFields` CC=5, `validateAuthTransportConflict` CC=4, `validateExecutionLimits` CC=2, `validateAuthMode` CC=3, `validateCredentials` CC=6; `validate` orchestrator CC=6 (was 20).
+- **What was refactored**: Extracted the six check groups into private sub-validators called by a thin `validate(name)` orchestrator in the documented most-specific-error-wins order; the six-mode auth switch retained verbatim as a grouped case (no set-lookup).
+- **See**: `internal/domain/config/mcp_config.go` (`validate`, `validateTransportShape`, `validateCommandFields`, `validateAuthTransportConflict`, `validateExecutionLimits`, `validateAuthMode`, `validateCredentials`)
 
 ### ui/tui/browser.go — (*rootBrowserModel).handleActionKeys (CC=15) → RESOLVED
 
