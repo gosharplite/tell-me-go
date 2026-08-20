@@ -16,6 +16,13 @@
 // the JSON file named by FAKE_PLUR_SEED — the documented no-pin-tool E2E
 // setup step (ADR-068 §13). Ids are deterministic (fakeplur-<counter>);
 // no randomness is used.
+//
+// Like the real server, the fake advertises real inputSchema properties and
+// rejects a call missing a required parameter with isError: true. The
+// FAKE_PLUR_REJECT env var (comma-separated tool names) additionally makes
+// the listed tools return isError: true before any processing — the
+// reject-writes-only mode the offline failure-surface E2E leg drives
+// (issue #1410 §5).
 package main
 
 import (
@@ -24,10 +31,26 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+// requiredParams lists the parameters each tool requires; the fake rejects a
+// call missing any of them with isError: true — the same convention the real
+// server uses (and the fake's own unknown-tool path).
+var requiredParams = map[string][]string{
+	"plur_capture":     {"summary"},
+	"plur_learn":       {"statement"},
+	"plur_learn_batch": {"engrams"},
+}
+
+// rejectTools is the env-gated reject set: FAKE_PLUR_REJECT=<comma-separated
+// tool names> makes the listed tools return isError: true before any
+// processing — reject-writes-only reproduces the shipped "injection healthy,
+// writes dead" symptom (issue #1410 §5).
+type rejectTools map[string]bool
 
 // engram is one memory record in the fake store.
 type engram struct {
@@ -37,16 +60,17 @@ type engram struct {
 	Pinned   bool     `json:"pinned"`
 	Agent    string   `json:"agent,omitempty"`
 	Scope    string   `json:"scope,omitempty"`
+	Tags     []string `json:"tags,omitempty"`
 }
 
-// episode is one captured learning episode (mirrors the plur_learn_batch
-// wire contract defined by internal/agent/memory/buffer.go episode).
+// episode is one captured plur_capture timeline entry stored by the fake:
+// {summary, agent, session_id} — the real @plur-ai/mcp plur_capture shape
+// (issue #1410). Not a wire contract for plur_learn_batch (that tool takes
+// engrams[]).
 type episode struct {
+	Summary   string    `json:"summary,omitempty"`
 	Agent     string    `json:"agent,omitempty"`
 	SessionID string    `json:"session_id,omitempty"`
-	Text      string    `json:"text,omitempty"`
-	Error     string    `json:"error,omitempty"`
-	Prompt    string    `json:"prompt,omitempty"`
 	Timestamp time.Time `json:"timestamp"`
 }
 
@@ -62,6 +86,16 @@ type server struct {
 	mu        sync.Mutex // guards store
 	store     store
 	storePath string
+	reject    rejectTools // env-gated reject set; read-only after construction
+
+	// delayFile, when set, names a file whose trimmed contents are parsed as
+	// an integer millisecond delay applied per call to the tool named by
+	// delayTool. Read on EVERY call so a test can arm/disarm the delay
+	// without restarting the child (issue #1412 retention leg).
+	delayFile string
+	// delayTool scopes the delay to one tool name; empty means delay all
+	// tools.
+	delayTool string
 }
 
 // rpcMessage is a JSON-RPC 2.0 message as received from the client. The id
@@ -91,20 +125,62 @@ func main() {
 	storePath := os.Getenv("FAKE_PLUR_STORE")
 	seedPath := os.Getenv("FAKE_PLUR_SEED")
 
-	s := newServer(storePath, seedPath)
+	s := newServer(storePath, seedPath, parseRejectTools())
+	s.delayFile = os.Getenv("FAKE_PLUR_DELAY_MS_FILE")
+	s.delayTool = os.Getenv("FAKE_PLUR_DELAY_TOOL")
 	if err := s.run(); err != nil {
 		fmt.Fprintf(os.Stderr, "fakeplur: %v\n", err)
 		os.Exit(1)
 	}
 }
 
+// parseRejectTools reads FAKE_PLUR_REJECT — a comma-separated tool name
+// list — into a reject set. Missing/empty env yields an empty set (no
+// rejection); names are trimmed and blank entries skipped.
+func parseRejectTools() rejectTools {
+	reject := rejectTools{}
+	for _, name := range strings.Split(os.Getenv("FAKE_PLUR_REJECT"), ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			reject[name] = true
+		}
+	}
+	return reject
+}
+
+// delayFor returns the configured artificial delay for one tool call,
+// reading FAKE_PLUR_DELAY_MS_FILE on EVERY call (contents = integer
+// milliseconds). Missing/unreadable/unparseable/non-positive content yields
+// 0 (no delay). FAKE_PLUR_DELAY_TOOL scopes the delay to one tool; empty
+// means delay all tools. The file is re-read per call so a test can arm and
+// disarm the delay between flushes without restarting the child (issue
+// #1412).
+func (s *server) delayFor(name string) time.Duration {
+	if s.delayTool != "" && s.delayTool != name {
+		return 0
+	}
+	if s.delayFile == "" {
+		return 0
+	}
+	data, err := os.ReadFile(s.delayFile)
+	if err != nil {
+		return 0
+	}
+	ms, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || ms <= 0 {
+		return 0
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
 // newServer loads any existing store, merges the out-of-band pinned seed
 // engrams, and ensures the store file exists even when the session performs
 // no mutations (the leg (i) "the fake ran" assertion depends on this).
-func newServer(storePath, seedPath string) *server {
+// reject is the FAKE_PLUR_REJECT set; it is stored read-only.
+func newServer(storePath, seedPath string, reject rejectTools) *server {
 	s := &server{
 		store:     store{Engrams: []engram{}, Episodes: []episode{}},
 		storePath: storePath,
+		reject:    reject,
 	}
 	if storePath != "" {
 		if data, err := os.ReadFile(storePath); err == nil {
@@ -212,7 +288,9 @@ func (s *server) handleLine(line string) (rpcResponse, bool) {
 	}
 }
 
-// toolDefinitions returns the six tool declarations advertised by the fake.
+// toolDefinitions returns the six tool declarations advertised by the fake,
+// each carrying a JSON-Schema-shaped inputSchema with the real properties
+// and required lists the @plur-ai/mcp server advertises (issue #1410).
 func (s *server) toolDefinitions() []map[string]interface{} {
 	names := []string{
 		"plur_inject_hybrid",
@@ -227,10 +305,85 @@ func (s *server) toolDefinitions() []map[string]interface{} {
 		tools = append(tools, map[string]interface{}{
 			"name":        n,
 			"description": "fake PLUR tool for offline E2E",
-			"inputSchema": map[string]interface{}{"type": "object"},
+			"inputSchema": toolSchema(n),
 		})
 	}
 	return tools
+}
+
+// toolSchema returns the inputSchema for one tool: {"type": "object"} with
+// the properties and required parameters matching the real @plur-ai/mcp
+// wire schemas (issue #1410). Unknown names fall back to an empty object.
+func toolSchema(name string) map[string]interface{} {
+	str := func() map[string]interface{} { return map[string]interface{}{"type": "string"} }
+	strArr := func() map[string]interface{} {
+		return map[string]interface{}{"type": "array", "items": str()}
+	}
+	engramObj := func() map[string]interface{} {
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"statement": str(),
+				"scope":     str(),
+				"tags":      strArr(),
+			},
+			"required": []string{"statement"},
+		}
+	}
+
+	switch name {
+	case "plur_capture":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"summary":    str(),
+				"agent":      str(),
+				"session_id": str(),
+				"tags":       strArr(),
+			},
+			"required": []string{"summary"},
+		}
+	case "plur_learn":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"statement": str(),
+				"scope":     str(),
+				"tags":      strArr(),
+			},
+			"required": []string{"statement"},
+		}
+	case "plur_learn_batch":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"engrams":       map[string]interface{}{"type": "array", "items": engramObj()},
+				"max_llm_calls": map[string]interface{}{"type": "number"},
+			},
+			"required": []string{"engrams"},
+		}
+	case "plur_inject_hybrid":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"task":   str(),
+				"budget": map[string]interface{}{"type": "number"},
+				"scope":  str(),
+			},
+		}
+	case "plur_recall":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"query": str(),
+				"task":  str(),
+			},
+		}
+	case "plur_status":
+		return map[string]interface{}{"type": "object"}
+	default:
+		return map[string]interface{}{"type": "object"}
+	}
 }
 
 // handleToolCall dispatches a tools/call request. Unknown tool names return
@@ -260,8 +413,30 @@ func (s *server) handleToolCall(msg rpcMessage) rpcResponse {
 }
 
 // dispatchTool routes a tool call to its handler and returns the result
-// text plus whether the call was an error.
+// text plus whether the call was an error. The env-gated reject set and the
+// required-param check run before any processing — the same isError
+// convention the real server (and the fake's unknown-tool path) uses.
 func (s *server) dispatchTool(name string, args map[string]interface{}) (string, bool) {
+	if s.reject[name] {
+		return "rejected by FAKE_PLUR_REJECT: " + name, true
+	}
+	if d := s.delayFor(name); d > 0 {
+		time.Sleep(d)
+		// Delayed call: model the server-side failure the client's detached
+		// 3s budget observes — return isError WITHOUT processing, so the
+		// store is never mutated by a call the client already abandoned
+		// (issue #1412).
+		return "delayed: simulated slow leg exceeded client budget", true
+	}
+	for _, param := range requiredParams[name] {
+		if v, ok := args[param]; !ok {
+			return "missing required parameter: " + param, true
+		} else if strVal, isStr := v.(string); isStr && strVal == "" {
+			// Present-but-empty required string: the real server rejects
+			// empty required values too (issue #1410) — treat as missing.
+			return "missing required parameter: " + param, true
+		}
+	}
 	switch name {
 	case "plur_inject_hybrid", "plur_recall":
 		task := strArg(args, "task")
@@ -321,7 +496,8 @@ func (s *server) recall(task string) string {
 }
 
 // learn mints a deterministic fakeplur-<counter> id, stores the statement
-// as a non-pinned engram, and persists.
+// as a non-pinned engram ({statement, scope?, tags} — no agent param on the
+// real tool, issue #1410), and persists.
 func (s *server) learn(args map[string]interface{}) string {
 	statement := strArg(args, "statement")
 
@@ -334,39 +510,39 @@ func (s *server) learn(args map[string]interface{}) string {
 		ID:       id,
 		Text:     statement,
 		Keywords: keywordsOf(statement),
-		Agent:    strArg(args, "agent"),
 		Scope:    strArg(args, "scope"),
+		Tags:     strSliceArg(args, "tags"),
 	})
 	s.persistLocked()
 	return "learned " + id
 }
 
-// capture appends one episode record to the store and persists.
+// capture appends one episode record to the store and persists. The wire
+// shape is {summary, agent, session_id} — the real plur_capture contract
+// (issue #1410); text/error/prompt are gone.
 func (s *server) capture(args map[string]interface{}) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.store.Episodes = append(s.store.Episodes, episode{
+		Summary:   strArg(args, "summary"),
 		Agent:     strArg(args, "agent"),
 		SessionID: strArg(args, "session_id"),
-		Text:      strArg(args, "text"),
-		Error:     strArg(args, "error"),
-		Prompt:    strArg(args, "prompt"),
 		Timestamp: time.Now(),
 	})
 	s.persistLocked()
 	return "captured"
 }
 
-// learnBatch appends each episode to the store's episodes section and
-// learns each non-empty episode as an engram too (so a later recall can
-// find it), then persists.
+// learnBatch creates one engram per plur_learn_batch item and persists. The
+// real tool takes engrams[] and never creates episodes (issue #1410);
+// empty statements are skipped.
 func (s *server) learnBatch(args map[string]interface{}) string {
-	var episodes []map[string]interface{}
-	if raw, ok := args["episodes"].([]interface{}); ok {
+	var items []map[string]interface{}
+	if raw, ok := args["engrams"].([]interface{}); ok {
 		for _, e := range raw {
 			if m, ok := e.(map[string]interface{}); ok {
-				episodes = append(episodes, m)
+				items = append(items, m)
 			}
 		}
 	}
@@ -374,28 +550,24 @@ func (s *server) learnBatch(args map[string]interface{}) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for _, m := range episodes {
-		ep := episode{
-			Agent:     strArg(m, "agent"),
-			SessionID: strArg(m, "session_id"),
-			Text:      strArg(m, "text"),
-			Error:     strArg(m, "error"),
-			Prompt:    strArg(m, "prompt"),
-			Timestamp: time.Now(),
+	learned := 0
+	for _, m := range items {
+		statement := strArg(m, "statement")
+		if strings.TrimSpace(statement) == "" {
+			continue
 		}
-		s.store.Episodes = append(s.store.Episodes, ep)
-		if strings.TrimSpace(ep.Text) != "" {
-			s.store.Counter++
-			s.store.Engrams = append(s.store.Engrams, engram{
-				ID:       fmt.Sprintf("fakeplur-%d", s.store.Counter),
-				Text:     ep.Text,
-				Keywords: keywordsOf(ep.Text),
-				Agent:    ep.Agent,
-			})
-		}
+		s.store.Counter++
+		s.store.Engrams = append(s.store.Engrams, engram{
+			ID:       fmt.Sprintf("fakeplur-%d", s.store.Counter),
+			Text:     statement,
+			Keywords: keywordsOf(statement),
+			Scope:    strArg(m, "scope"),
+			Tags:     strSliceArg(m, "tags"),
+		})
+		learned++
 	}
 	s.persistLocked()
-	return fmt.Sprintf("learned %d episodes", len(episodes))
+	return fmt.Sprintf("learned %d engrams", learned)
 }
 
 // status reports the store's engram/episode counts.
@@ -494,4 +666,24 @@ func strArg(args map[string]interface{}, key string) string {
 		}
 	}
 	return ""
+}
+
+// strSliceArg reads a []string argument from a decoded JSON object,
+// accepting []interface{} of strings and skipping non-string/empty entries.
+func strSliceArg(args map[string]interface{}, key string) []string {
+	raw, ok := args[key]
+	if !ok {
+		return nil
+	}
+	list, ok := raw.([]interface{})
+	if !ok {
+		return nil
+	}
+	var out []string
+	for _, item := range list {
+		if s, ok := item.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }

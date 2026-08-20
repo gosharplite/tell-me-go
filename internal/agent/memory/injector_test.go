@@ -402,3 +402,48 @@ func containsString(haystack []string, s string) bool {
 	}
 	return false
 }
+
+// TestInjectorStripOnResultError verifies the Seam A strip on server-side
+// isError rejections: the adapter returns ToolResult.Error with a nil Go
+// error (issue #1410), and Transform must never build a recall block from
+// it — nothing inserted when no block exists, and an existing marker block
+// stripped.
+func TestInjectorStripOnResultError(t *testing.T) {
+	reject := func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		return tools.ToolResult{Text: "missing required parameter: summary", Error: errors.New("missing required parameter: summary")}, nil
+	}
+
+	t.Run("no prior block nothing inserted", func(t *testing.T) {
+		mock := &mockMCPClient{CallToolFunc: reject}
+		inj, _ := newTestInjector(t, mock, true)
+		req := &sessctx.ContextRequest{History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hi"}}}}}
+		if err := inj.Transform(context.Background(), req); err != nil {
+			t.Fatalf("Transform must return nil on result.Error, got %v", err)
+		}
+		if countMarkerParts(req.History) != 0 {
+			t.Error("no memory block may be built from an error result")
+		}
+		if req.PersistHistory {
+			t.Error("PersistHistory must not be set on the fail-open strip path")
+		}
+	})
+
+	t.Run("existing block stripped", func(t *testing.T) {
+		mock := &mockMCPClient{CallToolFunc: reject}
+		inj, _ := newTestInjector(t, mock, true)
+		req := &sessctx.ContextRequest{History: []*llm.Content{
+			{Role: "system", Parts: []*llm.Part{{Text: "base"}, {Text: memoryHeader + "\n\nstale recall\n" + memoryFooter}}},
+			{Role: "user", Parts: []*llm.Part{{Text: "hi"}}},
+		}}
+		if err := inj.Transform(context.Background(), req); err != nil {
+			t.Fatalf("Transform must return nil on result.Error, got %v", err)
+		}
+		if countMarkerParts(req.History) != 0 {
+			t.Error("marker block must be stripped on result.Error")
+		}
+		sys := req.History[0]
+		if len(sys.Parts) != 1 || strings.Contains(sys.Parts[0].Text, memoryMarker) {
+			t.Errorf("marker not stripped in memory: %+v", sys.Parts)
+		}
+	})
+}

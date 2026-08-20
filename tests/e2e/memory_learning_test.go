@@ -77,7 +77,8 @@ func TestE2EMemoryLearning_TeachOneInjectAnother(t *testing.T) {
 // a plain prompt (no correction frame), the hook buffers the turn's episode
 // and Chat's `defer FlushSession` (internal/agent/agent.go) drains the ring
 // buffer on the success path — the plur_learn_batch payload lands in the
-// store's episodes section before the CLI process exits.
+// store's engrams section before the CLI process exits (the real
+// plur_learn_batch creates engrams only, issue #1410).
 func TestE2EMemoryLearning_BatchFlushAtSessionEnd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow E2E test in short mode")
@@ -100,15 +101,15 @@ func TestE2EMemoryLearning_BatchFlushAtSessionEnd(t *testing.T) {
 		t.Fatal("CLI produced no intercepted LLM request")
 	}
 
-	// The defer FlushSession fired on the success path: the store's episodes
-	// section is non-empty and contains the model response text (the mock
-	// always answers "I will write a Go function.").
+	// The defer FlushSession fired on the success path: the store's ENGRAMS
+	// section is non-empty and a statement contains the model response text
+	// (the mock always answers "I will write a Go function.").
 	st := readPlurStore(t, storePath)
-	if len(st.Episodes) == 0 {
-		t.Fatal("expected batch episodes in the store after session end; plur_learn_batch did not land")
+	if len(st.Engrams) == 0 {
+		t.Fatal("expected batch engrams in the store after session end; plur_learn_batch did not land")
 	}
-	if texts := episodeTexts(st); !strings.Contains(texts, "I will write a Go function.") {
-		t.Errorf("stored episodes do not contain the model response text; episodes: %q", texts)
+	if _, ok := findEngramByText(st, "I will write a Go function."); !ok {
+		t.Errorf("no engram statement contains the model response text; engrams: %+v", st.Engrams)
 	}
 }
 

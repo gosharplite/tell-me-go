@@ -109,6 +109,17 @@ func (t *plurInjector) Transform(ctx context.Context, req *sessctx.ContextReques
 		return nil
 	}
 
+	// A server-side isError rejection carries the server's error text in
+	// result.Text — never build a recall block from it. Same strip-and-return
+	// path as a transport error: inject current recall, or nothing (issue #1410).
+	if result.Error != nil {
+		if t.logger != nil {
+			t.logger.Warn("memory_injection_failed", "error", result.Error)
+		}
+		stripMemoryBlock(req)
+		return nil
+	}
+
 	block := memoryHeader + "\n\n" + strings.TrimSpace(result.Text) + "\n" + memoryFooter
 
 	// Defensive trim: pinned engrams make server-side size non-deterministic.
