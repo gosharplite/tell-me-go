@@ -176,7 +176,7 @@ Local-first shared memory for AI agents, exposed as an MCP server (PLUR). Releva
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `enabled` | boolean | Master switch; default false (opt-in); hot-reloadable. |
+| `enabled` | boolean | Master switch for the whole memory integration (injection AND learning); default false (opt-in); hot-reloadable. |
 | `server` | string | Key of the MCP_SERVERS entry backing the memory; session-fixed (restart-level). |
 | `injectBudget` | integer | Token budget for `plur_inject_hybrid` per `Turn`; hot-reloadable. |
 | `learnTier` | MemoryLearnTier | Learning tier: off, capture, batch, or full; default batch; hot-reloadable. |

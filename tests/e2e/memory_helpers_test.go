@@ -47,11 +47,11 @@ func writeSeedFile(t *testing.T, path string, engrams []map[string]interface{}) 
 	return path
 }
 
-// memoryE2EConfig writes a config file that mirrors createTempConfig's shape
-// (provider openai, SELECTED_PROVIDER mock) plus the memory integration
-// surface: MCP_SERVERS.plur pointing at the fake binary and MEMORY enabled
-// with the given LEARN tier. Returns the config path.
-func memoryE2EConfig(t *testing.T, mockURL, fakePlurPath string, learn string) string {
+// memoryE2EConfigWithEnabled writes a config identical to memoryE2EConfig
+// except that MEMORY.ENABLED takes the given value (issue #1414 — the
+// disabled-config E2E leg needs ENABLED: false; every pre-existing caller
+// keeps ENABLED: true via memoryE2EConfig).
+func memoryE2EConfigWithEnabled(t *testing.T, mockURL, fakePlurPath string, learn string, enabled bool) string {
 	t.Helper()
 	content := fmt.Sprintf(`
 MODE: "assistant"
@@ -66,16 +66,25 @@ MCP_SERVERS:
   plur:
     COMMAND: '%s'
 MEMORY:
-  ENABLED: true
+  ENABLED: %t
   SERVER: "plur"
   INJECT_BUDGET: 2000
   LEARN: "%s"
-`, mockURL, fakePlurPath, learn)
+`, mockURL, fakePlurPath, enabled, learn)
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write memory config: %v", err)
 	}
 	return path
+}
+
+// memoryE2EConfig writes a config file that mirrors createTempConfig's shape
+// (provider openai, SELECTED_PROVIDER mock) plus the memory integration
+// surface: MCP_SERVERS.plur pointing at the fake binary and MEMORY enabled
+// with the given LEARN tier. Returns the config path.
+func memoryE2EConfig(t *testing.T, mockURL, fakePlurPath string, learn string) string {
+	t.Helper()
+	return memoryE2EConfigWithEnabled(t, mockURL, fakePlurPath, learn, true)
 }
 
 // memoryEnv builds the standard environment for a memory E2E CLI run:

@@ -92,11 +92,11 @@ func (h *plurHook) BeforeTurn(turn *orchestrator.Turn) {}
 func (h *plurHook) OnPhaseTransition(from, to orchestrator.TurnPhase, state *orchestrator.TurnState) {
 }
 
-// AfterTurn classifies the turn outcome and dispatches to the active LEARN
-// tier. It returns on every path — memory errors are logged and ignored.
+// AfterTurn classifies the turn outcome and dispatches to the active LEARN tier; it returns on every path — memory errors are logged and ignored.
+// The Enabled master-switch gate mirrors the injector's disable path (fail-open silent return, ADR-068 §5) — ENABLED: false means no learning regardless of tier.
 func (h *plurHook) AfterTurn(turn *orchestrator.Turn, err error) {
 	cfg := h.cfg.Load()
-	if cfg == nil {
+	if cfg == nil || !cfg.Enabled {
 		return
 	}
 	tier := cfg.EffectiveLearnTier()
@@ -298,6 +298,17 @@ func (h *plurHook) maybeLearn(turn *orchestrator.Turn, cfg *config.MemoryConfig)
 // opportunity) and ring-bound drops are reported on the failure Warn —
 // fail-open means log-and-move-on, never delete-then-fail (issue #1412).
 func (h *plurHook) FlushSession(sessionID string) {
+	// Master-switch gate: a disabled session must not flush a stale buffer.
+	// Drain-and-drop without writing — episodes captured while enabled are
+	// deliberately discarded when the user turns memory off mid-session
+	// (issue #1414). Silent, mirroring the injector's disable path.
+	if cfg := h.cfg.Load(); cfg == nil || !cfg.Enabled {
+		h.mu.Lock()
+		delete(h.buffers, sessionID)
+		h.mu.Unlock()
+		return
+	}
+
 	// Claim: snapshot AND remove the buffered episodes under one lock, so a
 	// concurrent flush can never double-write the same episodes (issue
 	// #1412). The claim is restored on write failure (retained for the next

@@ -1278,7 +1278,7 @@ to reason about.
   dispatch where CC is switch/branch count, not branching business logic.
 - **See**: `internal/agent/orchestrator/engine_phases.go:129`
 
-### internal/agent/memory/hook.go — (*plurHook).AfterTurn (CC=21)
+### internal/agent/memory/hook.go — (*plurHook).AfterTurn (CC=22)
 
 - **Status**: ACCEPTED (2026-09, issue #1404)
 - **Rationale**: Sequential guarded classification: three-way switch on the
@@ -1293,6 +1293,9 @@ to reason about.
   drifted 80→97 as the T2 branch-(i)/(ii)/(iii) tests and the
   writeStats/flush instrumentation grew the file above it; CC re-verified 21
   (unchanged — the classification/assertions did not change).
+  Re-anchored 2026-09 (#1414): CC 21→22 — the master-switch gate
+  (`!cfg.Enabled`, issue #1414) added one decision point on the existing
+  nil-config line; line stays 97 (gate kept on one line).
 - **See**: `internal/agent/memory/hook.go:97`
 
 ### internal/agent/memory/hook.go — (*plurHook).maybeLearn (CC=11)
@@ -1311,7 +1314,7 @@ to reason about.
   were added (T7).
 - **See**: `internal/agent/memory/hook.go:236`
 
-### internal/agent/memory/hook.go — (*plurHook).FlushSession (CC=16)
+### internal/agent/memory/hook.go — (*plurHook).FlushSession (CC=18)
 
 - **Status**: ACCEPTED (2026-09, issue #1404)
 - **Rationale**: Session-end batch flush: claim the buffer under lock
@@ -1332,6 +1335,9 @@ to reason about.
   restore/retain-drop refactor grew the file above it; CC re-measured 13→16 —
   the claim/restore guards and retained/dropped reporting added decision
   points, still the same structural-guard class.
+  Re-anchored 2026-09 (#1414): CC 16→18 — the master-switch drain-and-drop
+  gate (`cfg == nil || !cfg.Enabled`, issue #1414) added two decision points;
+  line stays 300 (gate inserted inside the body).
 - **See**: `internal/agent/memory/hook.go:300`
 
 ### internal/agent/memory/injector.go — (*plurInjector).Transform (CC=18)
