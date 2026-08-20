@@ -811,10 +811,11 @@ func (l *recordingLogger) warnValue(msg, key string) (interface{}, bool) {
 // newTestHookWithLogger builds a plurHook like newTestHook but with the
 // given logger (e.g. a *recordingLogger for Warn assertions). HOME is
 // redirected to a temp dir so flock side effects never touch the real
-// ~/.plur.
+// ~/.plur (newTestMemoryHome pre-creates ~/.plur so the flock guard paths
+// run for real).
 func newTestHookWithLogger(t *testing.T, client tools.MCPClient, tier config.MemoryLearnTier, hist ports.HistoryManager, logger ports.Logger) (*plurHook, *atomic.Pointer[config.MemoryConfig]) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	newTestMemoryHome(t)
 	memCfg := config.DefaultMemoryConfig()
 	memCfg.Enabled = true
 	memCfg.LearnTier = tier
@@ -922,4 +923,287 @@ func TestHookBatchDropCountReported(t *testing.T) {
 	if !ok || len(buf.episodes) != maxBufferEpisodes {
 		t.Errorf("buffer episodes after failed flush = %d (present=%v), want %d", len(buf.episodes), ok, maxBufferEpisodes)
 	}
+}
+
+// newTestHookWithEnabled builds a plurHook like newTestHook but with the
+// given enabled state (issue #1414 — the master-switch gate tests need a
+// disabled hook; existing tests keep newTestHook's Enabled=true).
+func newTestHookWithEnabled(t *testing.T, client tools.MCPClient, tier config.MemoryLearnTier, hist ports.HistoryManager, enabled bool) (*plurHook, *atomic.Pointer[config.MemoryConfig]) {
+	t.Helper()
+	newTestMemoryHome(t)
+	memCfg := config.DefaultMemoryConfig()
+	memCfg.Enabled = enabled
+	memCfg.LearnTier = tier
+	cfgPtr := &atomic.Pointer[config.MemoryConfig]{}
+	cfgPtr.Store(&memCfg)
+	return NewPlurHook(client, cfgPtr, &ports.NoOpLogger{}, &clock.FakeClock{}, hist).(*plurHook), cfgPtr
+}
+
+// TestHookDisabledMasterSwitch_NoWrites pins the master-switch gate across
+// every non-off tier (issue #1414): with ENABLED=false, AfterTurn must not
+// write — no plur_capture and no buffer append — and FlushSession (batch and
+// full tiers) must not call MCP. The disabled integration is inert end-to-end.
+func TestHookDisabledMasterSwitch_NoWrites(t *testing.T) {
+	tiers := []config.MemoryLearnTier{config.MemoryLearnCapture, config.MemoryLearnBatch, config.MemoryLearnFull}
+	for _, tier := range tiers {
+		t.Run(string(tier), func(t *testing.T) {
+			mock := &mockMCPClient{}
+			h, _ := newTestHookWithEnabled(t, mock, tier, &stubHistoryManager{}, false)
+			h.AfterTurn(responseTurn(0, "s1", "hello"), nil)
+
+			if calls := mock.recordedNames(); len(calls) != 0 {
+				t.Errorf("disabled hook must not call MCP, got %v", calls)
+			}
+			h.mu.Lock()
+			bufCount := len(h.buffers)
+			h.mu.Unlock()
+			if bufCount != 0 {
+				t.Errorf("disabled hook must not buffer, got %d session buffers", bufCount)
+			}
+
+			if tier == config.MemoryLearnBatch || tier == config.MemoryLearnFull {
+				h.FlushSession("s1")
+				if calls := mock.recordedNames(); len(calls) != 0 {
+					t.Errorf("disabled flush must not call MCP, got %v", calls)
+				}
+			}
+		})
+	}
+}
+
+// TestHookDisabledMasterSwitch_FullTierNoLearn pins the full tier's direct
+// learn gate (issue #1414): a correction-frame turn must produce no plur_learn
+// call and no buffer append when ENABLED=false.
+func TestHookDisabledMasterSwitch_FullTierNoLearn(t *testing.T) {
+	mock := &mockMCPClient{}
+	h, _ := newTestHookWithEnabled(t, mock, config.MemoryLearnFull, &stubHistoryManager{}, false)
+	tun := turn(0, "s1", &orchestrator.TurnState{
+		Response:        &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}},
+		PreparedHistory: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "please remember to use X"}}}},
+	})
+	h.AfterTurn(tun, nil)
+
+	if calls := mock.recordedNames(); len(calls) != 0 {
+		t.Errorf("disabled full tier must not call plur_learn, got %v", calls)
+	}
+	h.mu.Lock()
+	bufCount := len(h.buffers)
+	h.mu.Unlock()
+	if bufCount != 0 {
+		t.Errorf("disabled full tier must not buffer, got %d session buffers", bufCount)
+	}
+}
+
+// TestHookHotReloadDisableStopsCapture proves the per-turn config read (issue
+// #1414): hot-reloading ENABLED=false mid-session stops capture immediately —
+// the turn after the flip records nothing and the session-end flush is a no-op.
+func TestHookHotReloadDisableStopsCapture(t *testing.T) {
+	mock := &mockMCPClient{}
+	h, cfgPtr := newTestHook(t, mock, config.MemoryLearnCapture, &stubHistoryManager{})
+	h.AfterTurn(responseTurn(0, "s1", "hello"), nil)
+	if calls := mock.recordedNames(); len(calls) != 1 {
+		t.Fatalf("enabled capture calls = %d, want 1", len(calls))
+	}
+
+	memCfg := *cfgPtr.Load()
+	memCfg.Enabled = false
+	cfgPtr.Store(&memCfg)
+
+	h.AfterTurn(responseTurn(1, "s1", "hello2"), nil)
+	if calls := mock.recordedNames(); len(calls) != 1 {
+		t.Errorf("capture after disable = %d, want still 1 (hot-reload gate)", len(calls))
+	}
+	h.FlushSession("s1")
+	if calls := mock.recordedNames(); len(calls) != 1 {
+		t.Errorf("flush after disable = %d, want still 1", len(calls))
+	}
+}
+
+// TestHookFlushDropsStaleBufferWhenDisabledMidSession pins the FlushSession
+// drain-and-drop gate (issue #1414): episodes buffered while enabled are
+// deliberately discarded — not written — when ENABLED is flipped to false
+// mid-session; the buffer entry is deleted and no MCP call is made.
+func TestHookFlushDropsStaleBufferWhenDisabledMidSession(t *testing.T) {
+	mock := &mockMCPClient{}
+	h, cfgPtr := newTestHook(t, mock, config.MemoryLearnBatch, &stubHistoryManager{})
+	h.AfterTurn(responseTurn(0, "s1", "first"), nil)
+
+	h.mu.Lock()
+	_, buffered := h.buffers["s1"]
+	h.mu.Unlock()
+	if !buffered {
+		t.Fatal("expected a buffered episode before the disable flip")
+	}
+
+	memCfg := *cfgPtr.Load()
+	memCfg.Enabled = false
+	cfgPtr.Store(&memCfg)
+
+	h.FlushSession("s1")
+	if calls := mock.recordedNames(); len(calls) != 0 {
+		t.Errorf("disabled flush must not call MCP, got %v", calls)
+	}
+	h.mu.Lock()
+	_, stillPresent := h.buffers["s1"]
+	h.mu.Unlock()
+	if stillPresent {
+		t.Error("buffer entry must be deleted (drain-and-drop) when disabled")
+	}
+}
+
+// TestHookAfterTurnEmptyResponseText pins the branch-(i) empty-text early
+// return (hook.go:133-135): a Response present but containing no text parts
+// (e.g. only FunctionCall / thought parts) produces no episode — no MCP
+// call, no buffered episode. Branch-(iii) equivalent is covered by
+// TestHookCaptureBranchIII ("model turn without text parts filtered").
+func TestHookAfterTurnEmptyResponseText(t *testing.T) {
+	mock := &mockMCPClient{}
+	h, _ := newTestHook(t, mock, config.MemoryLearnCapture, &stubHistoryManager{})
+	tun := turn(0, "s1", &orchestrator.TurnState{
+		Response: &llm.Content{Role: "model", Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "list_files"}},
+			{Text: "", IsThought: true},
+		}},
+	})
+	h.AfterTurn(tun, nil)
+
+	if calls := mock.recordedNames(); len(calls) != 0 {
+		t.Errorf("empty-text response must produce no MCP call, got %v", calls)
+	}
+	h.mu.Lock()
+	bufCount := len(h.buffers)
+	h.mu.Unlock()
+	if bufCount != 0 {
+		t.Errorf("empty-text response must not buffer, got %d session buffers", bufCount)
+	}
+}
+
+// TestHookFlushEmptyDrainNoop pins the FlushSession empty-drain no-op
+// (hook.go:324-328): a buffer entry with zero episodes is deleted without
+// any MCP call. Reachable in production via a concurrent flush draining the
+// entry between claim and write completion.
+func TestHookFlushEmptyDrainNoop(t *testing.T) {
+	mock := &mockMCPClient{}
+	h, _ := newTestHook(t, mock, config.MemoryLearnBatch, &stubHistoryManager{})
+	h.mu.Lock()
+	h.buffers["s1"] = &sessionBuffer{}
+	h.mu.Unlock()
+
+	h.FlushSession("s1")
+	if calls := mock.recordedNames(); len(calls) != 0 {
+		t.Errorf("empty drain must not call MCP, got %v", calls)
+	}
+	h.mu.Lock()
+	_, present := h.buffers["s1"]
+	h.mu.Unlock()
+	if present {
+		t.Error("empty drain must delete the buffer entry")
+	}
+}
+
+// TestHookFlushNilClientDrainAndDrop pins the FlushSession nil-client guard
+// (hook.go:334-342, ADR-068 §5): with buffered episodes and a nil client,
+// the claim is NOT restored — drain-and-drop deletes the entry, no MCP call,
+// and the memory_client_unavailable Warn is recorded.
+func TestHookFlushNilClientDrainAndDrop(t *testing.T) {
+	logger := &recordingLogger{}
+	mock := &mockMCPClient{}
+	h, _ := newTestHookWithLogger(t, mock, config.MemoryLearnBatch, &stubHistoryManager{}, logger)
+	h.AfterTurn(responseTurn(0, "s1", "first"), nil)
+
+	h.client = nil // permanent misconfiguration (DI-fixed; hot-reload cannot reintroduce)
+	h.FlushSession("s1")
+
+	if calls := mock.recordedNames(); len(calls) != 0 {
+		t.Errorf("nil-client flush must not call MCP, got %v", calls)
+	}
+	h.mu.Lock()
+	_, present := h.buffers["s1"]
+	h.mu.Unlock()
+	if present {
+		t.Error("nil-client flush must drain-and-drop the buffer entry")
+	}
+	if _, ok := logger.warnValue("memory_client_unavailable", "phase"); !ok {
+		t.Error("nil-client flush must record the memory_client_unavailable Warn")
+	}
+}
+
+// TestHookFlushConcurrentRestoreAndSuccessAppend pins the two FlushSession
+// concurrency edges deterministically (ADR-036, channel-gated — no
+// time.Sleep): a concurrent second flush deleting the drained (empty) buffer
+// entry mid-call forces the failure path's !exists restore branch
+// (hook.go:379-382), and an AfterTurn appending during a successful call
+// forces the success path's non-empty-buffer branch (hook.go:399-401, drop
+// counter reset, entry kept).
+func TestHookFlushConcurrentRestoreAndSuccessAppend(t *testing.T) {
+	t.Run("failure path restores into fresh buffer after concurrent drain", func(t *testing.T) {
+		started := make(chan struct{})
+		release := make(chan struct{})
+		mock := &mockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+			close(started)
+			<-release
+			return tools.ToolResult{Text: "rejected", Error: errors.New("rejected")}, nil
+		}}
+		h, _ := newTestHook(t, mock, config.MemoryLearnBatch, &stubHistoryManager{})
+		h.AfterTurn(responseTurn(0, "s1", "first"), nil)
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h.FlushSession("s1")
+		}()
+		<-started // first flush has claimed the episodes and is blocked in CallTool
+
+		// Concurrent second flush: the entry survives (empty) after claim, so
+		// it drains the empty buffer and deletes the entry.
+		h.FlushSession("s1")
+		close(release)
+		wg.Wait()
+
+		// The failed first flush restored the claimed episodes into a fresh
+		// buffer — the episode must survive for the next flush opportunity.
+		h.mu.Lock()
+		buf, ok := h.buffers["s1"]
+		h.mu.Unlock()
+		if !ok || !reflect.DeepEqual(episodeTexts(buf.episodes), []string{"first"}) {
+			t.Fatalf("buffer after concurrent drain + failed flush = %v (present=%v), want [first]", episodeTexts(buf.episodes), ok)
+		}
+	})
+
+	t.Run("success path keeps episodes appended during the call", func(t *testing.T) {
+		started := make(chan struct{})
+		release := make(chan struct{})
+		mock := &mockMCPClient{CallToolFunc: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+			close(started)
+			<-release
+			return tools.ToolResult{}, nil
+		}}
+		h, _ := newTestHook(t, mock, config.MemoryLearnBatch, &stubHistoryManager{})
+		h.AfterTurn(responseTurn(0, "s1", "first"), nil)
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h.FlushSession("s1")
+		}()
+		<-started
+
+		// Append during the in-flight write: the entry survives the success
+		// path (episodes appended during the call survive) with dropped=0.
+		h.AfterTurn(responseTurn(1, "s1", "second"), nil)
+		close(release)
+		wg.Wait()
+
+		h.mu.Lock()
+		buf, ok := h.buffers["s1"]
+		h.mu.Unlock()
+		if !ok || !reflect.DeepEqual(episodeTexts(buf.episodes), []string{"second"}) {
+			t.Fatalf("buffer after success with mid-call append = %v (present=%v), want [second]", episodeTexts(buf.episodes), ok)
+		}
+		if buf.dropped != 0 {
+			t.Errorf("dropped = %d, want 0 (retention window closed cleanly)", buf.dropped)
+		}
+	})
 }

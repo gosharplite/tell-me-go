@@ -967,8 +967,10 @@ catalog a new gap no one reviewed. Policy:
   trim and warning surfaces. CC comes from case enumeration and assertion
   boilerplate, not branching business logic. Same acceptance class as
   `TestHydrateMediaAssets` (CC=13) — assertion boilerplate across a coverage
-  matrix.
-- **See**: `internal/agent/memory/injector_test.go:108`
+  matrix. Re-anchored 2026-09 (memory round 2): line drifted 108→109 as the
+  TASK-E helper tests (metadataIDs/lastUserText/joinTextParts) added the
+  reflect import above it; CC re-verified 22 (unchanged).
+- **See**: `internal/agent/memory/injector_test.go:109`
 
 ### internal/app/chatter_test.go — TestNewChatter_MemoryClientLookup (CC=12)
 
@@ -1278,7 +1280,7 @@ to reason about.
   dispatch where CC is switch/branch count, not branching business logic.
 - **See**: `internal/agent/orchestrator/engine_phases.go:129`
 
-### internal/agent/memory/hook.go — (*plurHook).AfterTurn (CC=21)
+### internal/agent/memory/hook.go — (*plurHook).AfterTurn (CC=22)
 
 - **Status**: ACCEPTED (2026-09, issue #1404)
 - **Rationale**: Sequential guarded classification: three-way switch on the
@@ -1293,6 +1295,9 @@ to reason about.
   drifted 80→97 as the T2 branch-(i)/(ii)/(iii) tests and the
   writeStats/flush instrumentation grew the file above it; CC re-verified 21
   (unchanged — the classification/assertions did not change).
+  Re-anchored 2026-09 (#1414): CC 21→22 — the master-switch gate
+  (`!cfg.Enabled`, issue #1414) added one decision point on the existing
+  nil-config line; line stays 97 (gate kept on one line).
 - **See**: `internal/agent/memory/hook.go:97`
 
 ### internal/agent/memory/hook.go — (*plurHook).maybeLearn (CC=11)
@@ -1311,7 +1316,7 @@ to reason about.
   were added (T7).
 - **See**: `internal/agent/memory/hook.go:236`
 
-### internal/agent/memory/hook.go — (*plurHook).FlushSession (CC=16)
+### internal/agent/memory/hook.go — (*plurHook).FlushSession (CC=18)
 
 - **Status**: ACCEPTED (2026-09, issue #1404)
 - **Rationale**: Session-end batch flush: claim the buffer under lock
@@ -1332,6 +1337,9 @@ to reason about.
   restore/retain-drop refactor grew the file above it; CC re-measured 13→16 —
   the claim/restore guards and retained/dropped reporting added decision
   points, still the same structural-guard class.
+  Re-anchored 2026-09 (#1414): CC 16→18 — the master-switch drain-and-drop
+  gate (`cfg == nil || !cfg.Enabled`, issue #1414) added two decision points;
+  line stays 300 (gate inserted inside the body).
 - **See**: `internal/agent/memory/hook.go:300`
 
 ### internal/agent/memory/injector.go — (*plurInjector).Transform (CC=18)
@@ -1656,4 +1664,49 @@ to reason about.
 - **Rationale**: The `execRunner` closure (real `osexec.CommandContext(...).CombinedOutput()`) is composition-root glue passed to `NewSkillManager`; the skillssh exec paths are exercised with the fake runner in the skillssh package tests. Driving the real toolchain path requires a live git/go environment — integration-level fault injection disproportionate to the value. Same acceptance class as the cataloged registerSkillsShTools error entry in the same file.
 - **See**: `internal/infrastructure/di/toolchain_factory.go:145-147`
 
-*Last Updated: 2026-09 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment); 2026-09 factory seams triage: coverage pin for llm/factory.go createAuthenticator default-case; 2026-09 catalog hygiene: coverage pins for llm/failover.go ExtractDocument delegation wrapper + llm/provider_health.go getPingEndpoint panic and buildRequest error branch (structurally unreachable); re-anchored NewID (222-224 → 234-236) and Task accessors (105,108,111 → 112,116); coverage test for BuildSuggestionService tracker fallback; 2026-09 #1378: four test-complexity catalog additions (TestToSDKSchema_EmptyType_OmitsTypeKey CC=19, TestToOpenAISchema_EmptyTypeOmitsKey CC=11, TestToOpenAITools_EmptyTypeNested_OmitsEmptyTypeKey CC=16, TestConvertSchema_NestedUnrepresentable_BecomesUntypedAny CC=12) — MCP empty-type schema tests; #1387: buildFileUploadBody multipart + propagation coverage-pin catalog entries (Entry A/B); redact hygiene: normalizeKeyToken dead-branch coverage entry (structurally-unreachable); 2026-09 triage completion: ten coverage entries (mcp marshalInputSchema/pipes/resolveCommand/Close-race, global_prompt_tracker prepare, policy confirmAction call-sites, manager Abs guards, state SetInfo marshal, telemetry summary marshal, toolchain execRunner); re-anchors (sqlite RowsAffected 200/218 → 207-209/224-226, state.go:56 dropped, gh token resolver 66-70 → 66-71); partition-test rows (17); complexity-drift repair: TestBasicAuthTransport 645→646, TestMCPFactory_ConcurrentBuild 683→684, ..._FailingServerSkips 743→744 (import-shift re-anchors), TestStdio_ChildDeathMidSession CC 11→13, TestResolveCommand 10→13 new entry (stdio_client_test.go:25)))*
+## Coverage Gaps (ACCEPTED — memory integration interface stubs)
+
+### agent/memory/hook.go — plurHook.BeforeTurn/OnPhaseTransition no-op stubs
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: `BeforeTurn` and `OnPhaseTransition` are no-op method bodies
+  that exist solely to satisfy the `orchestrator.TurnHook` interface contract
+  (compiled-time asserted at `hook.go:475`). Go's coverage instrumentation
+  does not count empty bodies as covered (blocks report count=1 with zero
+  statements). Same acceptance class as the cataloged
+  `configRefreshHook.BeforeTurn/AfterTurn` no-op stubs (`agent/agent.go`) and
+  `prodHeartbeatHooks.onTick()` (`agent/session/internal_tools.go`) —
+  `interface-stub`.
+- **See**: `internal/agent/memory/hook.go:89-93` (BeforeTurn + OnPhaseTransition)
+
+## Coverage Gaps (ACCEPTED — memory integration fault injection)
+
+### agent/memory/flock_unix.go — acquireWriteLock non-EWOULDBLOCK flock error branch
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: `syscall.Flock` returns a non-EWOULDBLOCK/EAGAIN error only
+  under environment fault injection (filesystem without flock support,
+  kernel lock-table exhaustion ENOLCK, or signal interruption EINTR) — none
+  deterministically triggerable on the CI filesystem without a production
+  seam (an fd is opened and flocked entirely inside `acquireWriteLock`, so
+  no test hook exists to inject a bad fd). Fail-open: callers log and
+  proceed unlocked (ADR-068 §2). Same acceptance class as the cataloged
+  `sqlite_store` Update/Delete `RowsAffected` driver-error and
+  `processWatcherEvents` goroutine-timing entries — `fault-injection-required`.
+- **See**: `internal/agent/memory/flock_unix.go:52-53`
+
+### agent/memory/hook.go — FlushSession engrams-empty belt-and-suspenders guard
+
+- **Status**: ACCEPTED (2026-09)
+- **Rationale**: `if len(engrams) == 0 { return }` (hook.go:361-363) is
+  structurally unreachable: episodes are mapped 1:1 into engrams
+  (`Statement: ep.Text` — no filter in the mapping loop), skip-at-append
+  guarantees every buffered episode has non-empty Text
+  (buffer.go:67-69), and the empty-drain `len(episodes) == 0` already
+  returned at hook.go:324. The guard is a defensive belt-and-suspenders
+  against a future filter being added to the mapping loop. Same acceptance
+  class as the defensive nil/empty guards on internal pipeline state
+  (2026-07 Batch Triage) — `defensive-guard`.
+- **See**: `internal/agent/memory/hook.go:361-363`
+
+*Last Updated: 2026-09 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment); 2026-09 factory seams triage: coverage pin for llm/factory.go createAuthenticator default-case; 2026-09 catalog hygiene: coverage pins for llm/failover.go ExtractDocument delegation wrapper + llm/provider_health.go getPingEndpoint panic and buildRequest error branch (structurally unreachable); re-anchored NewID (222-224 → 234-236) and Task accessors (105,108,111 → 112,116); coverage test for BuildSuggestionService tracker fallback; 2026-09 #1378: four test-complexity catalog additions (TestToSDKSchema_EmptyType_OmitsTypeKey CC=19, TestToOpenAISchema_EmptyTypeOmitsKey CC=11, TestToOpenAITools_EmptyTypeNested_OmitsEmptyTypeKey CC=16, TestConvertSchema_NestedUnrepresentable_BecomesUntypedAny CC=12) — MCP empty-type schema tests; #1387: buildFileUploadBody multipart + propagation coverage-pin catalog entries (Entry A/B); redact hygiene: normalizeKeyToken dead-branch coverage entry (structurally-unreachable); 2026-09 triage completion: ten coverage entries (mcp marshalInputSchema/pipes/resolveCommand/Close-race, global_prompt_tracker prepare, policy confirmAction call-sites, manager Abs guards, state SetInfo marshal, telemetry summary marshal, toolchain execRunner); re-anchors (sqlite RowsAffected 200/218 → 207-209/224-226, state.go:56 dropped, gh token resolver 66-70 → 66-71); partition-test rows (17); complexity-drift repair: TestBasicAuthTransport 645→646, TestMCPFactory_ConcurrentBuild 683→684, ..._FailingServerSkips 743→744 (import-shift re-anchors), TestStdio_ChildDeathMidSession CC 11→13, TestResolveCommand 10→13 new entry (stdio_client_test.go:25); memory integration: hook.go BeforeTurn/OnPhaseTransition interface-stub entry + TestFirstNonNil/TestAcquireWriteLockUserHomeDirError coverage — partition-test row (1); memory integration round 2: truncateToBytes/AfterTurn-empty-text/acquireWriteLock call-site guard/metadataIDs/lastUserText/joinTextParts/FlushSession edge coverage (harness fix: newTestMemoryHome pre-creates ~/.plur) + flock_unix.go non-EWOULDBLOCK (fault-injection-required) and FlushSession engrams-empty (defensive-guard) catalog entries — partition-test rows (2)))*

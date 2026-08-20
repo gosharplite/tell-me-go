@@ -7,6 +7,9 @@
 - **Amended**: 2026-08-20, issue #1412 — `plur_learn_batch` payload carries
   `max_llm_calls: 0`; `FlushSession` retains buffered episodes on write
   failure (claim/restore)
+- **Amended**: 2026-09, issue #1414 — `MEMORY.ENABLED` gates both seams
+  (injection AND learning); `FlushSession` drains without writing when
+  disabled
 
 ## Context
 
@@ -140,6 +143,12 @@ including the Round 2 refinements, are settled. There are no open questions.**
 The tiers are **mutually exclusive** (`memory-learn-tier-exclusive`); the
 default is `batch`:
 
+`MEMORY.ENABLED` is the master switch for the whole integration: when
+`false`, no injection and no learning occur regardless of the tier —
+`AfterTurn` returns before tier dispatch and `FlushSession` drains without
+writing; `LEARN` is consulted only when `ENABLED` is true. `LEARN: off`
+additionally disables learning while injection may still run.
+
 - `off` — nothing.
 - `capture` — per-turn `plur_capture` with payload **exactly**
   `{summary, agent, session_id}` — three keys; `summary` required and always
@@ -208,7 +217,7 @@ lost-update window is real and shared across all personas that share `$HOME`
 
 ```yaml
 MEMORY:
-  ENABLED: false            # master switch; default false (opt-in); hot-reloadable
+  ENABLED: false            # master switch for the whole memory integration (injection AND learning); default false (opt-in); hot-reloadable
   SERVER: "plur"            # key of the MCP_SERVERS entry backing the memory; session-fixed
   INJECT_BUDGET: 2000       # tokens for plur_inject_hybrid per turn; hot-reloadable
   LEARN: "batch"            # off | capture | batch | full; default batch; hot-reloadable
@@ -373,7 +382,7 @@ scope for this issue.
 | --- | --- |
 | Server available | **Inject latest** recall (fetch-per-turn `plur_inject_hybrid`, trimmed to `INJECT_BUDGET`) |
 | Error/timeout | **Strip, no persist** — log, remove the marker block in memory only (never `PersistHistory`), return unchanged (*inject current recall, or nothing — never stale recall*) |
-| Disabled (`ENABLED == false`) | **One-shot persisted strip** — remove the sentinel-delimited Part if present (drop the system Content if left with zero Parts), set `req.PersistHistory = true`; if absent, no-op |
+| Disabled (`ENABLED == false`) | **Whole integration off.** Injection: one-shot persisted strip (remove the sentinel-delimited Part if present, drop the system Content if left with zero Parts, set `req.PersistHistory = true`; if absent, no-op). Learning: no `plur_capture`, no buffering (`AfterTurn` returns before tier dispatch), and `FlushSession` drains the stale buffer without writing — zero writes to the PLUR store |
 
 ### 12. v1.1 follow-ups (recorded, not deferred silently)
 
@@ -388,7 +397,10 @@ scope for this issue.
 ### 13. Out of scope (this issue)
 
 - **Deployment-specific work** (e.g. Niffler templates/provisioning/
-  per-deployment defaults) — this issue is tell-me-go core.
+  per-deployment defaults) — this issue is tell-me-go core. Deployment configs
+  (e.g. `ait-tmg/configs/butler.yaml`) carry the same misleading "master
+  switch" comment and should be aligned in deployment-specific work — flagged
+  here (this repo's own `configs/` carry no MEMORY block).
 - PLUR sync/team-store integration (`plur_sync`, shared remotes) —
   configuration-level, not core.
 - Cursor-style lean tool profiles or `plur_admin` tool curating.

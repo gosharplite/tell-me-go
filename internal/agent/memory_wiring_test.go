@@ -252,3 +252,100 @@ func TestChat_MemoryWriteFailuresSurfacedAtSessionEnd(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T2: Chat-level master-switch proof (issue #1414) — zero MCP writes when
+// MEMORY.ENABLED=false
+// ---------------------------------------------------------------------------
+
+// countingMCPClient is a hand-rolled tools.MCPClient double that counts every
+// CallTool invocation under a mutex and otherwise succeeds. It is the
+// authoritative proof that a disabled memory integration performs zero MCP
+// writes through the real agent wiring: the assertion is on calls() == 0, so
+// the success return keeps the fail-open path quiet if a leak ever occurs.
+// Chat runs engine.Run in a goroutine and the flush defer runs in the Chat
+// goroutine, so CallTool may arrive from different goroutines — the counter
+// is mutex-guarded (race-safe, ADR-036).
+type countingMCPClient struct {
+	mu    sync.Mutex
+	count int
+}
+
+func (c *countingMCPClient) ListTools(ctx context.Context) ([]tools.MCPToolDefinition, error) {
+	return nil, nil
+}
+
+func (c *countingMCPClient) CallTool(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+	c.mu.Lock()
+	c.count++
+	c.mu.Unlock()
+	return tools.ToolResult{}, nil
+}
+
+func (c *countingMCPClient) Close() error { return nil }
+
+// calls returns a snapshot of the CallTool invocation count under the mutex.
+func (c *countingMCPClient) calls() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.count
+}
+
+var _ tools.MCPClient = (*countingMCPClient)(nil)
+
+// TestChat_MemoryDisabled_ZeroWriteAttempts pins the master-switch gate at
+// agent level (issue #1414): with MEMORY.ENABLED=false and a non-off LEARN
+// tier, a full Chat run must produce ZERO MCP calls — the injector (Seam A)
+// strips on disable and the hook (Seam B) returns before tier dispatch —
+// and must surface no memory_write_failures report. The counting client
+// proves both seams are inert through the real agent wiring.
+func TestChat_MemoryDisabled_ZeroWriteAttempts(t *testing.T) {
+	seed := domain_config.MemoryConfig{
+		Enabled:             false,
+		Server:              "plur",
+		InjectBudget:        2000,
+		LearnTier:           domain_config.MemoryLearnCapture,
+		MaxLearnsPerSession: 3,
+	}
+
+	hManager := &agenttest.MockHistoryManager{}
+	turns := &recordingTurnsLogger{}
+	watcher := &memoryStubConfigWatcher{memory: seed}
+	client := &countingMCPClient{}
+
+	_, a, spy := newMemoryTestAgent(t,
+		WithHistoryManager(hManager),
+		WithConfigWatcher(watcher),
+		WithTurnsLogger(turns),
+		WithMemoryClient(client, seed),
+	)
+
+	ctx := context.Background()
+	session := ports.NewSession("s1", hManager)
+
+	if err := a.Chat(ctx, session, "hello"); err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+
+	// Zero MCP calls across both seams — the counting client is the
+	// authoritative proof that a disabled integration writes nothing.
+	if got := client.calls(); got != 0 {
+		t.Errorf("disabled memory integration made %d MCP calls, want 0", got)
+	}
+
+	// No write-failure surface (nothing was attempted, nothing failed).
+	if spy.CalledWith("Warn", "memory_write_failures") {
+		t.Error("expected NO memory_write_failures Warn for a disabled session")
+	}
+	for _, msg := range turns.messagesSnapshot() {
+		if strings.Contains(msg, "memory write failures") {
+			t.Errorf("turns.log must not carry a write-failure report for a disabled session, got %q", msg)
+		}
+	}
+
+	// The hook is still constructed (stable inert DI shape, ADR-068 §5) —
+	// it simply no-ops on the disabled config.
+	if a.memoryHook == nil {
+		t.Error("expected memoryHook to be constructed even when disabled (inert DI shape)")
+	}
+}

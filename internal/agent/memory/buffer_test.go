@@ -181,3 +181,57 @@ func TestSessionBufferRestorePrepends(t *testing.T) {
 		t.Errorf("bytes = %d, want %d (sum of merged text lengths)", b.bytes, wantBytes)
 	}
 }
+
+// TestTruncateToBytes pins truncateToBytes across all four branches
+// (buffer.go:142-153): a non-positive max yields "" (buffer.go:143-145),
+// len(s) <= max returns s unchanged, a boundary landing mid-rune walks back
+// to the rune start (multi-iteration walk-back forced with 3-byte and
+// 4-byte runes — the existing buffer test's 2-byte é can land exactly on a
+// rune start), and a boundary landing exactly on a rune start needs no
+// walk-back. Every result is asserted valid UTF-8, byte length <= max, and
+// rune-boundary-terminated (ADR-036 deterministic; hand-rolled, ADR-021).
+func TestTruncateToBytes(t *testing.T) {
+	// 𝄞 (U+1D11E) is 4 bytes in UTF-8; "x𝄞y" is 6 bytes with the rune
+	// spanning bytes 1-4, so max=4 lands on its 4th byte → 3 walk-back
+	// iterations to reach the rune start at byte 1.
+	fourByte := "x" + "\U0001D11E" + "y"
+	// € (U+20AC) is 3 bytes in UTF-8; "a€€b" is 8 bytes with the second €
+	// spanning bytes 4-6, so max=6 lands on its 3rd byte → 2 walk-back
+	// iterations to reach the rune start at byte 4.
+	threeByte := "a" + "\u20ac" + "\u20ac" + "b"
+
+	tests := []struct {
+		name string
+		s    string
+		max  int
+		want string
+	}{
+		{"max zero yields empty", "hello", 0, ""},
+		{"max negative yields empty", "hello", -1, ""},
+		{"len within max returns s unchanged", "hello", 10, "hello"},
+		{"ascii boundary exactly on rune start no walk-back", "hello", 3, "hel"},
+		{"2-byte rune boundary exactly on rune start no walk-back", "h\u00e9llo", 3, "h\u00e9"},
+		{"boundary mid-4-byte-rune walks back three times", fourByte, 4, "x"},
+		{"boundary mid-3-byte-rune walks back twice", threeByte, 6, "a\u20ac"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncateToBytes(tt.s, tt.max)
+			if got != tt.want {
+				t.Errorf("truncateToBytes(%q, %d) = %q, want %q", tt.s, tt.max, got, tt.want)
+			}
+			if !utf8.ValidString(got) {
+				t.Errorf("truncateToBytes(%q, %d) = %q is not valid UTF-8", tt.s, tt.max, got)
+			}
+			if tt.max > 0 && len(got) > tt.max {
+				t.Errorf("truncateToBytes(%q, %d) byte length = %d, want <= %d", tt.s, tt.max, len(got), tt.max)
+			}
+			if len(got) > 0 {
+				if r, size := utf8.DecodeLastRuneInString(got); r == utf8.RuneError && size == 1 {
+					t.Errorf("truncateToBytes(%q, %d) = %q does not end on a rune boundary", tt.s, tt.max, got)
+				}
+			}
+		})
+	}
+}

@@ -690,7 +690,9 @@ entities:
     attributes:
       - name: enabled
         type: boolean
-        description: Master switch; default false (opt-in); hot-reloadable.
+        description: >
+          Master switch for the whole memory integration (injection AND
+          learning); default false (opt-in); hot-reloadable.
       - name: server
         type: string
         description: Key of the MCP_SERVERS entry backing the memory; session-fixed (restart-level).
