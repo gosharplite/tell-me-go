@@ -5,6 +5,7 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -298,6 +299,42 @@ func TestExtractIDs(t *testing.T) {
 	}
 }
 
+// TestFirstNonNil covers both branches of firstNonNil — the transport error
+// (err) wins when set, else the adapter's isError rejection surface
+// (result.Error, issue #1410). Table-driven, sentinel-exact, deterministic
+// (ADR-036); hand-rolled, no testify (ADR-021).
+func TestFirstNonNil(t *testing.T) {
+	transportErr := errors.New("transport error")
+	resultErr := errors.New("result error")
+
+	tests := []struct {
+		name      string
+		err       error
+		resultErr error
+		want      error
+	}{
+		{"err set, resultErr nil", transportErr, nil, transportErr},
+		{"err nil, resultErr set", nil, resultErr, resultErr},
+		{"both set, transport wins", transportErr, resultErr, transportErr},
+		{"both nil", nil, nil, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := firstNonNil(tt.err, tt.resultErr)
+			if tt.want == nil {
+				if got != nil {
+					t.Errorf("firstNonNil(%v, %v) = %v, want nil", tt.err, tt.resultErr, got)
+				}
+				return
+			}
+			if !errors.Is(got, tt.want) {
+				t.Errorf("firstNonNil(%v, %v) = %v, want %v (errors.Is)", tt.err, tt.resultErr, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAcquireWriteLockSuccess(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -379,5 +416,20 @@ func TestAcquireWriteLockNilClock(t *testing.T) {
 	release, ok := acquireWriteLock(nil)
 	if ok || release != nil {
 		t.Fatal("expected fail-open (nil, false) with nil clock")
+	}
+}
+
+func TestAcquireWriteLockUserHomeDirError(t *testing.T) {
+	// With $HOME set-but-empty, os.UserHomeDir deterministically errors
+	// ("$HOME is not defined") on Go >= 1.24: the stdlib returns the error
+	// directly when the variable is empty — it no longer falls through to
+	// user.Current() (os/file.go, UserHomeDir). This repo requires Go
+	// 1.26.4+, so the branch is deterministic on dev and CI (ADR-036).
+	// The error branch returns before any file operation, so no lock file
+	// is created or touched.
+	t.Setenv("HOME", "")
+	release, ok := acquireWriteLock(&clock.FakeClock{})
+	if ok || release != nil {
+		t.Fatal("expected fail-open (nil, false) when os.UserHomeDir errors")
 	}
 }

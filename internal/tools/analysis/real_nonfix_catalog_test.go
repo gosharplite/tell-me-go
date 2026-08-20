@@ -165,6 +165,7 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"service.go EditLastTurn body", "internal/agent/service.go", 189, 191},
 		{"repository.go GetID accessor", "internal/domain/ports/repository.go", 108, 108},
 		{"agent.go configRefreshHook no-op stubs", "internal/agent/agent.go", 383, 384},
+		{"hook.go BeforeTurn/OnPhaseTransition no-op stubs", "internal/agent/memory/hook.go", 89, 93},
 		{"client.go marshalInputSchema json.Marshal", "internal/infrastructure/mcp/client.go", 258, 260},
 		{"client.go ListTools marshalInputSchema propagation", "internal/infrastructure/mcp/client.go", 120, 122},
 		{"stdio_client.go ListTools marshalInputSchema propagation", "internal/infrastructure/mcp/stdio_client.go", 162, 165},
