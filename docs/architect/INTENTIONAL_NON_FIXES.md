@@ -1343,19 +1343,12 @@ to reason about.
   line stays 300 (gate inserted inside the body).
 - **See**: `internal/agent/memory/hook.go:300`
 
-### internal/agent/memory/injector.go — (*plurInjector).Transform (CC=18)
+### internal/agent/memory/injector.go — (*plurInjector).Transform (CC=18) → RESOLVED
 
-- **Status**: ACCEPTED (2026-09, issue #1404)
-- **Rationale**: Sequential fail-open pipeline mandated by ADR-068 §1:
-  disabled-strip, nil-client guard, error-strip, defensive trim, marker
-  insert, observability — each step a single-line guard or delegation, and
-  the function returns nil on every path so the turn is never broken. CC is
-  structural guards, not business logic. Same acceptance class as
-  `renderHistory` (CC=12). CC re-measured 2026-09 (#1410): 16→18 — the
-  `result.Error` strip branch (Seam A blindness, ADR-068 §10 row 17) and its
-  nested logger guard added 2; the line stays 64 since the additions are
-  inside the body.
-- **See**: `internal/agent/memory/injector.go:64`
+- **Status**: RESOLVED (2026-09, refactored below CC=10 threshold)
+- **Complexity after fix**: `Transform` CC=8 (was 18); helpers `fetchEngramPayload` CC=6, `applyMemoryTransformation` CC=5, `observeInjection` CC=4, `resolveUserPrompt` CC=1.
+- **What was refactored**: Extracted the four strip sites per the ownership contract (disabled-strip+persist stays in Transform; transport-error and result.Error strips move into fetchEngramPayload; maxBody<0 strip-without-insert moves into applyMemoryTransformation; success observability moves to observeInjection) into a new injector_pipeline.go; guard chain cfg-nil → disabled → nil-client preserved.
+- **See**: `internal/agent/memory/injector.go` (`Transform`), `internal/agent/memory/injector_pipeline.go`
 
 ### internal/agent/memory/injector.go — metadataIDs (CC=11)
 
@@ -1366,8 +1359,10 @@ to reason about.
   conversion or return; the CC is inherent to the type-switch dispatch
   pattern, not branching business logic. Re-anchored 2026-09 (#1410): line
   drifted 226→237 as the #1410 Transform strip branch grew the file above
-  it; CC re-verified 11 (unchanged).
-- **See**: `internal/agent/memory/injector.go:237`
+  it; CC re-verified 11 (unchanged). Re-anchored 2026-09 (#1419): line
+  drifted 237→177 as the Transform decomposition shrank the file above it;
+  CC re-verified 11 (unchanged).
+- **See**: `internal/agent/memory/injector.go:177`
 
 ---
 

@@ -87,75 +87,15 @@ func (t *plurInjector) Transform(ctx context.Context, req *sessctx.ContextReques
 		return nil
 	}
 
-	// Extract the task: last user message (may be empty — pass as-is).
-	task := lastUserText(req.History)
-
-	// Fetch-per-turn: live relevance-gated recall query, bounded by budget.
-	args := map[string]interface{}{
-		"task":   task,
-		"budget": cfg.InjectBudget,
-	}
-	if strings.TrimSpace(cfg.Scope) != "" {
-		args["scope"] = cfg.Scope
-	}
-	result, err := t.client.CallTool(ctx, "plur_inject_hybrid", args)
-	if err != nil {
-		// Fail-open with strip semantics: strip the marker block in memory
-		// only (never PersistHistory — no stale recall survives).
-		if t.logger != nil {
-			t.logger.Warn("memory_injection_failed", "error", err)
-		}
-		stripMemoryBlock(req)
+	task := resolveUserPrompt(req)
+	result, ok := t.fetchEngramPayload(ctx, req, cfg, task)
+	if !ok {
 		return nil
 	}
-
-	// A server-side isError rejection carries the server's error text in
-	// result.Text — never build a recall block from it. Same strip-and-return
-	// path as a transport error: inject current recall, or nothing (issue #1410).
-	if result.Error != nil {
-		if t.logger != nil {
-			t.logger.Warn("memory_injection_failed", "error", result.Error)
-		}
-		stripMemoryBlock(req)
+	if !t.applyMemoryTransformation(req, result, cfg.InjectBudget) {
 		return nil
 	}
-
-	block := memoryHeader + "\n\n" + strings.TrimSpace(result.Text) + "\n" + memoryFooter
-
-	// Defensive trim: pinned engrams make server-side size non-deterministic.
-	// Heuristic tokens = len(block)/4 (matches the model's tokenCount
-	// heuristic). Trim the body to a rune-safe byte boundary so the rebuilt
-	// block fits the budget.
-	if len(block)/4 > cfg.InjectBudget {
-		maxBody := cfg.InjectBudget*4 - len(memoryHeader) - len(memoryFooter) - 4
-		if maxBody < 0 {
-			if t.logger != nil {
-				t.logger.Debug("memory_block_overflow", "budget", cfg.InjectBudget, "block_bytes", len(block))
-			}
-			stripMemoryBlock(req)
-			return nil
-		}
-		body := strings.TrimSpace(result.Text)
-		if len(body) > maxBody {
-			body = truncateToBytes(body, maxBody)
-		}
-		block = memoryHeader + "\n\n" + body + "\n" + memoryFooter
-	}
-
-	// Insert marker-keyed replace-in-place — never append after first.
-	insertMemoryBlock(req, block)
-
-	// Observability: in-process Warnings + Info-level log line (ADR-068 §8).
-	ids := extractIDs(result)
-	if len(ids) > 0 {
-		req.Metadata.Warnings = append(req.Metadata.Warnings, "injected_engrams:"+strings.Join(ids, ","))
-		if t.logger != nil {
-			t.logger.Info("memory_injected", "engrams", strings.Join(ids, ","), "task", task)
-		}
-	} else if t.logger != nil {
-		t.logger.Debug("memory_injected_no_ids", "task", task)
-	}
-
+	t.observeInjection(req, result, task)
 	return nil
 }
 
