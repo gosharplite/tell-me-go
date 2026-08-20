@@ -147,12 +147,31 @@ func newTestInjector(t *testing.T, client tools.MCPClient, enabled bool) (*plurI
 	return NewPlurInjector(client, cfgPtr, &ports.NoOpLogger{}).(*plurInjector), cfgPtr
 }
 
+// newTestMemoryHome redirects HOME to a fresh temp dir with ~/.plur
+// pre-created, mirroring production (PLUR's store creates it) so
+// acquireWriteLock succeeds and the call-site `if ok` guards in
+// capture/maybeLearn/FlushSession are exercised (root-cause harness fix;
+// previously OpenFile always failed and the guards were dead in tests).
+// Each test gets its own temp HOME, so acquiring real flock locks is
+// contention-free and safe (no t.Parallel in this package; t.Setenv
+// forbids it).
+func newTestMemoryHome(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".plur"), 0700); err != nil {
+		t.Fatalf("mkdir ~/.plur: %v", err)
+	}
+	t.Setenv("HOME", home)
+}
+
 // newTestHook builds a plurHook with a DefaultMemoryConfig and the given
 // tier. HOME is redirected to a temp dir so flock side effects never touch
-// the developer's real ~/.plur. clk is a FakeClock (deterministic Now()).
+// the developer's real ~/.plur (newTestMemoryHome pre-creates ~/.plur so
+// the flock guard paths run for real). clk is a FakeClock (deterministic
+// Now()).
 func newTestHook(t *testing.T, client tools.MCPClient, tier config.MemoryLearnTier, hist ports.HistoryManager) (*plurHook, *atomic.Pointer[config.MemoryConfig]) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	newTestMemoryHome(t)
 	memCfg := config.DefaultMemoryConfig()
 	memCfg.Enabled = true
 	memCfg.LearnTier = tier

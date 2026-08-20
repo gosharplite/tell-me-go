@@ -6,6 +6,7 @@ package memory
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -446,4 +447,127 @@ func TestInjectorStripOnResultError(t *testing.T) {
 			t.Errorf("marker not stripped in memory: %+v", sys.Parts)
 		}
 	})
+}
+
+// TestMetadataIDsUnsupportedValues pins the two remaining metadataIDs
+// branches (injector.go:240-242, 256-258): an empty-string ids value and a
+// []interface{} containing no strings both yield (nil, false) so the caller
+// falls back to the regex extractor.
+func TestMetadataIDsUnsupportedValues(t *testing.T) {
+	t.Run("empty string ids", func(t *testing.T) {
+		got, ok := metadataIDs("")
+		if ok || got != nil {
+			t.Errorf("metadataIDs(\"\") = (%v, %v), want (nil, false)", got, ok)
+		}
+	})
+
+	t.Run("whitespace-only string ids", func(t *testing.T) {
+		got, ok := metadataIDs("   ")
+		if ok || got != nil {
+			t.Errorf("metadataIDs(\"   \") = (%v, %v), want (nil, false)", got, ok)
+		}
+	})
+
+	t.Run("interface slice with no strings", func(t *testing.T) {
+		got, ok := metadataIDs([]interface{}{1, true, nil})
+		if ok || got != nil {
+			t.Errorf("metadataIDs([]interface{}{1, true, nil}) = (%v, %v), want (nil, false)", got, ok)
+		}
+	})
+
+	t.Run("interface slice with non-empty strings kept", func(t *testing.T) {
+		got, ok := metadataIDs([]interface{}{"e1", 2, "e2"})
+		if !ok || !reflect.DeepEqual(got, []string{"e1", "e2"}) {
+			t.Errorf("metadataIDs([]interface{}{e1, 2, e2}) = (%v, %v), want ([e1 e2], true)", got, ok)
+		}
+	})
+}
+
+// TestLastUserText pins lastUserText (injector.go:285-300): the backwards
+// scan skips nil and non-user Contents, joins the last user's non-empty text
+// parts with spaces, and returns "" when no user message exists.
+func TestLastUserText(t *testing.T) {
+	tests := []struct {
+		name    string
+		history []*llm.Content
+		want    string
+	}{
+		{
+			name:    "no user message yields empty",
+			history: []*llm.Content{{Role: "model", Parts: []*llm.Part{{Text: "hi"}}}},
+			want:    "",
+		},
+		{
+			name: "nil content skipped in backwards scan",
+			history: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "earlier"}}},
+				nil,
+			},
+			want: "earlier",
+		},
+		{
+			name: "non-user trailing content skipped",
+			history: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "user text"}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "model text"}}},
+			},
+			want: "user text",
+		},
+		{
+			name: "empty-text parts filtered and parts joined with spaces",
+			history: []*llm.Content{{Role: "user", Parts: []*llm.Part{
+				{Text: "fix"},
+				{Text: ""},
+				{Text: " the bug"},
+			}}},
+			// strings.Join inserts a single separator between surviving parts,
+			// so the leading space of " the bug" is preserved verbatim.
+			want: "fix  the bug",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := lastUserText(tt.history); got != tt.want {
+				t.Errorf("lastUserText(%+v) = %q, want %q", tt.history, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestJoinTextParts pins joinTextParts (injector.go:304-316): a nil Content
+// yields "" (injector.go:305-307), and thought/empty parts are filtered out.
+func TestJoinTextParts(t *testing.T) {
+	tests := []struct {
+		name    string
+		content *llm.Content
+		want    string
+	}{
+		{"nil content yields empty", nil, ""},
+		{
+			"thought and empty parts filtered, text joined with newline",
+			&llm.Content{Role: "model", Parts: []*llm.Part{
+				{Text: "first"},
+				{Text: "hidden", IsThought: true},
+				{Text: ""},
+				{Text: "second"},
+			}},
+			"first\nsecond",
+		},
+		{
+			"function-call-only content yields empty",
+			&llm.Content{Role: "model", Parts: []*llm.Part{
+				{FunctionCall: &llm.FunctionCall{Name: "list_files"}},
+			}},
+			"",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := joinTextParts(tt.content); got != tt.want {
+				t.Errorf("joinTextParts(%+v) = %q, want %q", tt.content, got, tt.want)
+			}
+		})
+	}
 }
