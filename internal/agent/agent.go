@@ -168,7 +168,7 @@ func (a *agent) initComponents() error {
 	// absent-server → warn and disable (two-stage fallback): a nil client
 	// yields an inert, stable DI shape; the runtime nil-client guards fail
 	// open.
-	if a.memoryClient != nil || a.memorySeed.Server != "" {
+	if a.memoryClient != nil || (a.memorySeed.Enabled && a.memorySeed.Server != "") {
 		if a.memoryClient == nil {
 			a.getLogger().Warn("memory_server_unavailable", "server", a.memorySeed.Server)
 			a.memorySeed.Enabled = false // effective disable — inert DI shape

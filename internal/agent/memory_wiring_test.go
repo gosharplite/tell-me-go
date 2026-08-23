@@ -91,6 +91,26 @@ func TestNewAgent_NoMemory_NoWarnNoComponents(t *testing.T) {
 	}
 }
 
+// TestNewAgent_DefaultMemoryConfig_NoWarnNoComponents verifies the real
+// production default shape (issue #1424): a config with no MEMORY block
+// yields DefaultMemoryConfig() — Enabled:false, Server:"plur" — wired via
+// WithMemoryClient(nil, seed) from chatter.go:88. The wiring guard must key
+// on the Enabled master switch, not the defaulted server name: no
+// memory_server_unavailable warn and no memory components. Fails pre-fix
+// (the old Server != "" guard warned and constructed inert components).
+func TestNewAgent_DefaultMemoryConfig_NoWarnNoComponents(t *testing.T) {
+	seed := domain_config.DefaultMemoryConfig() // {Enabled:false, Server:"plur", batch, 2000, 3}
+
+	_, a, spy := newMemoryTestAgent(t, WithMemoryClient(nil, seed))
+
+	if spy.CalledWith("Warn", "memory_server_unavailable") {
+		t.Error("expected NO memory_server_unavailable warn for default (unconfigured) memory")
+	}
+	if a.memoryHook != nil {
+		t.Error("expected memoryHook nil when memory is not configured (default config)")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // T4: Chat session-end memory write-failure surfacing (issue #1410 §4)
 // ---------------------------------------------------------------------------
