@@ -112,6 +112,17 @@ func NewStdioClient(cfg config.MCPServerConfig, logger *slog.Logger) (*StdioClie
 	session, err := sdk.Connect(connectCtx, &sdkmcp.IOTransport{Reader: stdout, Writer: stdin}, nil)
 	cancelConnect()
 	if err != nil {
+		// The SDK can surface its teardown EOF ("client is closing: EOF")
+		// when the connect deadline fires mid-initialize, losing the
+		// timeout signal. Normalize at the adapter boundary: a handshake
+		// that exceeded its bound IS a timeout. Preserves the documented
+		// wedge-vs-death taxonomy (deadline = wedge; EOF/exited = death) —
+		// pinned by TestStdio_HandshakeTimeoutKillsChild. The child-death
+		// case (Connect returns before the deadline, connectCtx.Err() == nil)
+		// is left untouched.
+		if connectCtx.Err() == context.DeadlineExceeded && !errors.Is(err, context.DeadlineExceeded) {
+			err = fmt.Errorf("%w (handshake exceeded %s): %v", context.DeadlineExceeded, timeout, err)
+		}
 		// Self-clean, never leak the child: cancel kills the direct child via
 		// CommandContext, then join the reaper before returning.
 		cancel()

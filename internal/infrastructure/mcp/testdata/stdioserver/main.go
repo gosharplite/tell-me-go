@@ -185,8 +185,15 @@ func launcher() {
 
 // neverInit writes nothing to stdout and blocks forever: the MCP handshake
 // never completes, pinning the constructor's handshake-timeout kill path.
+// A bare `select {}` in the main goroutine trips the Go runtime deadlock
+// detector (fatal error: all goroutines are asleep - deadlock!), killing
+// the process instantly — an EOF child-death, not the alive-but-silent
+// wedge the handshake-timeout test intends. Sleeping keeps the runtime's
+// timer heap live, so the child stays alive and silent until the client's
+// bounded connect times out and kills it (CommandContext cancel); the
+// client reaps the child before returning — no leak.
 func neverInit() {
-	select {}
+	time.Sleep(time.Hour)
 }
 
 // ignoreEOF is a functioning MCP server that completes the handshake and
