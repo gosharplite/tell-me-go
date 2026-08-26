@@ -33,6 +33,11 @@ type uncoveredBlock struct {
 	// catalog whose references cover this block's range, when one exists.
 	// A non-empty value marks the gap as deliberately accepted (not actionable).
 	CatalogTitle string `json:"catalog_title,omitempty"`
+	// classifyCode holds the block's own lines (no context line) for the
+	// priority classifier. Code keeps the one-line context prefix for display;
+	// the rules match against classifyCode so a preceding error-returning
+	// signature cannot drive classification. Unexported — never serialized.
+	classifyCode string
 }
 
 // classificationRule defines a rule for categorizing uncovered code blocks.
@@ -45,7 +50,7 @@ type errorHandlingRule struct{}
 
 func (r errorHandlingRule) category() string { return "ERROR_HANDLING" }
 func (r errorHandlingRule) match(b *uncoveredBlock) bool {
-	lowerCode := strings.ToLower(b.Code)
+	lowerCode := strings.ToLower(b.classificationText())
 	return strings.Contains(lowerCode, "if err != nil") ||
 		(strings.Contains(lowerCode, "return") && containsIdentErr(lowerCode)) ||
 		strings.Contains(lowerCode, "fmt.errorf") ||
@@ -123,6 +128,17 @@ var jsonMarshalIndent = json.MarshalIndent
 // variable to allow test injection of file-open failures for error-path coverage.
 var osOpenFile = os.Open
 
+// classificationText returns the text the classification rules match
+// against: the block's own lines when parseDetailedCoverage populated
+// classifyCode, falling back to Code for unit-constructed blocks and the
+// file-read-error path where no source lines exist.
+func (b *uncoveredBlock) classificationText() string {
+	if b.classifyCode != "" {
+		return b.classifyCode
+	}
+	return b.Code
+}
+
 // Classify categorizes the block and assigns a priority based on heuristics.
 func (b *uncoveredBlock) Classify() {
 	b.Category = "OTHER"
@@ -150,20 +166,15 @@ func (b *uncoveredBlock) determinePriority() string {
 	return "Low"
 }
 
-// extractFromLines extracts a range of lines from a slice, including one line of context before.
-func extractFromLines(lines []string, start, end int) string {
+// extractLines extracts the block's own lines [start, end] from a source
+// file's line slice, with no context line. Classification must match only
+// the block's own lines so a preceding signature cannot drive priority.
+func extractLines(lines []string, start, end int) string {
 	if len(lines) == 0 {
 		return ""
 	}
-
-	startWithContext := start
-	if startWithContext > 1 {
-		startWithContext--
-	}
-
-	startIdx := startWithContext - 1
+	startIdx := start - 1
 	endIdx := end
-
 	if startIdx < 0 {
 		startIdx = 0
 	}
@@ -173,8 +184,15 @@ func extractFromLines(lines []string, start, end int) string {
 	if startIdx >= endIdx {
 		return ""
 	}
-
 	return strings.Join(lines[startIdx:endIdx], "\n")
+}
+
+// extractFromLines extracts a range of lines from a slice, including one line of context before.
+func extractFromLines(lines []string, start, end int) string {
+	if start > 1 {
+		start-- // one line of context before
+	}
+	return extractLines(lines, start, end)
 }
 
 // getModuleName returns the module name from the environment.
@@ -365,6 +383,7 @@ func parseDetailedCoverage(ctx context.Context, r io.Reader, runner AnalysisGoRu
 			}
 
 			blocks[idx].Code = extractFromLines(lines, blocks[idx].Start, blocks[idx].End)
+			blocks[idx].classifyCode = extractLines(lines, blocks[idx].Start, blocks[idx].End)
 			blocks[idx].Classify()
 		}(i)
 	}
