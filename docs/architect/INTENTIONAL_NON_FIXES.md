@@ -1268,6 +1268,29 @@ to reason about.
 - **See**: Complexity metrics tool output for `./internal/...` (CC ≥ 9 filter,
   excluding `_test.go`, benchmarks, `toolstest` mocks)
 
+### CC=10 boundary watch list (2026-09, issue #1431)
+
+- **Status**: ACCEPTED (2026-09, advisory — no gate change)
+- **Rationale**: Seven production functions sit exactly at the policy threshold
+  (CC=10). CC ≤ 10 is acceptable by policy (complexity-threshold-policy), so
+  no gate change is made; `verify-nonfix-catalog` does not pin them
+  (under-threshold pins are enforced at threshold-crossing, by construction).
+  **Refactor-on-touch rule**: the next modification to any listed function
+  must decompose proactively rather than creep past the CC=10 policy
+  threshold — one added decision point makes it an over-threshold alert
+  requiring either a refactor or a new ACCEPTED entry. `(*mcpFactory).Build`
+  is the highest-risk (DI hot path, already split once in #1396).
+- **Watch list** (all CC=10, verified 2026-09):
+  `(*mcpFactory).Build` — internal/infrastructure/di/mcp_factory.go:98;
+  `resolveServerToken` — internal/infrastructure/di/mcp_factory.go:216;
+  `mediaUploadPurpose` — internal/infrastructure/llm/openai/client.go:706;
+  `convertObject` — internal/tools/integrations/mcp/schema.go:74;
+  `load` — internal/infrastructure/config/config.go:49;
+  `redactRawContent` — internal/infrastructure/config/redact.go:173;
+  `clauseAFixpoint` — internal/tools/analysis/ports_registry.go:606.
+- **See**: complexity metrics tool output for `./internal/...` (CC == 10
+  filter, excluding `_test.go`, benchmarks, `toolstest` mocks)
+
 ### agent/orchestrator/engine_phases.go — (*RecoveryStep).Process (CC=9)
 
 - **Status**: [SUPERSEDED — see CC=12 entry below] ACCEPTED (2026-07)
