@@ -1264,3 +1264,23 @@ func TestHookClientUnavailableNoLogger(t *testing.T) {
 		t.Error("clientUnavailable must return false for a non-nil client")
 	}
 }
+
+// TestEffectiveScope pins the nil-cfg fail-open fallback: a non-nil atomic
+// pointer whose Load() returns nil yields ""; a stored config yields the
+// TrimSpace'd Scope.
+func TestEffectiveScope(t *testing.T) {
+	t.Run("nil cfg fails open", func(t *testing.T) {
+		h := &plurHook{cfg: &atomic.Pointer[config.MemoryConfig]{}}
+		if got := h.effectiveScope(); got != "" {
+			t.Errorf("effectiveScope() = %q, want \"\"", got)
+		}
+	})
+	t.Run("non-nil cfg returns trimmed scope", func(t *testing.T) {
+		cfgPtr := new(atomic.Pointer[config.MemoryConfig])
+		cfgPtr.Store(&config.MemoryConfig{Scope: "  team-alpha  "})
+		h := &plurHook{cfg: cfgPtr}
+		if got := h.effectiveScope(); got != "team-alpha" {
+			t.Errorf("effectiveScope() = %q, want %q", got, "team-alpha")
+		}
+	})
+}

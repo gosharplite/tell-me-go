@@ -33,6 +33,7 @@ func (p *darwinMetricsProvider) GetCPUStats() (int64, int64) {
 	var cpuInfo C.host_cpu_load_info_data_t
 	var count C.mach_msg_type_number_t = C.HOST_CPU_LOAD_INFO_COUNT
 	host := C.mach_host_self()
+	// architect-acceptance: Darwin-only Mach API fallback — see the platform-specific acceptance class (INTENTIONAL_NON_FIXES.md)
 	ret := C.host_statistics64(host, C.HOST_CPU_LOAD_INFO, (C.host_info64_t)(unsafe.Pointer(&cpuInfo)), &count)
 	if ret != C.KERN_SUCCESS {
 		// Fall back to the agent‑only runtime/metrics if Mach API fails

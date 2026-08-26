@@ -78,6 +78,84 @@ func TestUncoveredBlock_Classify(t *testing.T) {
 			wantCat:  "OTHER",
 			wantPrio: "Low",
 		},
+		{
+			name: "return err is error handling",
+			block: uncoveredBlock{
+				File: "main.go",
+				Code: "return err",
+			},
+			wantCat:  "ERROR_HANDLING",
+			wantPrio: "Medium",
+		},
+		{
+			name: "return tuple with err is error handling",
+			block: uncoveredBlock{
+				File: "main.go",
+				Code: "return value, err",
+			},
+			wantCat:  "ERROR_HANDLING",
+			wantPrio: "Medium",
+		},
+		{
+			name: "error type token is not error handling",
+			block: uncoveredBlock{
+				File: "main.go",
+				Code: "func foo() (X, error) {",
+			},
+			wantCat:  "OTHER",
+			wantPrio: "Low",
+		},
+		{
+			name: "XxxErr field name is not error handling",
+			block: uncoveredBlock{
+				File: "main.go",
+				Code: "return nil, s.RegistryErr",
+			},
+			wantCat:  "OTHER",
+			wantPrio: "Low",
+		},
+		{
+			name: "ErrXxx sentinel is not error handling",
+			block: uncoveredBlock{
+				File: "main.go",
+				Code: "return ErrNotFound",
+			},
+			wantCat:  "OTHER",
+			wantPrio: "Low",
+		},
+		{
+			name: "fmt.Errorf is error handling",
+			block: uncoveredBlock{
+				File: "main.go",
+				Code: `return fmt.Errorf("boom")`,
+			},
+			wantCat:  "ERROR_HANDLING",
+			wantPrio: "Medium",
+		},
+		{
+			name: "errors.New is error handling",
+			block: uncoveredBlock{
+				File: "main.go",
+				Code: `errors.New("boom")`,
+			},
+			wantCat:  "ERROR_HANDLING",
+			wantPrio: "Medium",
+		},
+		{
+			name: "context line does not drive classification",
+			block: uncoveredBlock{
+				File: "internal/agent/agenttest/helpers.go",
+				Code: "func (s *StubChatterComposer) GetRegistry() (tools.Registry, error)      { return s.Registry, s.RegistryErr }\n" +
+					"func (s *StubChatterComposer) GetSkillRepository() domain_skills.SkillRepository {\n" +
+					"\treturn s.SkillRepo\n" +
+					"}",
+				classifyCode: "func (s *StubChatterComposer) GetSkillRepository() domain_skills.SkillRepository {\n" +
+					"\treturn s.SkillRepo\n" +
+					"}",
+			},
+			wantCat:  "BUSINESS_LOGIC",
+			wantPrio: "Medium",
+		},
 	}
 
 	for _, tt := range tests {
@@ -89,6 +167,42 @@ func TestUncoveredBlock_Classify(t *testing.T) {
 			}
 			if tt.block.Priority != tt.wantPrio {
 				t.Errorf("Classify() Priority = %v, want %v", tt.block.Priority, tt.wantPrio)
+			}
+		})
+	}
+}
+
+func TestContainsIdentErr(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{"bare err", "err", true},
+		{"return err", "return err", true},
+		{"return tuple with err", "return value, err", true},
+		{"if err != nil guard", "if err != nil", true},
+		{"err assignment", "err := f()", true},
+		{"field access s.err", "s.err", true},
+		{"error type token", "error", false},
+		{"error type in signature", "func foo() (x, error) {", false},
+		{"errors package", "errors.new", false},
+		{"XxxErr field name", "registryerr", false},
+		{"ErrXxx sentinel", "errnotfound", false},
+		{"err as identifier prefix", "errx", false},
+		{"err as identifier suffix", "xerr", false},
+		{"err with underscore prefix", "_err", false},
+		{"err with underscore suffix", "err_", false},
+		{"err inside larger word", "verror", false},
+		{"empty string", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := containsIdentErr(strings.ToLower(tt.text)); got != tt.want {
+				t.Errorf("containsIdentErr(%q) = %v, want %v", tt.text, got, tt.want)
 			}
 		})
 	}
@@ -308,6 +422,39 @@ func TestExtractFromLines(t *testing.T) {
 			got := extractFromLines(l, tt.start, tt.end)
 			if got != tt.want {
 				t.Errorf("extractFromLines() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractLines(t *testing.T) {
+	t.Parallel()
+	lines := []string{"line1", "line2", "line3", "line4", "line5"}
+	tests := []struct {
+		name  string
+		start int
+		end   int
+		want  string
+	}{
+		{name: "middle", start: 3, end: 4, want: "line3\nline4"},
+		{name: "start", start: 1, end: 2, want: "line1\nline2"},
+		{name: "single line", start: 2, end: 2, want: "line2"},
+		{name: "end clamped", start: 1, end: 5, want: "line1\nline2\nline3\nline4\nline5"},
+		{name: "start clamped", start: 0, end: 1, want: "line1"},
+		{name: "start beyond end", start: 5, end: 2, want: ""},
+		{name: "empty lines", start: 1, end: 2, want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var l []string
+			if tt.name != "empty lines" {
+				l = lines
+			}
+			got := extractLines(l, tt.start, tt.end)
+			if got != tt.want {
+				t.Errorf("extractLines() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -628,6 +775,46 @@ func TestParseDetailedCoverage(t *testing.T) {
 	if blocks[0].Code != "line1\nline2" {
 		t.Errorf("expected code line1\nline2, got %q", blocks[0].Code)
 	}
+}
+
+func TestParseDetailedCoverage_ClassifiesOwnLinesOnly(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	mock := &mockAnalysisGoRunner{
+		getModulePathFunc: func(ctx context.Context) (string, error) {
+			return "github.com/user/repo", nil
+		},
+	}
+
+	// helpers.go:314-317-shaped source: line 1 is an error-returning
+	// signature whose `return ..., err` text previously bled into the
+	// next block's classification (issue #1435).
+	src := "func (s *StubChatterComposer) GetRegistry() (tools.Registry, error)      { return s.Registry, s.RegistryErr }\n" +
+		"func (s *StubChatterComposer) GetSkillRepository() domain_skills.SkillRepository {\n" +
+		"\treturn s.SkillRepo\n" +
+		"}\n"
+
+	content := "mode: set\ngithub.com/user/repo/internal/agent/agenttest/helpers.go:2.0,4.0 3 0\n"
+	r := strings.NewReader(content)
+
+	readFile := func(path string) ([]byte, error) {
+		if path == "internal/agent/agenttest/helpers.go" {
+			return []byte(src), nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	blocks, err := parseDetailedCoverage(ctx, r, mock, readFile)
+	require.NoError(t, err)
+	require.Len(t, blocks, 1)
+
+	// Display text still carries the context line (LLM readability) ...
+	require.Contains(t, blocks[0].Code, "GetRegistry")
+
+	// ... but classification uses only the block's own lines: the preceding
+	// error-returning signature must not drive ERROR_HANDLING / High.
+	require.Equal(t, "BUSINESS_LOGIC", blocks[0].Category)
+	require.Equal(t, "Medium", blocks[0].Priority)
 }
 
 func TestFormatDetailedCoverageReport(t *testing.T) {

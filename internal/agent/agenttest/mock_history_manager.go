@@ -136,6 +136,8 @@ func (m *MockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int,
 	return actualRemoved, len(m.Contents) / 2, len(m.Contents), nil
 }
 func (m *MockHistoryManager) GetFilePath() string { return "" }
+
+// architect-acceptance: mock body — see the interface-stub acceptance class (INTENTIONAL_NON_FIXES.md)
 func (m *MockHistoryManager) GetLastModelTurn(ctx context.Context) (int, *llm.Content, error) {
 	if m.GetLastModelTurnFunc != nil {
 		return m.GetLastModelTurnFunc(ctx)

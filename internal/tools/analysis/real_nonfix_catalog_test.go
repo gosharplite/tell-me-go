@@ -76,7 +76,7 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"(*indexer).snapshot":                                       {Line: 112, Complexity: 14, FilePath: "internal/tools/analysis/index_snapshot_test.go"},
 		"(*model).Update":                                           {Line: 252, Complexity: 14, FilePath: "internal/ui/tui/progress/model.go"},
 		"TestFixtureIndexer_ConstructAndHarvest":                    {Line: 158, Complexity: 13, FilePath: "internal/tools/analysis/index_fixture_test.go"},
-		"TestHydrateMediaAssets":                                    {Line: 243, Complexity: 13, FilePath: "internal/infrastructure/llm/openai/client_vision_test.go"},
+		"TestHydrateMediaAssets":                                    {Line: 244, Complexity: 13, FilePath: "internal/infrastructure/llm/openai/client_vision_test.go"},
 		"TestResolveCapabilities":                                   {Line: 10, Complexity: 13, FilePath: "internal/domain/llm/capabilities_test.go"},
 		"assertMissingKeysResult":                                   {Line: 214, Complexity: 13, FilePath: "internal/infrastructure/llm/factory_test.go"},
 		"(*RecoveryStep).Process":                                   {Line: 129, Complexity: 12, FilePath: "internal/agent/orchestrator/engine_phases.go"},
@@ -86,7 +86,7 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"TestRecoveryStep_EmptyResponse_RetriesUpToLimit":           {Line: 532, Complexity: 13, FilePath: "internal/agent/orchestrator/engine_phases_test.go"},
 		"TestUpdateTurnContent_AddTextWhenNone":                     {Line: 1362, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestUpdateTurnContent_ClearText":                           {Line: 1275, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
-		"TestVision_KimiImagePayload":                               {Line: 128, Complexity: 12, FilePath: "internal/infrastructure/llm/openai/client_vision_test.go"},
+		"TestVision_KimiImagePayload":                               {Line: 129, Complexity: 12, FilePath: "internal/infrastructure/llm/openai/client_vision_test.go"},
 		"createPrecisionWorkspace":                                  {Line: 118, Complexity: 12, FilePath: "internal/tools/analysis/precision_test.go"},
 		"renderHistory":                                             {Line: 26, Complexity: 12, FilePath: "internal/ui/history.go"},
 		"(*renderer).makeSubscriber":                                {Line: 48, Complexity: 11, FilePath: "internal/ui/tui/progress/renderer.go"},
@@ -150,9 +150,9 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"manager.go capBestBlock error branch", "internal/agent/session/context/manager.go", 571, 573},
 		{"failover.go ExtractDocument body", "internal/infrastructure/llm/failover.go", 131, 133},
 		{"resilient_client.go ExtractDocument body", "internal/infrastructure/llm/resilient_client.go", 106, 108},
-		{"mcp_factory.go resolveServerToken default case", "internal/infrastructure/di/mcp_factory.go", 223, 227},
-		{"mcp_factory.go gh auth token resolver", "internal/infrastructure/di/mcp_factory.go", 67, 70},
-		{"toolchain_factory.go registerSkillsShTools error", "internal/infrastructure/di/toolchain_factory.go", 124, 126},
+		{"mcp_factory.go resolveServerToken default case", "internal/infrastructure/di/mcp_factory.go", 246, 249},
+		{"mcp_factory.go gh auth token resolver", "internal/infrastructure/di/mcp_factory.go", 73, 75},
+		{"toolchain_factory.go registerSkillsShTools error", "internal/infrastructure/di/toolchain_factory.go", 127, 129},
 		{"provider_health.go buildRequest error branch", "internal/infrastructure/llm/provider_health.go", 126, 128},
 		{"provider_health.go getPingEndpoint panic", "internal/infrastructure/llm/provider_health.go", 238, 238},
 		{"types.go NewID", "internal/domain/llm/types.go", 234, 236},
@@ -165,21 +165,44 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"hook.go FlushSession engrams-empty belt-and-suspenders", "internal/agent/memory/hook.go", 241, 243},
 		{"client.go marshalInputSchema json.Marshal", "internal/infrastructure/mcp/client.go", 258, 260},
 		{"client.go ListTools marshalInputSchema propagation", "internal/infrastructure/mcp/client.go", 120, 122},
-		{"stdio_client.go ListTools marshalInputSchema propagation", "internal/infrastructure/mcp/stdio_client.go", 162, 165},
+		{"stdio_client.go ListTools marshalInputSchema propagation", "internal/infrastructure/mcp/stdio_client.go", 174, 176},
 		{"stdio_client.go StdoutPipe error", "internal/infrastructure/mcp/stdio_client.go", 82, 85},
 		{"stdio_client.go StdinPipe error", "internal/infrastructure/mcp/stdio_client.go", 87, 90},
-		{"stdio_client.go resolveCommand generic error", "internal/infrastructure/mcp/stdio_client.go", 347, 347},
-		{"stdio_client.go Close session.Close error", "internal/infrastructure/mcp/stdio_client.go", 240, 242},
+		{"stdio_client.go resolveCommand generic error", "internal/infrastructure/mcp/stdio_client.go", 358, 358},
+		{"stdio_client.go Close session.Close error", "internal/infrastructure/mcp/stdio_client.go", 251, 253},
 		{"global_prompt_tracker.go prepareCompactedEntries", "internal/infrastructure/history/global_prompt_tracker.go", 420, 422},
 		{"policy.go confirmAction call-site error", "internal/infrastructure/security/policy.go", 95, 98},
 		{"manager.go RegisterSafePath Abs error", "internal/infrastructure/security/manager.go", 136, 139},
 		{"manager.go RegisterReadOnlyPath Abs error", "internal/infrastructure/security/manager.go", 161, 164},
 		{"state.go SetInfo marshal error", "internal/infrastructure/persistence/state.go", 65, 68},
 		{"metrics.go appendSummaryToLog marshal", "internal/infrastructure/telemetry/metrics.go", 176, 178},
-		{"toolchain_factory.go execRunner closure", "internal/infrastructure/di/toolchain_factory.go", 145, 147},
+		{"toolchain_factory.go execRunner closure", "internal/infrastructure/di/toolchain_factory.go", 154, 156},
 		{"sqlite_store.go Update RowsAffected", "internal/infrastructure/persistence/sqlite_store.go", 207, 209},
 		{"sqlite_store.go Delete RowsAffected", "internal/infrastructure/persistence/sqlite_store.go", 224, 226},
-		{"mcp_factory.go gh token resolver success", "internal/infrastructure/di/mcp_factory.go", 71, 71},
+		{"mcp_factory.go gh token resolver success", "internal/infrastructure/di/mcp_factory.go", 78, 78},
+		{"main.go buildApp os.Getwd error branch", "cmd/tell-me-go/main.go", 184, 186},
+		{"container.go GetMCPClient nil-guard", "internal/infrastructure/di/container.go", 284, 286},
+		{"imports.go format.Node error branch", "internal/tools/analysis/imports.go", 50, 52},
+		{"process_executor.go RunCommand Start error", "internal/tools/workspace/process_executor.go", 90, 92},
+		{"analysistest MockSymbolIndex HarvestDeclarations stub", "internal/tools/analysis/analysistest/mock_index.go", 61, 63},
+		{"process_executor.go LookPath delegation", "internal/tools/workspace/process_executor.go", 496, 498},
+		{"darwin system_metrics GetCPUStats fallback", "internal/infrastructure/telemetry/system_metrics_darwin_cgo.go", 38, 41},
+		{"helpers.go stubUIRenderer.RenderResponse", "internal/agent/agenttest/helpers.go", 33, 34},
+		{"helpers.go stubUIRenderer.LogTurnStatus", "internal/agent/agenttest/helpers.go", 35, 35},
+		{"helpers.go stubUIRenderer.LogSystemMessage", "internal/agent/agenttest/helpers.go", 36, 36},
+		{"helpers.go stubUIRenderer.LogUsage", "internal/agent/agenttest/helpers.go", 37, 38},
+		{"helpers.go stubUIRenderer.LogToolCall", "internal/agent/agenttest/helpers.go", 39, 40},
+		{"helpers.go stubUIRenderer.LogToolResult", "internal/agent/agenttest/helpers.go", 41, 42},
+		{"helpers.go stubUIRenderer.RenderHealthReport", "internal/agent/agenttest/helpers.go", 43, 43},
+		{"helpers.go stubUIRenderer.SetUseColor", "internal/agent/agenttest/helpers.go", 44, 44},
+		{"helpers.go stubUIRenderer.SetForceSpinner", "internal/agent/agenttest/helpers.go", 45, 45},
+		{"helpers.go stubUIRenderer.SetWordWrap", "internal/agent/agenttest/helpers.go", 48, 48},
+		{"helpers.go stubHistoryRenderer.Render", "internal/agent/agenttest/helpers.go", 58, 59},
+		{"helpers.go StubChatterComposer.GetSkillRepository", "internal/agent/agenttest/helpers.go", 315, 317},
+		{"helpers.go StubEventBus.Subscribe", "internal/agent/agenttest/helpers.go", 356, 356},
+		{"helpers.go StubEventBus.WaitStarted", "internal/agent/agenttest/helpers.go", 360, 360},
+		{"helpers.go StubCapturer.Warn", "internal/agent/agenttest/helpers.go", 390, 390},
+		{"helpers.go StubCapturer.Prompt", "internal/agent/agenttest/helpers.go", 391, 391},
 	}
 
 	for _, tt := range tests {
@@ -464,4 +487,39 @@ func TestDetailedCoverageReport_ConfigPackageCataloged(t *testing.T) {
 	gapIdx := strings.Index(report, "redact.go (Lines 53-55)")
 	catalogedIdx := strings.Index(report, "[CATALOGED GAPS (ACCEPTED)]")
 	require.Greater(t, gapIdx, catalogedIdx, "redact.go (Lines 53-55) must appear under [CATALOGED GAPS (ACCEPTED)], not as an actionable gap")
+}
+
+// TestDetailedCoverageReport_AgentTestDefaultExclusions is the end-to-end
+// regression for the option-B default: the nine documented test-double
+// directories (defaultCoverageExclusions, mirroring the Makefile test-coverage
+// grep -v list) must remove ALL agenttest blocks from the report — the
+// package is entirely test doubles, so an excluded run reports zero gaps and
+// renders no helpers.go noise. Same full report path as the sibling
+// TestDetailedCoverageReport_* tests, scoped to ./internal/agent/agenttest.
+func TestDetailedCoverageReport_AgentTestDefaultExclusions(t *testing.T) {
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoRoot))
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	executor := &exec.RealExecutor{}
+	m := &healthManager{
+		SP:          &mockSecurityProvider{},
+		Exec:        executor,
+		Runner:      toolchain.NewGoRunner(executor),
+		clk:         clock.RealClock{},
+		catalogPath: defaultNonFixCatalogPath,
+	}
+
+	report, err := m.getDetailedCoverageReport(context.Background(), "./internal/agent/agenttest", defaultCoverageExclusions, nil)
+	require.NoError(t, err)
+
+	// Every agenttest block matches the "internal/agent/agenttest/" substring
+	// pattern, so the exclusion list removes the whole package: zero gaps.
+	require.Contains(t, report, "- Total Gaps: 0")
+	require.NotContains(t, report, "helpers.go")
+	require.NotContains(t, report, "[HIGH PRIORITY GAPS]")
 }

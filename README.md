@@ -200,6 +200,12 @@ PROVIDERS:
     URL: "https://api.deepseek.com"
     API_KEY: "${DEEPSEEK_API_KEY}"
     MAX_TOKENS: 32768
+  deepseek-vision:
+    TYPE: "deepseek"
+    MODEL: "deepseek-v4-flash-vision-exp"
+    URL: "https://api.deepseek.com"
+    API_KEY: "${DEEPSEEK_API_KEY}"
+    MAX_TOKENS: 32768
   kimi:
     TYPE: "kimi"
     MODEL: "kimi-k3"
@@ -287,6 +293,12 @@ MODELS:
       HIT:      0.003625
       MISS:     0.435
       COMP:     0.87
+  "deepseek-v4-flash-vision-exp":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT:      0.0028
+      MISS:     0.14
+      COMP:     0.28
   "deepseek-ai/deepseek-v3.2-maas":
     CONTEXT_WINDOW: 163840
     PRICING:
@@ -559,6 +571,7 @@ Significant architectural decisions are documented in our [Architecture Decision
 *   **[ADR-067](docs/adr/2026-08-mcp-client-architecture.md)** — MCP client architecture: remote MCP server consumption via streamable HTTP and `tools.MCPClient` domain port (issue #1373).
 *   **[ADR-068](docs/adr/2026-09-automatic-plur-memory-integration.md)** — automatic PLUR memory integration: `plurInjector` context transformer (priority 15, marker-keyed replace-in-place) and `plurHook` TurnHook (four-tier `LEARN`) over the `tools.MCPClient` domain port (issue #1404).
 *   **[ADR-069](docs/adr/2026-09-mcp-stdio-env-key-case-preservation.md)** — MCP stdio ENV key case preservation: total Viper bypass, byte-for-byte child env keys, deterministic collision rejection (issue #1407).
+*   **[ADR-070](docs/adr/2026-09-deepseek-vision-capability.md)** — DeepSeek vision capability via suffix-based classification and `FileUploadMode` enum decomposition; vision/video decoupling in the OpenAI transport; turn-scoped Files API lifecycle (issue #1429).
 
 For the evolution of the shell-based environment management tooling — from simple bash aliases through Toby, Dobby, Porter, Sprawl, Winky, Flopsy, and Niffler — see [Evolution of Environment Management](docs/architect/environments/environment-management-evolution.md).
 

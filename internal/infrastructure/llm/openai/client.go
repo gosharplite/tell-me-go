@@ -280,6 +280,12 @@ type videoURLValue struct {
 	URL string `json:"url"`
 }
 
+// fileBlock references a previously uploaded file via the DeepSeek Files API.
+type fileBlock struct {
+	Type   string `json:"type"`
+	FileID string `json:"file_id"`
+}
+
 // turnAssets carries turn-scoped file-upload state: the binding from
 // domain Parts to Kimi server file IDs, plus a list of uploaded file
 // IDs for post-response cleanup. It is owned by a single SendChat call
@@ -295,6 +301,15 @@ func newTurnAssets() *turnAssets {
 	return &turnAssets{
 		bindings: make(map[*llm.Part]string),
 	}
+}
+
+// fileID returns the raw uploaded file ID for a part (no ms:// prefix).
+func (ta *turnAssets) fileID(p *llm.Part) (string, bool) {
+	if ta == nil {
+		return "", false
+	}
+	id, ok := ta.bindings[p]
+	return id, ok
 }
 
 // resolveURL returns the media URL value for a part: ms://{file_id}
@@ -485,7 +500,7 @@ func (c *client) buildMessageContent(text string, mediaParts []*llm.Part, ta *tu
 	// Media blocks are placed before text (media-first ordering). This is
 	// intentional for the describe-this-image use case — interleaved
 	// part ordering within a single history item is not preserved.
-	blocks := mediaBlocks(mediaParts, ta)
+	blocks := mediaBlocks(mediaParts, ta, c.capabilities)
 	if text != "" {
 		blocks = append(blocks, requestContentBlock{Type: "text", Text: text})
 	}
@@ -649,30 +664,31 @@ func fileExtensionFromMIME(mime string) string {
 	return "png"
 }
 
-// uploadMediaParts uploads media InlineData parts to the Kimi file API
-// and records bindings in ta. Parts with nil/empty data, non-media MIME
-// types, or already-uploaded bindings are skipped. On upload failure,
-// previously uploaded files in this batch are released and the error
-// is returned.
+const (
+	maxInlineMediaBytes = 32 << 20 // 32 MiB per inline image
+	maxUploadMediaBytes = 64 << 20 // 64 MiB per Files API upload
+	maxRequestBodyBytes = 48 << 20 // 48 MiB aggregate inline request body
+)
+
+// uploadMediaParts uploads media InlineData parts to the provider file API
+// and records bindings in ta. Upload policy depends on the client's
+// FileUploadMode: Kimi uploads all media parts; DeepSeek uploads only
+// oversized image parts (> maxInlineMediaBytes); None uploads nothing.
+// On upload failure, previously uploaded files in this batch are released
+// and the error is returned.
 func (c *client) uploadMediaParts(ctx context.Context, parts []*llm.Part, ta *turnAssets) error {
+	if c.capabilities.FileUploadMode == llm.FileUploadNone {
+		return nil
+	}
 	for _, p := range parts {
-		if p.InlineData == nil || len(p.InlineData.Data) == 0 {
-			continue
-		}
-		if !isMediaMIME(p.InlineData.MIMEType) {
-			c.logger.Warn("skipping_unsupported_media_mime",
-				"mime", p.InlineData.MIMEType,
-			)
+		purpose := c.mediaUploadPurpose(p)
+		if purpose == "" {
 			continue
 		}
 		if _, ok := ta.bindings[p]; ok {
 			continue // already uploaded in this turn
 		}
 		ext := fileExtensionFromMIME(p.InlineData.MIMEType)
-		purpose := "image"
-		if strings.HasPrefix(p.InlineData.MIMEType, "video/") {
-			purpose = "video"
-		}
 		filename := fmt.Sprintf("%s.%s", purpose, ext)
 		fileID, err := c.uploadFile(ctx, p.InlineData.Data, filename, purpose)
 		if err != nil {
@@ -685,10 +701,40 @@ func (c *client) uploadMediaParts(ctx context.Context, parts []*llm.Part, ta *tu
 	return nil
 }
 
+// mediaUploadPurpose returns the file-API purpose for a part under the
+// client's FileUploadMode, or "" when the part must not be uploaded.
+func (c *client) mediaUploadPurpose(p *llm.Part) string {
+	if p.InlineData == nil || len(p.InlineData.Data) == 0 {
+		return ""
+	}
+	switch c.capabilities.FileUploadMode {
+	case llm.FileUploadDeepSeek:
+		if !strings.HasPrefix(p.InlineData.MIMEType, "image/") {
+			return "" // images only; video is dropped for vision-only models
+		}
+		if len(p.InlineData.Data) <= maxInlineMediaBytes {
+			return "" // small images stay inline (not uploaded)
+		}
+		return "user_data"
+	case llm.FileUploadKimi:
+		if !isMediaMIME(p.InlineData.MIMEType) {
+			c.logger.Warn("skipping_unsupported_media_mime", "mime", p.InlineData.MIMEType)
+			return ""
+		}
+		if strings.HasPrefix(p.InlineData.MIMEType, "video/") {
+			return "video"
+		}
+		return "image"
+	default:
+		return ""
+	}
+}
+
 // prepareMediaAssets hydrates and uploads media parts (image and video)
-// for a single turn. Returns the turnAssets with file bindings and the
-// prepared (possibly cloned) part slice. Caller must call release after
-// the LLM response.
+// for a single turn. For FileUploadDeepSeek, DeepSeek's size limits are
+// enforced before any upload or inline serialization. Returns the
+// turnAssets with file bindings and the prepared (possibly cloned) part
+// slice. Caller must call release after the LLM response.
 func (c *client) prepareMediaAssets(ctx context.Context, parts []*llm.Part, resolver llm.AssetResolver) (*turnAssets, []*llm.Part, error) {
 	ta := newTurnAssets()
 
@@ -697,7 +743,13 @@ func (c *client) prepareMediaAssets(ctx context.Context, parts []*llm.Part, reso
 		return ta, out, err
 	}
 
-	if c.capabilities.SupportsFileUpload {
+	if c.capabilities.FileUploadMode == llm.FileUploadDeepSeek {
+		if err := c.checkDeepSeekMediaSizes(out); err != nil {
+			return ta, out, err
+		}
+	}
+
+	if c.capabilities.FileUploadMode != llm.FileUploadNone {
 		if err := c.uploadMediaParts(ctx, out, ta); err != nil {
 			return ta, out, err
 		}
@@ -706,33 +758,81 @@ func (c *client) prepareMediaAssets(ctx context.Context, parts []*llm.Part, reso
 	return ta, out, nil
 }
 
-// mediaBlocks converts InlineData parts to image_url or video_url content blocks.
-// Uses turnAssets to resolve ms:// URLs for uploaded files; falls
-// back to base64 data URIs for non-uploaded parts. Video MIME types
-// (video/*) produce video_url blocks; image MIME types (image/*)
-// produce image_url blocks. Unknown MIME types are silently skipped
-// (extractMediaParts should have already filtered them out; this is a
-// defensive double-check).
-func mediaBlocks(parts []*llm.Part, ta *turnAssets) []any {
+// checkDeepSeekMediaSizes enforces the DeepSeek image size limits before
+// any upload or inline serialization: single images over the upload cap
+// fail the turn loudly, and the aggregate base64 size of images that stay
+// inline must fit the request body cap. Video parts are ignored (vision-
+// only models drop them).
+func (c *client) checkDeepSeekMediaSizes(parts []*llm.Part) error {
+	var inlineBase64Bytes int64
+	for _, p := range parts {
+		if p.InlineData == nil || len(p.InlineData.Data) == 0 {
+			continue
+		}
+		if !strings.HasPrefix(p.InlineData.MIMEType, "image/") {
+			continue
+		}
+		n := int64(len(p.InlineData.Data))
+		if n > maxUploadMediaBytes {
+			return fmt.Errorf("image exceeds 64 MiB upload limit: %d bytes", n)
+		}
+		if n <= maxInlineMediaBytes {
+			inlineBase64Bytes += ((n + 2) / 3) * 4
+		}
+	}
+	if inlineBase64Bytes > maxRequestBodyBytes {
+		return fmt.Errorf("aggregate inline image size exceeds 48 MiB limit")
+	}
+	return nil
+}
+
+// mediaBlocks converts InlineData parts to content blocks based on the
+// model's capabilities. Image blocks are emitted only when
+// caps.SupportsVision is true; video blocks only when caps.SupportsVideo
+// is true (vision-only models drop video parts rather than emitting
+// unsupported video_url blocks). File-upload modes control block shape:
+// Kimi bound parts emit ms:// image_url/video_url blocks, DeepSeek bound
+// parts emit file blocks, and unbound parts emit base64 data-URI blocks.
+func mediaBlocks(parts []*llm.Part, ta *turnAssets, caps llm.Capabilities) []any {
 	var blocks []any
 	for _, p := range parts {
 		if p.InlineData == nil || len(p.InlineData.Data) == 0 {
 			continue
 		}
-		url := ta.resolveURL(p)
-		if strings.HasPrefix(p.InlineData.MIMEType, "video/") {
-			blocks = append(blocks, videoURLBlock{
-				Type:     "video_url",
-				VideoURL: videoURLValue{URL: url},
-			})
-		} else if strings.HasPrefix(p.InlineData.MIMEType, "image/") {
-			blocks = append(blocks, imageURLBlock{
-				Type:     "image_url",
-				ImageURL: imageURLValue{URL: url},
-			})
+		block, ok := mediaBlockFor(p, ta, caps)
+		if !ok {
+			continue
 		}
+		blocks = append(blocks, block)
 	}
 	return blocks
+}
+
+// mediaBlockFor builds the content block for a single media part, or
+// returns ok=false when the part must be dropped (unsupported MIME or
+// unsupported media capability). Kept separate from mediaBlocks to keep
+// cyclomatic complexity at or below the policy threshold (CC <= 10).
+func mediaBlockFor(p *llm.Part, ta *turnAssets, caps llm.Capabilities) (any, bool) {
+	mime := p.InlineData.MIMEType
+	switch {
+	case strings.HasPrefix(mime, "image/"):
+		if !caps.SupportsVision {
+			return nil, false
+		}
+		if caps.FileUploadMode == llm.FileUploadDeepSeek {
+			if id, ok := ta.fileID(p); ok {
+				return fileBlock{Type: "file", FileID: id}, true
+			}
+		}
+		return imageURLBlock{Type: "image_url", ImageURL: imageURLValue{URL: ta.resolveURL(p)}}, true
+	case strings.HasPrefix(mime, "video/"):
+		if !caps.SupportsVideo {
+			return nil, false
+		}
+		return videoURLBlock{Type: "video_url", VideoURL: videoURLValue{URL: ta.resolveURL(p)}}, true
+	default:
+		return nil, false
+	}
 }
 
 func (c *client) appendToolResponseMessages(sink openaiSink, toolResponseParts []*llm.Part) error {

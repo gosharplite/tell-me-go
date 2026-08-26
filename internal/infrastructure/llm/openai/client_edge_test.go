@@ -114,9 +114,10 @@ func TestInjectPersona_DeveloperRole(t *testing.T) {
 // would fail with an unexpected error.
 func TestUploadMediaParts_SkipsNilAndEmptyData(t *testing.T) {
 	c := &client{
-		baseURL:    "http://uploads.invalid",
-		httpClient: &http.Client{Transport: &customRoundTripper{}},
-		logger:     &ports.NoOpLogger{},
+		baseURL:      "http://uploads.invalid",
+		httpClient:   &http.Client{Transport: &customRoundTripper{}},
+		capabilities: llm.Capabilities{FileUploadMode: llm.FileUploadKimi},
+		logger:       &ports.NoOpLogger{},
 	}
 	c.authenticator = &fakeAuthenticator{}
 
@@ -143,9 +144,10 @@ func TestUploadMediaParts_SkipsNilAndEmptyData(t *testing.T) {
 // a second upload (detected via the failing transport).
 func TestUploadMediaParts_SkipsAlreadyUploaded(t *testing.T) {
 	c := &client{
-		baseURL:    "http://uploads.invalid",
-		httpClient: &http.Client{Transport: &customRoundTripper{}},
-		logger:     &ports.NoOpLogger{},
+		baseURL:      "http://uploads.invalid",
+		httpClient:   &http.Client{Transport: &customRoundTripper{}},
+		capabilities: llm.Capabilities{FileUploadMode: llm.FileUploadKimi},
+		logger:       &ports.NoOpLogger{},
 	}
 	c.authenticator = &fakeAuthenticator{}
 
@@ -172,9 +174,10 @@ func TestUploadMediaParts_SkipsAlreadyUploaded(t *testing.T) {
 // "upload media" and leave no bindings or uploaded files behind.
 func TestUploadMediaParts_UploadFailure(t *testing.T) {
 	c := &client{
-		baseURL:    "http://uploads.invalid",
-		httpClient: &http.Client{Transport: &customRoundTripper{}},
-		logger:     &ports.NoOpLogger{},
+		baseURL:      "http://uploads.invalid",
+		httpClient:   &http.Client{Transport: &customRoundTripper{}},
+		capabilities: llm.Capabilities{FileUploadMode: llm.FileUploadKimi},
+		logger:       &ports.NoOpLogger{},
 	}
 	c.authenticator = &fakeAuthenticator{}
 
@@ -200,13 +203,13 @@ func TestUploadMediaParts_UploadFailure(t *testing.T) {
 
 // TestPrepareMediaAssets_UploadErrorPropagates covers the
 // uploadMediaParts error propagation path in prepareMediaAssets: with
-// SupportsFileUpload and a failing upload, prepareMediaAssets must
+// FileUploadMode and a failing upload, prepareMediaAssets must
 // return a non-nil error.
 func TestPrepareMediaAssets_UploadErrorPropagates(t *testing.T) {
 	c := &client{
 		baseURL:      "http://uploads.invalid",
 		httpClient:   &http.Client{Transport: &customRoundTripper{}},
-		capabilities: llm.Capabilities{SupportsFileUpload: true},
+		capabilities: llm.Capabilities{FileUploadMode: llm.FileUploadKimi},
 		logger:       &ports.NoOpLogger{},
 	}
 	c.authenticator = &fakeAuthenticator{}
@@ -272,9 +275,10 @@ func TestExtractDocument_ExportedWrapper(t *testing.T) {
 	defer server.Close()
 
 	c := &client{
-		baseURL:    strings.TrimSuffix(server.URL, "/"),
-		httpClient: server.Client(),
-		logger:     &ports.NoOpLogger{},
+		baseURL:      strings.TrimSuffix(server.URL, "/"),
+		httpClient:   server.Client(),
+		capabilities: llm.Capabilities{FileUploadMode: llm.FileUploadKimi},
+		logger:       &ports.NoOpLogger{},
 	}
 	c.authenticator = &fakeAuthenticator{}
 

@@ -27,6 +27,7 @@ type HistoryEditor struct {
 }
 
 // NewHistoryEditor creates a new HistoryEditor.
+// architect-acceptance: thin dependency-assignment constructor — see the delegation-wrapper acceptance class (INTENTIONAL_NON_FIXES.md)
 func NewHistoryEditor(logger *slog.Logger, initLogger func() (io.Closer, error), newProgram func(model tea.Model, opts ...tea.ProgramOption) ProgramRunner) *HistoryEditor {
 	return &HistoryEditor{
 		logger:     logger,
@@ -45,6 +46,7 @@ func (e *HistoryEditor) Edit(ctx stdctx.Context, hManager ports.HistoryManager) 
 		}()
 	}
 
+	// architect-acceptance: TUI program harness required — see the fault-injection-required acceptance class (INTENTIONAL_NON_FIXES.md)
 	index, content, err := hManager.GetLastModelTurn(ctx)
 	if err != nil {
 		return fmt.Errorf("get last model turn: %w", err)

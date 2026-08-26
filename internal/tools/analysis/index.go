@@ -26,6 +26,7 @@ var dirLocks sync.Map // map[string]*sync.Mutex
 // withDirLock executes fn while holding the mutex associated with dir.
 // The dir is normalized to an absolute path for a consistent lock key.
 func withDirLock(dir string, fn func()) {
+	// architect-acceptance: defensive Abs fallback (deleted-cwd) — see the defensive-guard acceptance class (INTENTIONAL_NON_FIXES.md)
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		abs = dir // fallback: still provides the safety property

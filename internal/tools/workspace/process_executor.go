@@ -86,6 +86,7 @@ func (e *processExecutor) RunCommand(ctx context.Context, parts []string, config
 		defer closeFile(file, &err)
 	}
 
+	// architect-acceptance: subprocess invocation fault injection — see the fault-injection-required acceptance class (INTENTIONAL_NON_FIXES.md)
 	if err = cmd.Start(); err != nil {
 		return executionResult{ExitCode: 1}, fmt.Errorf("failed to start: %w", err)
 	}
@@ -491,6 +492,7 @@ func (e *processExecutor) CombinedOutput(ctx context.Context, name string, args 
 	return []byte(res.Output), nil
 }
 
+// architect-acceptance: delegation wrapper — see the delegation-wrapper acceptance class (INTENTIONAL_NON_FIXES.md)
 func (e *processExecutor) LookPath(file string) (string, error) {
 	return exec.LookPath(file)
 }
