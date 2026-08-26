@@ -150,9 +150,9 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"manager.go capBestBlock error branch", "internal/agent/session/context/manager.go", 571, 573},
 		{"failover.go ExtractDocument body", "internal/infrastructure/llm/failover.go", 131, 133},
 		{"resilient_client.go ExtractDocument body", "internal/infrastructure/llm/resilient_client.go", 106, 108},
-		{"mcp_factory.go resolveServerToken default case", "internal/infrastructure/di/mcp_factory.go", 223, 227},
-		{"mcp_factory.go gh auth token resolver", "internal/infrastructure/di/mcp_factory.go", 67, 70},
-		{"toolchain_factory.go registerSkillsShTools error", "internal/infrastructure/di/toolchain_factory.go", 124, 126},
+		{"mcp_factory.go resolveServerToken default case", "internal/infrastructure/di/mcp_factory.go", 246, 249},
+		{"mcp_factory.go gh auth token resolver", "internal/infrastructure/di/mcp_factory.go", 73, 75},
+		{"toolchain_factory.go registerSkillsShTools error", "internal/infrastructure/di/toolchain_factory.go", 127, 129},
 		{"provider_health.go buildRequest error branch", "internal/infrastructure/llm/provider_health.go", 126, 128},
 		{"provider_health.go getPingEndpoint panic", "internal/infrastructure/llm/provider_health.go", 238, 238},
 		{"types.go NewID", "internal/domain/llm/types.go", 234, 236},
@@ -176,10 +176,11 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"manager.go RegisterReadOnlyPath Abs error", "internal/infrastructure/security/manager.go", 161, 164},
 		{"state.go SetInfo marshal error", "internal/infrastructure/persistence/state.go", 65, 68},
 		{"metrics.go appendSummaryToLog marshal", "internal/infrastructure/telemetry/metrics.go", 176, 178},
-		{"toolchain_factory.go execRunner closure", "internal/infrastructure/di/toolchain_factory.go", 145, 147},
+		{"toolchain_factory.go execRunner closure", "internal/infrastructure/di/toolchain_factory.go", 154, 156},
 		{"sqlite_store.go Update RowsAffected", "internal/infrastructure/persistence/sqlite_store.go", 207, 209},
 		{"sqlite_store.go Delete RowsAffected", "internal/infrastructure/persistence/sqlite_store.go", 224, 226},
-		{"mcp_factory.go gh token resolver success", "internal/infrastructure/di/mcp_factory.go", 71, 71},
+		{"mcp_factory.go gh token resolver success", "internal/infrastructure/di/mcp_factory.go", 78, 78},
+		{"main.go buildApp os.Getwd error branch", "cmd/tell-me-go/main.go", 184, 186},
 	}
 
 	for _, tt := range tests {

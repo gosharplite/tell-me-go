@@ -838,7 +838,10 @@ catalog a new gap no one reviewed. Policy:
   `TestBuildApp_GetwdError`. On macOS and Windows, the kernel caches the
   working directory path, making the error structurally unreachable.
   Same acceptance class as platform-specific branches.
-- **See**: `cmd/tell-me-go/main.go` (`buildApp`, `os.Getwd` error branch),
+  Pin added 2026-09 (#1431): the gap at main.go:184-186 surfaced as
+  uncataloged because the See ref was file-only; the coverage matcher
+  requires a line spec.
+- **See**: `cmd/tell-me-go/main.go:184-186` (`buildApp`, `os.Getwd` error branch),
   `cmd/tell-me-go/main_test.go` (`TestBuildApp_GetwdError`)
 
 ### agent/agent.go — configRefreshHook.BeforeTurn/AfterTurn no-op stubs
@@ -1518,20 +1521,20 @@ to reason about.
 ### di/mcp_factory.go — resolveServerToken default case
 
 - **Status**: ACCEPTED (2026-09)
-- **Rationale**: the inline comment documents it: unknown auth modes are rejected by config validation before Build runs, so the default treats them defensively as "none". Defensive guard on internal pipeline state — same acceptance class as the 2026-07 Batch Triage defensive nil/empty guards. Re-anchored 2026-08 (#1389): lines drifted 148-151 → 157-160 as the basic-auth DI resolution added the username parameter to the newClient closure. Re-anchored 2026-08 (#1396): lines drifted 157-160 → 223-227 as the stdio factory refactor replaced the newClient seam with newClientFor and split Build into a two-phase pre-pass + concurrent construction.
-- **See**: `internal/infrastructure/di/mcp_factory.go:223-227`
+- **Rationale**: the inline comment documents it: unknown auth modes are rejected by config validation before Build runs, so the default treats them defensively as "none". Defensive guard on internal pipeline state — same acceptance class as the 2026-07 Batch Triage defensive nil/empty guards. Re-anchored 2026-08 (#1389): lines drifted 148-151 → 157-160 as the basic-auth DI resolution added the username parameter to the newClient closure. Re-anchored 2026-08 (#1396): lines drifted 157-160 → 223-227 as the stdio factory refactor replaced the newClient seam with newClientFor and split Build into a two-phase pre-pass + concurrent construction. Re-anchored 2026-09 (#1431): lines drifted 223-227 → 246-249 as the two-phase Build pre-pass comment block grew the file above the switch.
+- **See**: `internal/infrastructure/di/mcp_factory.go:246-249`
 
 ### di/mcp_factory.go — gh auth token resolver
 
 - **Status**: ACCEPTED (2026-09)
-- **Rationale**: the tokenResolver closure shells out to `gh auth token` via exec.Command at the composition root; triggering the error requires `gh` to be missing or failing mid-resolution — environment fault injection disproportionate to the value. Same acceptance class as the 2026-07 fault-injection gaps. Re-anchored 2026-08 (#1396): lines drifted 60-65 → 67-70 as the stdio factory refactor replaced the newClient seam with newClientFor. Extended 2026-09: See widened to 66-71 — the success path (:71) is equally environment-dependent.
-- **See**: `internal/infrastructure/di/mcp_factory.go:66-71`
+- **Rationale**: the tokenResolver closure shells out to `gh auth token` via exec.Command at the composition root; triggering the error requires `gh` to be missing or failing mid-resolution — environment fault injection disproportionate to the value. Same acceptance class as the 2026-07 fault-injection gaps. Re-anchored 2026-08 (#1396): lines drifted 60-65 → 67-70 as the stdio factory refactor replaced the newClient seam with newClientFor. Extended 2026-09: See widened to 66-71 — the success path (:71) is equally environment-dependent. Re-anchored 2026-09 (#1431): lines drifted 66-71 → 73-78 as the two-phase Build pre-pass grew the constructor above the closure.
+- **See**: `internal/infrastructure/di/mcp_factory.go:73-78`
 
 ### di/toolchain_factory.go — registerSkillsShTools error
 
 - **Status**: ACCEPTED (2026-09)
-- **Rationale**: the branch requires a SkillRepo failure (unreadable skills directory) — same filesystem fault-injection class as the cataloged di/container.go skills repository init error paths entry.
-- **See**: `internal/infrastructure/di/toolchain_factory.go:124-126`
+- **Rationale**: the branch requires a SkillRepo failure (unreadable skills directory) — same filesystem fault-injection class as the cataloged di/container.go skills repository init error paths entry. Re-anchored 2026-09 (#1431): lines drifted 124-126 → 127-129 as the skillssh registration call-site comment block grew the file above the branch.
+- **See**: `internal/infrastructure/di/toolchain_factory.go:127-129`
 
 ---
 
@@ -1616,8 +1619,8 @@ to reason about.
 ### di/toolchain_factory.go — registerSkillsShTools execRunner closure (fault-injection required)
 
 - **Status**: ACCEPTED (2026-09)
-- **Rationale**: The `execRunner` closure (real `osexec.CommandContext(...).CombinedOutput()`) is composition-root glue passed to `NewSkillManager`; the skillssh exec paths are exercised with the fake runner in the skillssh package tests. Driving the real toolchain path requires a live git/go environment — integration-level fault injection disproportionate to the value. Same acceptance class as the cataloged registerSkillsShTools error entry in the same file.
-- **See**: `internal/infrastructure/di/toolchain_factory.go:145-147`
+- **Rationale**: The `execRunner` closure (real `osexec.CommandContext(...).CombinedOutput()`) is composition-root glue passed to `NewSkillManager`; the skillssh exec paths are exercised with the fake runner in the skillssh package tests. Driving the real toolchain path requires a live git/go environment — integration-level fault injection disproportionate to the value. Same acceptance class as the cataloged registerSkillsShTools error entry in the same file. Re-anchored 2026-09 (#1431): lines drifted 145-147 → 154-156 as the skillssh registration block grew the file above the closure.
+- **See**: `internal/infrastructure/di/toolchain_factory.go:154-156`
 
 ## Coverage Gaps (ACCEPTED — memory integration interface stubs)
 
