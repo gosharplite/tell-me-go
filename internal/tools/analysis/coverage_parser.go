@@ -47,9 +47,40 @@ func (r errorHandlingRule) category() string { return "ERROR_HANDLING" }
 func (r errorHandlingRule) match(b *uncoveredBlock) bool {
 	lowerCode := strings.ToLower(b.Code)
 	return strings.Contains(lowerCode, "if err != nil") ||
-		(strings.Contains(lowerCode, "return") && strings.Contains(lowerCode, "err")) ||
+		(strings.Contains(lowerCode, "return") && containsIdentErr(lowerCode)) ||
 		strings.Contains(lowerCode, "fmt.errorf") ||
 		strings.Contains(lowerCode, "errors.new")
+}
+
+// containsIdentErr reports whether s contains the identifier err as a
+// standalone word — equivalent to the regexp \berr\b. It matches the
+// variable name err but not the type error, the errors package, or
+// composite identifiers like RegistryErr / ErrNotFound / xerr / errx.
+// Callers pass lowercased text.
+func containsIdentErr(s string) bool {
+	for idx := 0; ; {
+		i := strings.Index(s[idx:], "err")
+		if i == -1 {
+			return false
+		}
+		i += idx
+		beforeOK := i == 0 || !isIdentByte(s[i-1])
+		after := i + len("err")
+		afterOK := after >= len(s) || !isIdentByte(s[after])
+		if beforeOK && afterOK {
+			return true
+		}
+		idx = i + len("err")
+	}
+}
+
+// isIdentByte reports whether c is a Go identifier byte (word character),
+// matching the word-class of regexp \b.
+func isIdentByte(c byte) bool {
+	return c == '_' ||
+		('a' <= c && c <= 'z') ||
+		('A' <= c && c <= 'Z') ||
+		('0' <= c && c <= '9')
 }
 
 type businessLogicRule struct{}

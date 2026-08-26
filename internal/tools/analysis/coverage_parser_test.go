@@ -78,6 +78,69 @@ func TestUncoveredBlock_Classify(t *testing.T) {
 			wantCat:  "OTHER",
 			wantPrio: "Low",
 		},
+		{
+			name: "return err is error handling",
+			block: uncoveredBlock{
+				File: "main.go",
+				Code: "return err",
+			},
+			wantCat:  "ERROR_HANDLING",
+			wantPrio: "Medium",
+		},
+		{
+			name: "return tuple with err is error handling",
+			block: uncoveredBlock{
+				File: "main.go",
+				Code: "return value, err",
+			},
+			wantCat:  "ERROR_HANDLING",
+			wantPrio: "Medium",
+		},
+		{
+			name: "error type token is not error handling",
+			block: uncoveredBlock{
+				File: "main.go",
+				Code: "func foo() (X, error) {",
+			},
+			wantCat:  "OTHER",
+			wantPrio: "Low",
+		},
+		{
+			name: "XxxErr field name is not error handling",
+			block: uncoveredBlock{
+				File: "main.go",
+				Code: "return nil, s.RegistryErr",
+			},
+			wantCat:  "OTHER",
+			wantPrio: "Low",
+		},
+		{
+			name: "ErrXxx sentinel is not error handling",
+			block: uncoveredBlock{
+				File: "main.go",
+				Code: "return ErrNotFound",
+			},
+			wantCat:  "OTHER",
+			wantPrio: "Low",
+		},
+		{
+			name: "fmt.Errorf is error handling",
+			block: uncoveredBlock{
+				File: "main.go",
+				Code: `return fmt.Errorf("boom")`,
+			},
+			wantCat:  "ERROR_HANDLING",
+			wantPrio: "Medium",
+		},
+		{
+			name: "errors.New is error handling",
+			block: uncoveredBlock{
+				File: "main.go",
+				Code: `errors.New("boom")`,
+			},
+			wantCat:  "ERROR_HANDLING",
+			wantPrio: "Medium",
+		},
 	}
 
 	for _, tt := range tests {
@@ -89,6 +152,42 @@ func TestUncoveredBlock_Classify(t *testing.T) {
 			}
 			if tt.block.Priority != tt.wantPrio {
 				t.Errorf("Classify() Priority = %v, want %v", tt.block.Priority, tt.wantPrio)
+			}
+		})
+	}
+}
+
+func TestContainsIdentErr(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{"bare err", "err", true},
+		{"return err", "return err", true},
+		{"return tuple with err", "return value, err", true},
+		{"if err != nil guard", "if err != nil", true},
+		{"err assignment", "err := f()", true},
+		{"field access s.err", "s.err", true},
+		{"error type token", "error", false},
+		{"error type in signature", "func foo() (x, error) {", false},
+		{"errors package", "errors.new", false},
+		{"XxxErr field name", "registryerr", false},
+		{"ErrXxx sentinel", "errnotfound", false},
+		{"err as identifier prefix", "errx", false},
+		{"err as identifier suffix", "xerr", false},
+		{"err with underscore prefix", "_err", false},
+		{"err with underscore suffix", "err_", false},
+		{"err inside larger word", "verror", false},
+		{"empty string", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := containsIdentErr(strings.ToLower(tt.text)); got != tt.want {
+				t.Errorf("containsIdentErr(%q) = %v, want %v", tt.text, got, tt.want)
 			}
 		})
 	}
