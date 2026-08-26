@@ -187,6 +187,22 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"analysistest MockSymbolIndex HarvestDeclarations stub", "internal/tools/analysis/analysistest/mock_index.go", 61, 63},
 		{"process_executor.go LookPath delegation", "internal/tools/workspace/process_executor.go", 496, 498},
 		{"darwin system_metrics GetCPUStats fallback", "internal/infrastructure/telemetry/system_metrics_darwin_cgo.go", 38, 41},
+		{"helpers.go stubUIRenderer.RenderResponse", "internal/agent/agenttest/helpers.go", 33, 34},
+		{"helpers.go stubUIRenderer.LogTurnStatus", "internal/agent/agenttest/helpers.go", 35, 35},
+		{"helpers.go stubUIRenderer.LogSystemMessage", "internal/agent/agenttest/helpers.go", 36, 36},
+		{"helpers.go stubUIRenderer.LogUsage", "internal/agent/agenttest/helpers.go", 37, 38},
+		{"helpers.go stubUIRenderer.LogToolCall", "internal/agent/agenttest/helpers.go", 39, 40},
+		{"helpers.go stubUIRenderer.LogToolResult", "internal/agent/agenttest/helpers.go", 41, 42},
+		{"helpers.go stubUIRenderer.RenderHealthReport", "internal/agent/agenttest/helpers.go", 43, 43},
+		{"helpers.go stubUIRenderer.SetUseColor", "internal/agent/agenttest/helpers.go", 44, 44},
+		{"helpers.go stubUIRenderer.SetForceSpinner", "internal/agent/agenttest/helpers.go", 45, 45},
+		{"helpers.go stubUIRenderer.SetWordWrap", "internal/agent/agenttest/helpers.go", 48, 48},
+		{"helpers.go stubHistoryRenderer.Render", "internal/agent/agenttest/helpers.go", 58, 59},
+		{"helpers.go StubChatterComposer.GetSkillRepository", "internal/agent/agenttest/helpers.go", 315, 317},
+		{"helpers.go StubEventBus.Subscribe", "internal/agent/agenttest/helpers.go", 356, 356},
+		{"helpers.go StubEventBus.WaitStarted", "internal/agent/agenttest/helpers.go", 360, 360},
+		{"helpers.go StubCapturer.Warn", "internal/agent/agenttest/helpers.go", 390, 390},
+		{"helpers.go StubCapturer.Prompt", "internal/agent/agenttest/helpers.go", 391, 391},
 	}
 
 	for _, tt := range tests {
