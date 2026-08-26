@@ -456,6 +456,23 @@ func (m *healthManager) recommendDeadCode(dead string) string {
 	return ""
 }
 
+// defaultCoverageExclusions mirrors the Makefile test-coverage grep -v list
+// and the coverage-exclusions-explicit invariant
+// (docs/domain-model/quality.modelith.yaml): the nine documented test-double
+// directories. filterExcludedBlocks matches these as SUBSTRINGS of the
+// block's File path, so each entry carries its trailing slash.
+var defaultCoverageExclusions = []string{
+	"internal/agent/agenttest/",
+	"internal/agent/orchestrator/orchestratortest/",
+	"internal/domain/config/configtest/",
+	"internal/tools/analysis/analysistest/",
+	"internal/cli/clitest/",
+	"internal/domain/events/eventstest/",
+	"internal/infrastructure/persistence/persistencetest/",
+	"internal/tools/toolstest/",
+	"internal/infrastructure/testing/",
+}
+
 func (m *healthManager) GetDetailedCoverage(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	path, ok := args["path"].(string)
 	if !ok {
@@ -471,6 +488,13 @@ func (m *healthManager) GetDetailedCoverage(ctx context.Context, args map[string
 				}
 			}
 		}
+	} else {
+		// Default to the nine documented test-double directories so an
+		// unfiltered run matches the Makefile test-coverage gate and the
+		// coverage-exclusions-explicit invariant (issue #1433). An explicitly
+		// passed list — even an empty one — always wins; only an ABSENT
+		// argument triggers the default.
+		excludedPackages = defaultCoverageExclusions
 	}
 
 	report, err := m.getDetailedCoverageReport(ctx, path, excludedPackages, hb)

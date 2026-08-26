@@ -376,7 +376,14 @@ catalog a new gap no one reviewed. Policy:
   `domainFS.Chmod` already documented below.
   The `agenttest/` package is already excluded from coverage metrics by the
   Makefile `test-coverage` target.
-- **See**: `internal/agent/agenttest/helpers.go`
+- **See**: `internal/agent/agenttest/helpers.go:33-34,35,36,37-38,39-40,41-42,43,44,45,48,58-59,315-317,356,360,390,391`
+  (Re-anchored 2026-09 (#1433): the previous See ref was file-only
+  (internal/agent/agenttest/helpers.go), which the coverage matcher drops —
+  interval-overlap matching requires a line spec — so all 16 methods surfaced
+  as uncataloged gaps in detailed-coverage reports. Re-anchored to per-method
+  line refs mirroring the 2026-08 "agent/agenttest + clitest/eventstest"
+  entry's comma-list pattern; partition-test rows added in the same commit
+  per the Drift Policy coordination rule.)
 
 ### agent/agenttest + clitest/eventstest — interface-satisfying mock stubs at 0%
 

@@ -187,6 +187,22 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"analysistest MockSymbolIndex HarvestDeclarations stub", "internal/tools/analysis/analysistest/mock_index.go", 61, 63},
 		{"process_executor.go LookPath delegation", "internal/tools/workspace/process_executor.go", 496, 498},
 		{"darwin system_metrics GetCPUStats fallback", "internal/infrastructure/telemetry/system_metrics_darwin_cgo.go", 38, 41},
+		{"helpers.go stubUIRenderer.RenderResponse", "internal/agent/agenttest/helpers.go", 33, 34},
+		{"helpers.go stubUIRenderer.LogTurnStatus", "internal/agent/agenttest/helpers.go", 35, 35},
+		{"helpers.go stubUIRenderer.LogSystemMessage", "internal/agent/agenttest/helpers.go", 36, 36},
+		{"helpers.go stubUIRenderer.LogUsage", "internal/agent/agenttest/helpers.go", 37, 38},
+		{"helpers.go stubUIRenderer.LogToolCall", "internal/agent/agenttest/helpers.go", 39, 40},
+		{"helpers.go stubUIRenderer.LogToolResult", "internal/agent/agenttest/helpers.go", 41, 42},
+		{"helpers.go stubUIRenderer.RenderHealthReport", "internal/agent/agenttest/helpers.go", 43, 43},
+		{"helpers.go stubUIRenderer.SetUseColor", "internal/agent/agenttest/helpers.go", 44, 44},
+		{"helpers.go stubUIRenderer.SetForceSpinner", "internal/agent/agenttest/helpers.go", 45, 45},
+		{"helpers.go stubUIRenderer.SetWordWrap", "internal/agent/agenttest/helpers.go", 48, 48},
+		{"helpers.go stubHistoryRenderer.Render", "internal/agent/agenttest/helpers.go", 58, 59},
+		{"helpers.go StubChatterComposer.GetSkillRepository", "internal/agent/agenttest/helpers.go", 315, 317},
+		{"helpers.go StubEventBus.Subscribe", "internal/agent/agenttest/helpers.go", 356, 356},
+		{"helpers.go StubEventBus.WaitStarted", "internal/agent/agenttest/helpers.go", 360, 360},
+		{"helpers.go StubCapturer.Warn", "internal/agent/agenttest/helpers.go", 390, 390},
+		{"helpers.go StubCapturer.Prompt", "internal/agent/agenttest/helpers.go", 391, 391},
 	}
 
 	for _, tt := range tests {
@@ -471,4 +487,39 @@ func TestDetailedCoverageReport_ConfigPackageCataloged(t *testing.T) {
 	gapIdx := strings.Index(report, "redact.go (Lines 53-55)")
 	catalogedIdx := strings.Index(report, "[CATALOGED GAPS (ACCEPTED)]")
 	require.Greater(t, gapIdx, catalogedIdx, "redact.go (Lines 53-55) must appear under [CATALOGED GAPS (ACCEPTED)], not as an actionable gap")
+}
+
+// TestDetailedCoverageReport_AgentTestDefaultExclusions is the end-to-end
+// regression for the option-B default: the nine documented test-double
+// directories (defaultCoverageExclusions, mirroring the Makefile test-coverage
+// grep -v list) must remove ALL agenttest blocks from the report — the
+// package is entirely test doubles, so an excluded run reports zero gaps and
+// renders no helpers.go noise. Same full report path as the sibling
+// TestDetailedCoverageReport_* tests, scoped to ./internal/agent/agenttest.
+func TestDetailedCoverageReport_AgentTestDefaultExclusions(t *testing.T) {
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoRoot))
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	executor := &exec.RealExecutor{}
+	m := &healthManager{
+		SP:          &mockSecurityProvider{},
+		Exec:        executor,
+		Runner:      toolchain.NewGoRunner(executor),
+		clk:         clock.RealClock{},
+		catalogPath: defaultNonFixCatalogPath,
+	}
+
+	report, err := m.getDetailedCoverageReport(context.Background(), "./internal/agent/agenttest", defaultCoverageExclusions, nil)
+	require.NoError(t, err)
+
+	// Every agenttest block matches the "internal/agent/agenttest/" substring
+	// pattern, so the exclusion list removes the whole package: zero gaps.
+	require.Contains(t, report, "- Total Gaps: 0")
+	require.NotContains(t, report, "helpers.go")
+	require.NotContains(t, report, "[HIGH PRIORITY GAPS]")
 }

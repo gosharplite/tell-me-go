@@ -54,7 +54,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 						"excluded_packages": {
 							Type:        "ARRAY",
 							Items:       &tools.Schema{Type: "STRING"},
-							Description: "Patterns of packages to ignore (e.g., 'agenttest', 'testing'). Matches substrings in file paths.",
+							Description: "Patterns of packages to ignore (e.g., 'agenttest', 'testing'). Matches substrings in file paths. When omitted, defaults to the nine documented test-double directories (agenttest/, orchestratortest/, configtest/, analysistest/, clitest/, eventstest/, persistencetest/, toolstest/, internal/infrastructure/testing/).",
 						},
 					},
 					Required: []string{"path"},
