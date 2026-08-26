@@ -1008,3 +1008,30 @@ func TestConcurrentSearch_IsPathSafe(t *testing.T) {
 		t.Errorf("expected result channel to be closed, got %q (ok=%v)", result, ok)
 	}
 }
+
+// TestStartWalker_WalkError pins the startWalker top-level Walk error path
+// (concurrentsearch.go:106-107): a non-context Walk failure is forwarded on
+// errChan. The searchMockFS.walkErr field drives it deterministically — no
+// filesystem fault injection required.
+func TestStartWalker_WalkError(t *testing.T) {
+	fs := &searchMockFS{
+		files:    map[string][]byte{"a.txt": []byte("hello")},
+		walkErr:  errors.New("walk failed"),
+		openErrs: make(map[string]error),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, errChan := ConcurrentSearch(ctx, &mockSP{}, fs, ".", nil, func(_, line string) (string, bool) {
+		return "", false
+	}, mockPolicy{})
+
+	select {
+	case err := <-errChan:
+		if err == nil || !strings.Contains(err.Error(), "walk failed") {
+			t.Errorf("expected 'walk failed' error, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for walk error on errChan")
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -179,6 +180,29 @@ func TestTurnTrace_WarningsJSON(t *testing.T) {
 		}
 		if strings.Contains(string(data), "warnings") {
 			t.Errorf("marshaled JSON = %s; want warnings key omitted (omitempty)", data)
+		}
+	})
+}
+
+// TestTurnTrace_AddWarnings pins the nil-receiver fail-open guard, the
+// empty-warnings no-op, and the append-under-lock path.
+func TestTurnTrace_AddWarnings(t *testing.T) {
+	t.Run("nil receiver fails open", func(t *testing.T) {
+		var tr *TurnTrace
+		tr.AddWarnings("w") // must not panic; no-op
+	})
+	t.Run("empty warnings no-op", func(t *testing.T) {
+		tr := NewTurnTrace()
+		tr.AddWarnings()
+		if len(tr.Warnings) != 0 {
+			t.Errorf("AddWarnings() with no args appended %d entries, want 0", len(tr.Warnings))
+		}
+	})
+	t.Run("appends warnings", func(t *testing.T) {
+		tr := NewTurnTrace()
+		tr.AddWarnings("a", "b")
+		if !reflect.DeepEqual(tr.Warnings, []string{"a", "b"}) {
+			t.Errorf("AddWarnings() = %v, want [a b]", tr.Warnings)
 		}
 	})
 }

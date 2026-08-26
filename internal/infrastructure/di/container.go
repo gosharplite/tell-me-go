@@ -280,6 +280,7 @@ func (d *sessionDeps) GetConfigWatcher() config.ConfigWatcher {
 // (nil, false) when the server was skipped at DI construction. A nil
 // toolchain (e.g. bare sessionDeps in tests) degrades to "unavailable".
 func (d *sessionDeps) GetMCPClient(name string) (tools.MCPClient, bool) {
+	// architect-acceptance: defensive nil guard — see the defensive-guard acceptance class (INTENTIONAL_NON_FIXES.md)
 	if d.toolchain == nil {
 		return nil, false
 	}

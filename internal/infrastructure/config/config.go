@@ -228,6 +228,7 @@ func caseInsensitiveMatch(node map[string]any, needle, context string) (map[stri
 func buildMCPServerEnvMap(serverName string, envNode map[string]any) (map[string]string, error) {
 	env := make(map[string]string, len(envNode))
 	for k, rv := range envNode {
+		// architect-acceptance: structurally unreachable non-scalar guard — mapstructure rejects non-scalars before the bypass runs; see the structurally-unreachable acceptance class (INTENTIONAL_NON_FIXES.md)
 		if !isScalarValue(rv) {
 			return nil, fmt.Errorf("MCP_SERVERS.%s.ENV.%s must be a scalar value, got map/sequence", serverName, k)
 		}
@@ -253,6 +254,7 @@ func buildMCPServerEnvMap(serverName string, envNode map[string]any) (map[string
 // naming both raw keys; nothing is normalized or silently collapsed.
 func applyCasePreservingMCPServerEnv(raw []byte, cfg *domain_config.Config) error {
 	var root map[string]any
+	// architect-acceptance: structurally unreachable re-parse guard — viper already parsed the same bytes; see the structurally-unreachable acceptance class (INTENTIONAL_NON_FIXES.md)
 	if err := yaml.Unmarshal(raw, &root); err != nil {
 		return fmt.Errorf("parse raw config for MCP_SERVERS ENV bypass: %w", err)
 	}

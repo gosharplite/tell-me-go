@@ -1514,3 +1514,65 @@ MCP_SERVERS:
 		t.Error("raw-cased server key 'Plur' must not be stamped into the decoded map")
 	}
 }
+
+// TestStringKeyMap pins the yaml.v3 legacy-map normalization semantics:
+// yaml.v3 decodes a nested mapping as map[string]interface{} when every key
+// is a string, but falls back to map[interface{}]interface{} when any key is
+// non-string (e.g. an unquoted YAML null `Null:`/`~` parses as a nil key).
+// Non-string keys cannot name configuration/environment entries and are
+// dropped — mirroring Viper.
+func TestStringKeyMap(t *testing.T) {
+	tests := []struct {
+		name string
+		in   any
+		want map[string]any
+		ok   bool
+	}{
+		{"map[string]any passthrough", map[string]any{"A": 1, "B": "x"}, map[string]any{"A": 1, "B": "x"}, true},
+		{"interface-key map drops non-string keys", map[interface{}]interface{}{"KEEP": "v", nil: "dropped", 42: "dropped"}, map[string]any{"KEEP": "v"}, true},
+		{"string value not a map", "not-a-map", nil, false},
+		{"int value not a map", 7, nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := stringKeyMap(tt.in)
+			if ok != tt.ok {
+				t.Fatalf("stringKeyMap(%v) ok = %v, want %v", tt.in, ok, tt.ok)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("stringKeyMap(%v) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestIsScalarValue pins the reflect-Kind classification: Map, Slice, Array,
+// Struct, Func, Chan → false; everything else (string, int, bool, nil,
+// float) → true. Note: nil → reflect.ValueOf(nil).Kind() is Invalid, which
+// falls to the default arm → true (correct scalar classification).
+func TestIsScalarValue(t *testing.T) {
+	tests := []struct {
+		name string
+		in   any
+		want bool
+	}{
+		{"string", "x", true},
+		{"int", 42, true},
+		{"bool", true, true},
+		{"nil", nil, true},
+		{"float", 1.5, true},
+		{"map", map[string]any{}, false},
+		{"slice", []any{1}, false},
+		{"array", [1]int{1}, false},
+		{"struct", struct{}{}, false},
+		{"func", func() {}, false},
+		{"chan", make(chan int), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isScalarValue(tt.in); got != tt.want {
+				t.Errorf("isScalarValue(%v) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}

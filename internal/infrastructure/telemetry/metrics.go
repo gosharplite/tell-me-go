@@ -185,6 +185,7 @@ func (m *metricsManager) appendSummaryToLog(logPath string, usage domain_pricing
 		_ = fAppend.Close()
 	}()
 
+	// architect-acceptance: disk-write fault injection — see the fault-injection-required acceptance class (INTENTIONAL_NON_FIXES.md)
 	_, err = io.WriteString(fAppend, string(summaryBytes)+"\n")
 	if err != nil {
 		return fmt.Errorf("failed to write cost summary to log: %w", err)
