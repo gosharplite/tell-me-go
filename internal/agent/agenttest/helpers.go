@@ -40,9 +40,11 @@ func (s *stubUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionC
 }
 func (s *stubUIRenderer) LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool) {
 }
-func (s *stubUIRenderer) RenderHealthReport(ctx context.Context, report *ports.HealthReport)       {}
-func (s *stubUIRenderer) SetUseColor(use bool)                                                     {}
-func (s *stubUIRenderer) SetForceSpinner(force bool)                                               {}
+func (s *stubUIRenderer) RenderHealthReport(ctx context.Context, report *ports.HealthReport) {}
+func (s *stubUIRenderer) SetUseColor(use bool)                                               {}
+func (s *stubUIRenderer) SetForceSpinner(force bool)                                         {}
+
+// architect-acceptance: interface-satisfying stub — see the interface-stub acceptance class (INTENTIONAL_NON_FIXES.md)
 func (s *stubUIRenderer) SetWordWrap(width int)                                                    {}
 func (s *stubUIRenderer) IsTerminalContext() bool                                                  { return false }
 func (s *stubUIRenderer) UpdateSpinnerStatus(ctx context.Context, status string, showMetrics bool) {}

@@ -308,6 +308,7 @@ func (m *AdoManager) UpdateBuildDefinitionVariables(ctx context.Context, args ma
 	}
 
 	// 2. Build updated payload.
+	// architect-acceptance: propagation of the unreachable buildVariablesUpdatePayload error — see the structurally-unreachable acceptance class (INTENTIONAL_NON_FIXES.md)
 	body, err := buildVariablesUpdatePayload(definition, params.Variables)
 	if err != nil {
 		return UpdateVariablesResult{}, fmt.Errorf("failed to build updated payload: %w", err)

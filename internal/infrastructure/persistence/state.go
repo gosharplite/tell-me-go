@@ -174,6 +174,7 @@ func newSessionState(ctx context.Context, configDir string, opts ...SessionState
 	for _, opt := range opts {
 		opt(state)
 	}
+	// architect-acceptance: defensive storage-type fallback — see the defensive-guard acceptance class (INTENTIONAL_NON_FIXES.md)
 	if state.storageType == "" {
 		state.storageType = "sqlite"
 	}

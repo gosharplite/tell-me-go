@@ -57,6 +57,7 @@ func (m *MockSymbolIndex) Refresh(ctx context.Context, hb chan<- struct{}) error
 func (m *MockSymbolIndex) WarmImplementations(ctx context.Context) {}
 
 // HarvestDeclarations satisfies analysis.SymbolIndex.
+// architect-acceptance: interface-satisfying stub — see the interface-stub acceptance class (INTENTIONAL_NON_FIXES.md)
 func (m *MockSymbolIndex) HarvestDeclarations(ctx context.Context, fn func(meta *analysis.SymMeta) bool, hb chan<- struct{}) error {
 	return nil
 }

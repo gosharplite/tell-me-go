@@ -165,11 +165,11 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"hook.go FlushSession engrams-empty belt-and-suspenders", "internal/agent/memory/hook.go", 241, 243},
 		{"client.go marshalInputSchema json.Marshal", "internal/infrastructure/mcp/client.go", 258, 260},
 		{"client.go ListTools marshalInputSchema propagation", "internal/infrastructure/mcp/client.go", 120, 122},
-		{"stdio_client.go ListTools marshalInputSchema propagation", "internal/infrastructure/mcp/stdio_client.go", 162, 165},
+		{"stdio_client.go ListTools marshalInputSchema propagation", "internal/infrastructure/mcp/stdio_client.go", 174, 176},
 		{"stdio_client.go StdoutPipe error", "internal/infrastructure/mcp/stdio_client.go", 82, 85},
 		{"stdio_client.go StdinPipe error", "internal/infrastructure/mcp/stdio_client.go", 87, 90},
-		{"stdio_client.go resolveCommand generic error", "internal/infrastructure/mcp/stdio_client.go", 347, 347},
-		{"stdio_client.go Close session.Close error", "internal/infrastructure/mcp/stdio_client.go", 240, 242},
+		{"stdio_client.go resolveCommand generic error", "internal/infrastructure/mcp/stdio_client.go", 358, 358},
+		{"stdio_client.go Close session.Close error", "internal/infrastructure/mcp/stdio_client.go", 251, 253},
 		{"global_prompt_tracker.go prepareCompactedEntries", "internal/infrastructure/history/global_prompt_tracker.go", 420, 422},
 		{"policy.go confirmAction call-site error", "internal/infrastructure/security/policy.go", 95, 98},
 		{"manager.go RegisterSafePath Abs error", "internal/infrastructure/security/manager.go", 136, 139},
@@ -181,6 +181,12 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"sqlite_store.go Delete RowsAffected", "internal/infrastructure/persistence/sqlite_store.go", 224, 226},
 		{"mcp_factory.go gh token resolver success", "internal/infrastructure/di/mcp_factory.go", 78, 78},
 		{"main.go buildApp os.Getwd error branch", "cmd/tell-me-go/main.go", 184, 186},
+		{"container.go GetMCPClient nil-guard", "internal/infrastructure/di/container.go", 284, 286},
+		{"imports.go format.Node error branch", "internal/tools/analysis/imports.go", 50, 52},
+		{"process_executor.go RunCommand Start error", "internal/tools/workspace/process_executor.go", 90, 92},
+		{"analysistest MockSymbolIndex HarvestDeclarations stub", "internal/tools/analysis/analysistest/mock_index.go", 61, 63},
+		{"process_executor.go LookPath delegation", "internal/tools/workspace/process_executor.go", 496, 498},
+		{"darwin system_metrics GetCPUStats fallback", "internal/infrastructure/telemetry/system_metrics_darwin_cgo.go", 38, 41},
 	}
 
 	for _, tt := range tests {

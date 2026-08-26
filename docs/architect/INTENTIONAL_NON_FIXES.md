@@ -170,7 +170,9 @@ catalog a new gap no one reviewed. Policy:
   unreachable in correct code. Testing it would require deliberately
   violating the `os/exec` contract (calling `StdoutPipe` after `Start`),
   which is a programming error, not a recoverable runtime condition.
-- **See**: `internal/tools/workspace/process_executor.go:143-145`
+  Re-anchored 2026-09 (#1431): lines drifted 143-145 → 151-153 as the
+  setupCommand Env-handling block grew above the StdoutPipe call.
+- **See**: `internal/tools/workspace/process_executor.go:152-154`
 
 ### tools/workspace/process_executor.go — StderrPipe error
 
@@ -179,7 +181,9 @@ catalog a new gap no one reviewed. Policy:
   only fails when called after `cmd.Start()` or called twice. In
   `prepareCommand`, it is called before `Start()` and exactly once, making
   this error path structurally unreachable.
-- **See**: `internal/tools/workspace/process_executor.go:147-149`
+  Re-anchored 2026-09 (#1431): lines drifted 147-149 → 155-157 as the
+  setupCommand Env-handling block grew above the StderrPipe call.
+- **See**: `internal/tools/workspace/process_executor.go:156-158`
 
 ### tools/analysis/complexity.go — errgroup.Wait error
 
@@ -471,7 +475,9 @@ catalog a new gap no one reviewed. Policy:
   harness with `tea.NewProgram` to trigger `mdRenderCompleteMsg`. Same
   acceptance class as `glamour render error paths` in `renderer.go`:
   structurally unreachable in normal operation, cosmetic degrade only.
-- **See**: `internal/ui/tui/progress/model.go:746` (`renderMarkdownAsync`)
+  Re-anchored 2026-09 (#1431): lines drifted 746 → 669-676 as the
+  #1419-style render-path additions grew the file above the function.
+- **See**: `internal/ui/tui/progress/model.go:669-676` (`renderMarkdownAsync`)
 
 ### ui/renderer.go — SetWordWrap renderer rebuild error branch
 
@@ -1565,8 +1571,8 @@ to reason about.
 ### mcp/client.go + stdio_client.go — marshalInputSchema json.Marshal error + propagations (structurally unreachable)
 
 - **Status**: ACCEPTED (2026-09)
-- **Rationale**: `marshalInputSchema` json.Marshals the SDK-provided `InputSchema`, which is wire-decoded JSON (`map[string]any` / `RawMessage`) — `json.Marshal` cannot fail on it. The two ListTools propagation branches (`client.go:120-122`, `stdio_client.go:162-165`) root-cause to the same impossible error. Same acceptance class as the cataloged `json.Marshal` entries on all-string structs (`structurally-unreachable`).
-- **See**: `internal/infrastructure/mcp/client.go:258-260` (marshalInputSchema body), `:120-122` (Client.ListTools propagation), `internal/infrastructure/mcp/stdio_client.go:162-165` (StdioClient.ListTools propagation)
+- **Rationale**: `marshalInputSchema` json.Marshals the SDK-provided `InputSchema`, which is wire-decoded JSON (`map[string]any` / `RawMessage`) — `json.Marshal` cannot fail on it. The two ListTools propagation branches (`client.go:120-122`, `stdio_client.go:174-176`) root-cause to the same impossible error. Same acceptance class as the cataloged `json.Marshal` entries on all-string structs (`structurally-unreachable`). Re-anchored 2026-09 (#1431): stdio_client.go propagation ref drifted 162-165 → 174-176 as the handshake-timeout normalization block grew the file above ListTools.
+- **See**: `internal/infrastructure/mcp/client.go:258-260` (marshalInputSchema body), `:120-122` (Client.ListTools propagation), `internal/infrastructure/mcp/stdio_client.go:174-176` (StdioClient.ListTools propagation)
 
 ### mcp/stdio_client.go — StdoutPipe/StdinPipe errors (structurally unreachable)
 
@@ -1577,14 +1583,14 @@ to reason about.
 ### mcp/stdio_client.go — resolveCommand generic LookPath error (defensive guard)
 
 - **Status**: ACCEPTED (2026-09)
-- **Rationale**: `exec.LookPath` returns `ErrNotFound` for missing commands (covered — the friendly annotated branch at `stdio_client.go:344-346`); the remaining non-ErrNotFound error branch (`:347`) requires environment/path-length edge cases (e.g. ENAMETOOLONG) that callers never hit. Same acceptance class as defensive guards on internal pipeline state (2026-07 Batch Triage).
-- **See**: `internal/infrastructure/mcp/stdio_client.go:347`
+- **Rationale**: `exec.LookPath` returns `ErrNotFound` for missing commands (covered — the friendly annotated branch at `stdio_client.go:355-357`); the remaining non-ErrNotFound error branch (`:358`) requires environment/path-length edge cases (e.g. ENAMETOOLONG) that callers never hit. Same acceptance class as defensive guards on internal pipeline state (2026-07 Batch Triage). Re-anchored 2026-09 (#1431): ref drifted 347 → 358 as the resolveCommand annotated-error block grew above the generic return.
+- **See**: `internal/infrastructure/mcp/stdio_client.go:358`
 
 ### mcp/stdio_client.go — Close session.Close error branch (reachable-but-racy; timing fault-injection)
 
 - **Status**: ACCEPTED (2026-09)
-- **Rationale**: Empirically proven REACHABLE, not dead: on a child-death flow, if `Close()`'s `session.Close()` runs before the SDK read-loop teardown finishes, it returns "file already closed" and `closeErr` is set (isolated `-count=1` run covers `240-242`; full-suite runs race with teardown → nondeterministic count). Deterministically covering it would require controlling SDK teardown timing — timing fault-injection disproportionate to the value. Same acceptance class as the cataloged `processWatcherEvents` goroutine-timing entry (2026-07 Batch Triage).
-- **See**: `internal/infrastructure/mcp/stdio_client.go:240-242`
+- **Rationale**: Empirically proven REACHABLE, not dead: on a child-death flow, if `Close()`'s `session.Close()` runs before the SDK read-loop teardown finishes, it returns "file already closed" and `closeErr` is set (isolated `-count=1` run covers `251-253`; full-suite runs race with teardown → nondeterministic count). Deterministically covering it would require controlling SDK teardown timing — timing fault-injection disproportionate to the value. Same acceptance class as the cataloged `processWatcherEvents` goroutine-timing entry (2026-07 Batch Triage). Re-anchored 2026-09 (#1431): ref drifted 240-242 → 251-253 as the Close reaper-join comment block grew above the session.Close call.
+- **See**: `internal/infrastructure/mcp/stdio_client.go:251-253`
 
 ### history/global_prompt_tracker.go — prepareCompactedEntries failure branch (structurally unreachable)
 
@@ -1670,4 +1676,98 @@ to reason about.
   kept at orchestrator level after the build call.
 - **See**: `internal/agent/memory/hook.go:241-243`
 
-*Last Updated: 2026-09 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment); 2026-09 factory seams triage: coverage pin for llm/factory.go createAuthenticator default-case; 2026-09 catalog hygiene: coverage pins for llm/failover.go ExtractDocument delegation wrapper + llm/provider_health.go getPingEndpoint panic and buildRequest error branch (structurally unreachable); re-anchored NewID (222-224 → 234-236) and Task accessors (105,108,111 → 112,116); coverage test for BuildSuggestionService tracker fallback; 2026-09 #1378: four test-complexity catalog additions (TestToSDKSchema_EmptyType_OmitsTypeKey CC=19, TestToOpenAISchema_EmptyTypeOmitsKey CC=11, TestToOpenAITools_EmptyTypeNested_OmitsEmptyTypeKey CC=16, TestConvertSchema_NestedUnrepresentable_BecomesUntypedAny CC=12) — MCP empty-type schema tests; #1387: buildFileUploadBody multipart + propagation coverage-pin catalog entries (Entry A/B); redact hygiene: normalizeKeyToken dead-branch coverage entry (structurally-unreachable); 2026-09 triage completion: ten coverage entries (mcp marshalInputSchema/pipes/resolveCommand/Close-race, global_prompt_tracker prepare, policy confirmAction call-sites, manager Abs guards, state SetInfo marshal, telemetry summary marshal, toolchain execRunner); re-anchors (sqlite RowsAffected 200/218 → 207-209/224-226, state.go:56 dropped, gh token resolver 66-70 → 66-71); partition-test rows (17); complexity-drift repair: TestBasicAuthTransport 645→646, TestMCPFactory_ConcurrentBuild 683→684, ..._FailingServerSkips 743→744 (import-shift re-anchors), TestStdio_ChildDeathMidSession CC 11→13, TestResolveCommand 10→13 new entry (stdio_client_test.go:25); memory integration: hook.go BeforeTurn/OnPhaseTransition interface-stub entry + TestFirstNonNil/TestAcquireWriteLockUserHomeDirError coverage — partition-test row (1); memory integration round 2: truncateToBytes/AfterTurn-empty-text/acquireWriteLock call-site guard/metadataIDs/lastUserText/joinTextParts/FlushSession edge coverage (harness fix: newTestMemoryHome pre-creates ~/.plur) + flock_unix.go non-EWOULDBLOCK (fault-injection-required) and FlushSession engrams-empty (defensive-guard) catalog entries — partition-test rows (2)))*
+## Coverage Gaps (ACCEPTED — 2026-09 #1431 medium-gap triage batch)
+
+### Defensive nil/empty guards on internal pipeline state (53 sites)
+
+- **Status**: ACCEPTED (2026-09, issue #1431)
+- **Rationale**: nil/empty guards on internal state that callers never produce —
+  nil-dependency guards at composition boundaries (`sessionDeps.GetMCPClient`
+  toolchain nil check), nil-receiver fail-open guards on value methods, empty-
+  collection early returns, and config-scope fail-open fallbacks. Same
+  acceptance class as the cataloged defensive nil/empty guards (2026-07 Batch
+  Triage). Architect-acceptance comments at representative sites.
+- **See**: `internal/infrastructure/di/container.go:284-286`,
+  `internal/infrastructure/persistence/state.go:178-180`,
+  `internal/infrastructure/security/paths.go:97-99,121-123,143-145,261-263,283-285,329-331,344-346`,
+  `internal/infrastructure/security/policy.go:90-92,129-131,187-189,226-228`,
+  `internal/tools/analysis/index.go:31-33,156-158`,
+  `internal/tools/analysis/index_impl.go:177-179`,
+  `internal/tools/analysis/dependency.go:203-205`,
+  `internal/tools/analysis/ports_registry.go:24-26,26-28,174-176,215-217,734-736`,
+  `internal/tools/analysis/transitive_gate.go:529-531,533-535,552-554,555-557,577-579,632-634,659-661,661-663,664-665,665-667,669-671,673-675,685-687,687-689`,
+  `internal/tools/analysis/types.go:426-428`,
+  `internal/tools/workspace/process_executor.go:82-84,131-133`,
+  `internal/tools/workspace/pipeline.go:32-34,34-36,41-42,42-42,44-46`,
+  `internal/tools/workspace/reader.go:301-303,305-307,331-333,335-337`,
+  `internal/tools/workspace/shell.go:236-238,305-307,310-312,318-320,394-396`
+
+### Structurally unreachable branches (5 sites)
+
+- **Status**: ACCEPTED (2026-09, issue #1431)
+- **Rationale**: branches that cannot fire in correct code — exhaustive-switch
+  defaults, json.Marshal-style sinks, and dead normalization paths whose only
+  callers pre-normalize their input. Same acceptance class as the cataloged
+  json.Marshal entries (`global_prompt_tracker.go`, `middleware.go` detectLoop).
+  Architect-acceptance comments at representative sites.
+- **See**: `internal/infrastructure/config/config.go:232-234,258-260,287-289`,
+  `internal/tools/analysis/imports.go:50-52`,
+  `internal/tools/integrations/ado/pipeline_crud.go:313-315`
+
+### Fault-injection-required branches (55 sites)
+
+- **Status**: ACCEPTED (2026-09, issue #1431)
+- **Rationale**: triggering the branch requires filesystem, driver, environment,
+  or goroutine-timing fault injection disproportionate to the test value —
+  subprocess/toolchain invocation failures, driver-level DB errors, fsync/disk
+  faults. Same acceptance class as the 2026-07 fault-injection gaps.
+  Architect-acceptance comments at representative sites.
+- **See**: `internal/infrastructure/mcp/stdio_client.go:123-125`,
+  `internal/infrastructure/telemetry/metrics.go:190-192`,
+  `internal/tools/analysis/dead_code.go:179-181`,
+  `internal/tools/analysis/index_impl.go:161-163`,
+  `internal/tools/analysis/ports_registry.go:29-30,30-32`,
+  `internal/tools/analysis/transitive_gate.go:690-691,691-693`,
+  `internal/tools/analysis/types.go:423-425`,
+  `internal/tools/workspace/process_executor.go:90-92,98-100,107-109,241-243,246-248,256-260,265-267,269-269,472-474,474-476,477-479,484-486,486-488,489-491`,
+  `internal/tools/workspace/pipeline.go:122-124,161-164,174-175,175-177,185-185`,
+  `internal/tools/workspace/proc_posix.go:35-37,45-47,47-47,47-49,52-54`,
+  `internal/tools/workspace/reader.go:310-312,344-345`,
+  `internal/tools/workspace/shell.go:259-271,273-273,273-274,274-276,277-277,364-376,378-378,378-379,379-381,382-382,466-485,495-495,538-540,540-541`,
+  `internal/ui/tui/browser.go:155-156`,
+  `internal/ui/tui/history_editor.go:50-51,51-53,67-69,72-74,75-77`
+
+### Interface-stub no-op methods (16 sites)
+
+- **Status**: ACCEPTED (2026-09, issue #1431)
+- **Rationale**: empty method bodies that exist solely to satisfy interface
+  contracts; Go coverage does not count empty bodies as covered. Same
+  acceptance class as `NoOpEventBus`, `auth.Invalidate`, `NoOpLogger`
+  (`interface-stub`). Architect-acceptance comments at representative sites.
+- **See**: `internal/agent/agenttest/helpers.go:48-48,50-50,240-246,246-248,249-249`,
+  `internal/agent/agenttest/mock_history_manager.go:141-142,145-147,147-148,148-150,154-155,160-161,164-164`,
+  `internal/agent/agenttest/mock_ui_renderer.go:264-271,271-273,296-298`,
+  `internal/tools/analysis/analysistest/mock_index.go:61-63`
+
+### Delegation wrappers (2 sites)
+
+- **Status**: ACCEPTED (2026-09, issue #1431)
+- **Rationale**: thin pass-throughs that would only re-test the underlying
+  implementation — the underlying method is covered directly. Same acceptance
+  class as `AppendTask`, `domainFS.Chmod`, `FailoverGateway.ExtractDocument`
+  (`delegation-wrapper`). Architect-acceptance comments at representative sites.
+- **See**: `internal/tools/workspace/process_executor.go:496-498`,
+  `internal/ui/tui/history_editor.go:31-37`
+
+### Platform-specific branches (9 sites)
+
+- **Status**: ACCEPTED (2026-09, issue #1431)
+- **Rationale**: branches only executable on a specific OS — Windows path
+  separators/volume prefixes, Darwin kernel observation. Not executable on
+  Linux dev/CI. Same acceptance class as the cataloged platform-specific
+  entries (`isPowerShellIndicator`, `NormalizeKey`). Architect-acceptance
+  comments at representative sites.
+- **See**: `internal/infrastructure/telemetry/system_metrics_darwin_cgo.go:38-41,41-44,45-45,67-69,76-78,87-89`,
+  `internal/tools/workspace/process_executor.go:368-370,370-372,378-378`
+
+*Last Updated: 2026-09 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment); 2026-09 factory seams triage: coverage pin for llm/factory.go createAuthenticator default-case; 2026-09 catalog hygiene: coverage pins for llm/failover.go ExtractDocument delegation wrapper + llm/provider_health.go getPingEndpoint panic and buildRequest error branch (structurally unreachable); re-anchored NewID (222-224 → 234-236) and Task accessors (105,108,111 → 112,116); coverage test for BuildSuggestionService tracker fallback; 2026-09 #1378: four test-complexity catalog additions (TestToSDKSchema_EmptyType_OmitsTypeKey CC=19, TestToOpenAISchema_EmptyTypeOmitsKey CC=11, TestToOpenAITools_EmptyTypeNested_OmitsEmptyTypeKey CC=16, TestConvertSchema_NestedUnrepresentable_BecomesUntypedAny CC=12) — MCP empty-type schema tests; #1387: buildFileUploadBody multipart + propagation coverage-pin catalog entries (Entry A/B); redact hygiene: normalizeKeyToken dead-branch coverage entry (structurally-unreachable); 2026-09 triage completion: ten coverage entries (mcp marshalInputSchema/pipes/resolveCommand/Close-race, global_prompt_tracker prepare, policy confirmAction call-sites, manager Abs guards, state SetInfo marshal, telemetry summary marshal, toolchain execRunner); re-anchors (sqlite RowsAffected 200/218 → 207-209/224-226, state.go:56 dropped, gh token resolver 66-70 → 66-71); partition-test rows (17); complexity-drift repair: TestBasicAuthTransport 645→646, TestMCPFactory_ConcurrentBuild 683→684, ..._FailingServerSkips 743→744 (import-shift re-anchors), TestStdio_ChildDeathMidSession CC 11→13, TestResolveCommand 10→13 new entry (stdio_client_test.go:25); memory integration: hook.go BeforeTurn/OnPhaseTransition interface-stub entry + TestFirstNonNil/TestAcquireWriteLockUserHomeDirError coverage — partition-test row (1); memory integration round 2: truncateToBytes/AfterTurn-empty-text/acquireWriteLock call-site guard/metadataIDs/lastUserText/joinTextParts/FlushSession edge coverage (harness fix: newTestMemoryHome pre-creates ~/.plur) + flock_unix.go non-EWOULDBLOCK (fault-injection-required) and FlushSession engrams-empty (defensive-guard) catalog entries — partition-test rows (2); #1431: medium-gap triage batch (140 sites across six classes: defensive 53, structurally-unreachable 5, fault-injection 55, interface-stub 16, delegation 2, platform 9) + TurnTrace.AddWarnings / startWalker walk-error coverage fixes + six coverage-pin re-anchors (StdoutPipe 152-154, StderrPipe 156-158, renderMarkdownAsync 669-676, stdio_client ListTools 174-176, Close 251-253, resolveCommand 358) + partition-test rows (6), CC=10 boundary watch list))
