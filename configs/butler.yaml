@@ -20,6 +20,12 @@ PROVIDERS:
     URL: "https://api.deepseek.com"
     API_KEY: "${DEEPSEEK_API_KEY}"
     MAX_TOKENS: 32768
+  deepseek-vision:
+    TYPE: "deepseek"
+    MODEL: "deepseek-v4-flash-vision-exp"
+    URL: "https://api.deepseek.com"
+    API_KEY: "${DEEPSEEK_API_KEY}"
+    MAX_TOKENS: 32768
   kimi:
     TYPE: "kimi"
     MODEL: "kimi-k3"
@@ -118,6 +124,12 @@ MODELS:
       HIT:      0.003625
       MISS:     0.435
       COMP:     0.87
+  "deepseek-v4-flash-vision-exp":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT:      0.0028
+      MISS:     0.14
+      COMP:     0.28
   "deepseek-ai/deepseek-v3.2-maas":
     CONTEXT_WINDOW: 163840
     PRICING:

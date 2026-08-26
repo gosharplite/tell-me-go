@@ -269,6 +269,33 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsVideo:            true,
 			maxTokensField:           MaxTokensFieldLegacy,
 		},
+		{
+			model:                    "deepseek-v4-flash-vision-exp",
+			maxTokensField:           MaxTokensFieldLegacy,
+			isDeepSeek:               true,
+			supportsReasoningContent: true,
+			supportsThinkingToggle:   true,
+			supportsVision:           true,
+			supportsVideo:            false,
+		},
+		{
+			model:                    "deepseek-v4-flash",
+			maxTokensField:           MaxTokensFieldLegacy,
+			isDeepSeek:               true,
+			supportsReasoningContent: true,
+			supportsThinkingToggle:   true,
+			supportsVision:           false,
+			supportsVideo:            false,
+		},
+		{
+			model:                    "deepseek-v4-pro",
+			maxTokensField:           MaxTokensFieldLegacy,
+			isDeepSeek:               true,
+			supportsReasoningContent: true,
+			supportsThinkingToggle:   true,
+			supportsVision:           false,
+			supportsVideo:            false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -348,6 +375,45 @@ func TestResolveCapabilities_SupportsVideo_TrueForKimiModels(t *testing.T) {
 			caps := ResolveCapabilities(model, "")
 			if !caps.SupportsVideo {
 				t.Errorf("expected SupportsVideo=true for %s, got false", model)
+			}
+		})
+	}
+}
+
+func TestResolveCapabilities_FileUploadMode(t *testing.T) {
+	tests := []struct {
+		model string
+		want  FileUploadMode
+	}{
+		{"kimi-k3", FileUploadKimi},
+		{"kimi-k2.7-code", FileUploadKimi},
+		{"kimi-k2.6", FileUploadKimi},
+		{"deepseek-v4-flash-vision-exp", FileUploadDeepSeek},
+		{"deepseek-v4-flash", FileUploadNone},
+		{"deepseek-v4-pro", FileUploadNone},
+		{"deepseek-reasoner", FileUploadNone},
+		{"gpt-5.5", FileUploadNone},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			if got := ResolveCapabilities(tt.model, "").FileUploadMode; got != tt.want {
+				t.Errorf("ResolveCapabilities(%q).FileUploadMode = %d, want %d", tt.model, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCapabilities_FileUploadMode_OutOfRange(t *testing.T) {
+	models := []string{
+		"gpt-5.5", "deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4-flash-vision-exp",
+		"deepseek-reasoner", "kimi-k3", "kimi-k2.7-code", "kimi-k2.6",
+		"claude-opus-4-7", "gemini-3-flash-preview",
+	}
+	for _, m := range models {
+		t.Run(m, func(t *testing.T) {
+			mode := ResolveCapabilities(m, "").FileUploadMode
+			if mode < FileUploadNone || mode > FileUploadDeepSeek {
+				t.Errorf("model %s: FileUploadMode out of range: %d", m, mode)
 			}
 		})
 	}

@@ -36,6 +36,20 @@ const (
 	MaxTokensFieldOutput
 )
 
+// FileUploadMode identifies the provider-specific file API used for media
+// parts. Following the ADR-024 precedent — enums over coupled booleans make
+// invalid combinations unrepresentable — this enum replaces the earlier
+// upload-capability boolean: a model either has no upload path, uses the
+// Kimi / Moonshot file API, or uses the DeepSeek file API, and the three
+// choices are mutually exclusive.
+type FileUploadMode int
+
+const (
+	FileUploadNone     FileUploadMode = iota
+	FileUploadKimi                    // Uploads all media; purpose from MIME; ms:// URLs; status-validated parse
+	FileUploadDeepSeek                // Uploads oversized images (>32MiB); purpose="user_data"; file_id blocks; object/id parse
+)
+
 // Capabilities defines the feature set supported by a specific LLM model.
 type Capabilities struct {
 	// SupportsReasoningEffort indicates if the model supports the 'reasoning_effort' field.
@@ -93,14 +107,14 @@ type Capabilities struct {
 	//
 	// Set for: kimi-* models (K3, K2.7, K2.6).
 	SupportsVideo bool
-	// SupportsFileUpload indicates the model supports file uploads via a
-	// provider-specific file API (e.g., Kimi / Moonshot). When true,
-	// InlineData parts with image or video MIME types are uploaded as
-	// files before the chat request and referenced via provider-specific
-	// URL schemes (e.g., ms://) in the message payload.
+	// FileUploadMode identifies the provider-specific file API used for
+	// media parts. None = no uploads; Kimi uploads all media with purpose
+	// derived from MIME and ms:// references; DeepSeek uploads oversized
+	// images (>32MiB) with purpose="user_data" and file_id references.
 	//
-	// Set for: kimi-* model family.
-	SupportsFileUpload bool
+	// Set for: kimi-* model family (FileUploadKimi), DeepSeek vision
+	// models (FileUploadDeepSeek).
+	FileUploadMode FileUploadMode
 	// RequiresVertexThinkingKwargs indicates that the transport silently
 	// disables DeepSeek thinking mode unless the non-standard parameter
 	// chat_template_kwargs.thinking=true is included in the request body.
@@ -158,6 +172,11 @@ func isDeepSeekModel(model string) bool {
 	return strings.Contains(model, "deepseek-")
 }
 
+// isDeepSeekVisionModel returns true for DeepSeek vision model IDs.
+func isDeepSeekVisionModel(model string) bool {
+	return strings.Contains(model, "vision")
+}
+
 // isKimiModel returns true for Kimi model IDs, including
 // namespaced variants like moonshotai/kimi-k3.
 func isKimiModel(model string) bool {
@@ -182,18 +201,23 @@ func resolveGPTFamily(model string) (isReasoner bool, requireResponses bool) {
 
 // resolveDeepSeekFamily derives DeepSeek capabilities from the model string and
 // base URL. The base URL is used only for RequiresVertexThinkingKwargs detection.
-func resolveDeepSeekFamily(model, baseURL string) (isDeepSeek, supportsReasoningContent, supportsThinkingToggle, requiresVertexThinkingKwargs bool) {
+func resolveDeepSeekFamily(model, baseURL string) (isDeepSeek, supportsReasoningContent, supportsThinkingToggle, requiresVertexThinkingKwargs, supportsVision bool, fileUploadMode FileUploadMode) {
 	isDeepSeek = isDeepSeekModel(model)
 	supportsReasoningContent = isDeepSeek
 	supportsThinkingToggle = isDeepSeek
 	if isDeepSeek && strings.Contains(baseURL, "aiplatform.googleapis.com") {
 		requiresVertexThinkingKwargs = true
 	}
+	supportsVision = isDeepSeek && isDeepSeekVisionModel(model)
+	fileUploadMode = FileUploadNone
+	if supportsVision {
+		fileUploadMode = FileUploadDeepSeek
+	}
 	return
 }
 
 // resolveKimiFamily derives Kimi capabilities from the model string.
-func resolveKimiFamily(model string) (supportsReasoningContent, supportsThinkingToggle, supportsVision, supportsVideo, supportsFileUpload, supportsReasoningEffort, isKimiK3 bool) {
+func resolveKimiFamily(model string) (supportsReasoningContent, supportsThinkingToggle, supportsVision, supportsVideo bool, fileUploadMode FileUploadMode, supportsReasoningEffort, isKimiK3 bool) {
 	if !isKimiModel(model) {
 		return
 	}
@@ -201,7 +225,7 @@ func resolveKimiFamily(model string) (supportsReasoningContent, supportsThinking
 	supportsThinkingToggle = true
 	supportsVision = true
 	supportsVideo = true
-	supportsFileUpload = true
+	fileUploadMode = FileUploadKimi
 	if isKimiK3Model(model) {
 		supportsReasoningEffort = true
 		isKimiK3 = true
@@ -216,8 +240,16 @@ func resolveKimiFamily(model string) (supportsReasoningContent, supportsThinking
 // default to false.
 func ResolveCapabilities(model, baseURL string) Capabilities {
 	isReasoner, requireResponses := resolveGPTFamily(model)
-	isDeepSeek, dsReasoningContent, dsThinkingToggle, vertexThinkingKwargs := resolveDeepSeekFamily(model, baseURL)
-	kReasoningContent, kThinkingToggle, supportsVision, supportsVideo, supportsFileUpload, kReasoningEffort, isKimiK3 := resolveKimiFamily(model)
+	isDeepSeek, dsReasoningContent, dsThinkingToggle, vertexThinkingKwargs, dsVision, dsFileMode := resolveDeepSeekFamily(model, baseURL)
+	kReasoningContent, kThinkingToggle, kVision, kVideo, kFileMode, kReasoningEffort, isKimiK3 := resolveKimiFamily(model)
+
+	fileUploadMode := FileUploadNone
+	if dsFileMode != FileUploadNone {
+		fileUploadMode = dsFileMode
+	}
+	if kFileMode != FileUploadNone {
+		fileUploadMode = kFileMode
+	}
 
 	caps := Capabilities{
 		SupportsReasoningEffort:      isReasoner || kReasoningEffort,
@@ -226,9 +258,9 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 		IsDeepSeek:                   isDeepSeek,
 		SupportsReasoningContent:     dsReasoningContent || kReasoningContent,
 		SupportsThinkingToggle:       dsThinkingToggle || kThinkingToggle,
-		SupportsVision:               supportsVision,
-		SupportsVideo:                supportsVideo,
-		SupportsFileUpload:           supportsFileUpload,
+		SupportsVision:               dsVision || kVision,
+		SupportsVideo:                kVideo,
+		FileUploadMode:               fileUploadMode,
 		RequiresVertexThinkingKwargs: vertexThinkingKwargs,
 	}
 

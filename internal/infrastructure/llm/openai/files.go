@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -25,9 +26,8 @@ type fileObject struct {
 	Status    string `json:"status"`
 }
 
-// buildFileUploadBody constructs a multipart/form-data body for the Kimi
-// file upload API. It returns the body buffer and the Content-Type header
-// value (including boundary).
+// buildFileUploadBody constructs a multipart/form-data body for the
+// Kimi file upload API. Returns the body buffer and Content-Type header.
 func buildFileUploadBody(data []byte, filename, purpose string) (*bytes.Buffer, string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
@@ -69,8 +69,8 @@ func isUploadStatusReady(status string) bool {
 	return status == "ok" || status == "ready"
 }
 
-// uploadFile uploads a file to the Kimi API and returns the file ID.
-// purpose must be "image", "video", or "file-extract".
+// uploadFile uploads a file to the provider file API and returns the
+// file ID. purpose must be "image", "video", or "file-extract".
 // filename is the original filename for metadata.
 func (c *client) uploadFile(ctx context.Context, data []byte, filename, purpose string) (string, error) {
 	buf, contentType, err := buildFileUploadBody(data, filename, purpose)
@@ -90,13 +90,17 @@ func (c *client) uploadFile(ctx context.Context, data []byte, filename, purpose 
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	return parseFileUploadResponse(resp)
+	return parseFileUploadResponse(resp, c.capabilities.FileUploadMode)
 }
 
 // parseFileUploadResponse decodes the JSON file object from the upload
-// response and validates the status field. Both "ok" (live API behavior)
-// and "ready" (documented) are accepted for forward-compatibility.
-func parseFileUploadResponse(resp *http.Response) (string, error) {
+// response and validates it according to the client's FileUploadMode.
+// Kimi responses carry a status field ("ok" live, "ready" documented —
+// both accepted for forward-compatibility). DeepSeek responses carry
+// neither a status field nor a purpose; the object id and object type
+// are validated instead. FileUploadNone is defensive: uploadFile must
+// not be called in None mode.
+func parseFileUploadResponse(resp *http.Response, mode llm.FileUploadMode) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 		return "", fmt.Errorf("upload failed (status %d): %s", resp.StatusCode, string(body))
@@ -107,8 +111,20 @@ func parseFileUploadResponse(resp *http.Response) (string, error) {
 		return "", fmt.Errorf("decode upload response: %w", err)
 	}
 
-	if !isUploadStatusReady(fo.Status) {
-		return "", fmt.Errorf("upload status %q (expected ok or ready)", fo.Status)
+	switch mode {
+	case llm.FileUploadKimi:
+		if !isUploadStatusReady(fo.Status) {
+			return "", fmt.Errorf("upload status %q (expected ok or ready)", fo.Status)
+		}
+	case llm.FileUploadDeepSeek:
+		if fo.ID == "" {
+			return "", fmt.Errorf("upload response missing id")
+		}
+		if fo.Object != "file" {
+			return "", fmt.Errorf("upload response object %q (expected file)", fo.Object)
+		}
+	case llm.FileUploadNone:
+		return "", fmt.Errorf("file upload not supported")
 	}
 
 	return fo.ID, nil

@@ -57,7 +57,7 @@ func TestUploadFile(t *testing.T) {
 	c := &client{
 		baseURL:      strings.TrimSuffix(server.URL, "/"),
 		httpClient:   server.Client(),
-		capabilities: llm.Capabilities{SupportsVision: true},
+		capabilities: llm.Capabilities{SupportsVision: true, FileUploadMode: llm.FileUploadKimi},
 		logger:       &ports.NoOpLogger{},
 	}
 	c.authenticator = &fakeAuthenticator{}
@@ -103,7 +103,7 @@ func TestUploadFile_NotReady(t *testing.T) {
 	c := &client{
 		baseURL:    strings.TrimSuffix(server.URL, "/"),
 		httpClient: server.Client(),
-		logger:     &ports.NoOpLogger{},
+		logger:     &ports.NoOpLogger{}, capabilities: llm.Capabilities{FileUploadMode: llm.FileUploadKimi},
 	}
 	c.authenticator = &fakeAuthenticator{}
 
@@ -130,7 +130,7 @@ func TestUploadFile_ReadyAlsoAccepted(t *testing.T) {
 	c := &client{
 		baseURL:    strings.TrimSuffix(server.URL, "/"),
 		httpClient: server.Client(),
-		logger:     &ports.NoOpLogger{},
+		logger:     &ports.NoOpLogger{}, capabilities: llm.Capabilities{FileUploadMode: llm.FileUploadKimi},
 	}
 	c.authenticator = &fakeAuthenticator{}
 
@@ -209,7 +209,7 @@ func TestExtractDocument(t *testing.T) {
 	c := &client{
 		baseURL:    strings.TrimSuffix(server.URL, "/"),
 		httpClient: server.Client(),
-		logger:     &ports.NoOpLogger{},
+		logger:     &ports.NoOpLogger{}, capabilities: llm.Capabilities{FileUploadMode: llm.FileUploadKimi},
 	}
 	c.authenticator = &fakeAuthenticator{}
 
@@ -348,7 +348,7 @@ func TestPrepareMediaAssets_KimiURL_Uploads(t *testing.T) {
 		logger:     &ports.NoOpLogger{},
 	}
 	c.authenticator = &fakeAuthenticator{}
-	c.capabilities = llm.Capabilities{SupportsFileUpload: true}
+	c.capabilities = llm.Capabilities{FileUploadMode: llm.FileUploadKimi}
 
 	parts := []*llm.Part{
 		{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89, 0x50}}},
@@ -402,7 +402,7 @@ func TestPrepareMediaAssets_KimiURL_UploadsVideo(t *testing.T) {
 		logger:     &ports.NoOpLogger{},
 	}
 	c.authenticator = &fakeAuthenticator{}
-	c.capabilities = llm.Capabilities{SupportsFileUpload: true}
+	c.capabilities = llm.Capabilities{FileUploadMode: llm.FileUploadKimi}
 
 	videoData := []byte{0x00, 0x00, 0x00, 0x1C, 0x66, 0x74, 0x79, 0x70}
 	parts := []*llm.Part{
@@ -429,7 +429,7 @@ func TestPrepareMediaAssets_KimiURL_UploadsVideo(t *testing.T) {
 	}
 
 	// Verify video_url block is produced (not image_url)
-	blocks := mediaBlocks(out, ta)
+	blocks := mediaBlocks(out, ta, llm.Capabilities{SupportsVision: true, SupportsVideo: true, FileUploadMode: llm.FileUploadKimi})
 	if len(blocks) != 1 {
 		t.Fatalf("expected 1 media block, got %d", len(blocks))
 	}
@@ -466,7 +466,7 @@ func TestPrepareMediaAssets_KimiURL_SkipsUnsupportedMIME(t *testing.T) {
 		logger:     &ports.NoOpLogger{},
 	}
 	c.authenticator = &fakeAuthenticator{}
-	c.capabilities = llm.Capabilities{SupportsFileUpload: true}
+	c.capabilities = llm.Capabilities{FileUploadMode: llm.FileUploadKimi}
 
 	parts := []*llm.Part{
 		{InlineData: &llm.Blob{MIMEType: "application/pdf", Data: []byte{1}}},
@@ -650,7 +650,7 @@ func TestExtractDocument_GetContentError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := &client{baseURL: strings.TrimSuffix(server.URL, "/"), httpClient: server.Client(), logger: &ports.NoOpLogger{}}
+	c := &client{baseURL: strings.TrimSuffix(server.URL, "/"), httpClient: server.Client(), logger: &ports.NoOpLogger{}, capabilities: llm.Capabilities{FileUploadMode: llm.FileUploadKimi}}
 	c.authenticator = &fakeAuthenticator{}
 
 	_, err := c.extractDocument(context.Background(), []byte("pdf data"), "report.pdf")
@@ -677,7 +677,7 @@ func TestSendChat_MediaCleanup(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := &client{baseURL: strings.TrimSuffix(server.URL, "/"), httpClient: server.Client(), logger: &ports.NoOpLogger{}, capabilities: llm.Capabilities{SupportsVision: true, SupportsFileUpload: true}}
+	c := &client{baseURL: strings.TrimSuffix(server.URL, "/"), httpClient: server.Client(), logger: &ports.NoOpLogger{}, capabilities: llm.Capabilities{SupportsVision: true, FileUploadMode: llm.FileUploadKimi}}
 	c.authenticator = &fakeAuthenticator{}
 
 	history := []*llm.Content{{Role: "user", Parts: []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89, 0x50}}}}}}
@@ -688,5 +688,340 @@ func TestSendChat_MediaCleanup(t *testing.T) {
 	}
 	if !deleted {
 		t.Error("expected deferred media cleanup (DELETE) after chat failure")
+	}
+}
+
+func TestUploadFile_DeepSeekResponse(t *testing.T) {
+	var uploadPurpose string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/files" {
+			t.Errorf("expected POST /files, got %s %s", r.Method, r.URL.Path)
+		}
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			t.Fatalf("parse multipart: %v", err)
+		}
+		uploadPurpose = r.FormValue("purpose")
+		// DeepSeek's upload response contains no status field.
+		_ = json.NewEncoder(w).Encode(fileObject{
+			ID:     "file-api-abc",
+			Object: "file",
+		})
+	}))
+	defer server.Close()
+
+	c := &client{
+		baseURL:      strings.TrimSuffix(server.URL, "/"),
+		httpClient:   server.Client(),
+		logger:       &ports.NoOpLogger{},
+		capabilities: llm.Capabilities{SupportsVision: true, FileUploadMode: llm.FileUploadDeepSeek},
+	}
+	c.authenticator = &fakeAuthenticator{}
+
+	id, err := c.uploadFile(context.Background(), []byte("large image bytes"), "image.png", "user_data")
+	if err != nil {
+		t.Fatalf("uploadFile: %v", err)
+	}
+	if id != "file-api-abc" {
+		t.Errorf("expected file-api-abc, got %s", id)
+	}
+	if uploadPurpose != "user_data" {
+		t.Errorf("expected purpose=user_data, got %q", uploadPurpose)
+	}
+}
+
+func TestPrepareMediaAssets_DeepSeek_SmallImageStaysInline(t *testing.T) {
+	var uploaded bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/files") {
+			uploaded = true
+			_ = json.NewEncoder(w).Encode(fileObject{ID: "file-api-should-not-exist", Object: "file"})
+		}
+	}))
+	defer server.Close()
+
+	c := &client{
+		baseURL:      server.URL,
+		httpClient:   server.Client(),
+		logger:       &ports.NoOpLogger{},
+		capabilities: llm.Capabilities{SupportsVision: true, FileUploadMode: llm.FileUploadDeepSeek},
+	}
+	c.authenticator = &fakeAuthenticator{}
+
+	data := make([]byte, 1<<20) // 1 MiB — well under the 32 MiB inline cap
+	for i := range data {
+		data[i] = byte(i % 251)
+	}
+	parts := []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: data}}}
+	ta, out, err := c.prepareMediaAssets(context.Background(), parts, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_ = out
+	if uploaded {
+		t.Error("small image should NOT be uploaded via POST /files")
+	}
+	if len(ta.uploaded) != 0 || len(ta.bindings) != 0 {
+		t.Error("small image should have no uploads or bindings")
+	}
+	ta.release(context.Background(), c)
+}
+
+func TestPrepareMediaAssets_DeepSeek_OversizedUploads(t *testing.T) {
+	var uploaded, deleted bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/files") {
+			uploaded = true
+			_ = json.NewEncoder(w).Encode(fileObject{ID: "file-api-xyz", Object: "file"})
+		}
+		if r.Method == "DELETE" {
+			deleted = true
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	c := &client{
+		baseURL:      server.URL,
+		httpClient:   server.Client(),
+		logger:       &ports.NoOpLogger{},
+		capabilities: llm.Capabilities{SupportsVision: true, FileUploadMode: llm.FileUploadDeepSeek},
+	}
+	c.authenticator = &fakeAuthenticator{}
+
+	data := make([]byte, 35<<20) // 35 MiB — over the 32 MiB inline cap, under the 64 MiB upload cap
+	for i := range data {
+		data[i] = byte(i % 251)
+	}
+	parts := []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: data}}}
+	ta, out, err := c.prepareMediaAssets(context.Background(), parts, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !uploaded {
+		t.Error("expected POST /files upload for oversized image")
+	}
+	if len(ta.uploaded) != 1 {
+		t.Errorf("expected 1 uploaded file, got %d", len(ta.uploaded))
+	}
+	if ta.bindings[out[0]] != "file-api-xyz" {
+		t.Error("expected binding for uploaded part")
+	}
+	ta.release(context.Background(), c)
+	if !deleted {
+		t.Error("expected DELETE after release")
+	}
+}
+
+func TestPrepareMediaAssets_DeepSeek_Over64MiB_Errors(t *testing.T) {
+	var uploaded bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/files") {
+			uploaded = true
+			_ = json.NewEncoder(w).Encode(fileObject{ID: "file-api-should-not-exist", Object: "file"})
+		}
+	}))
+	defer server.Close()
+
+	c := &client{
+		baseURL:      server.URL,
+		httpClient:   server.Client(),
+		logger:       &ports.NoOpLogger{},
+		capabilities: llm.Capabilities{SupportsVision: true, FileUploadMode: llm.FileUploadDeepSeek},
+	}
+	c.authenticator = &fakeAuthenticator{}
+
+	data := make([]byte, (64<<20)+1) // just over the 64 MiB upload cap
+	parts := []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: data}}}
+	_, _, err := c.prepareMediaAssets(context.Background(), parts, nil)
+	if err == nil {
+		t.Fatal("expected error for image over 64 MiB, got nil")
+	}
+	if !strings.Contains(err.Error(), "image exceeds 64 MiB upload limit") {
+		t.Errorf("expected 'image exceeds 64 MiB upload limit' in error, got %q", err.Error())
+	}
+	if uploaded {
+		t.Error("no upload should be attempted for an over-64MiB image")
+	}
+}
+
+func TestPrepareMediaAssets_DeepSeek_AggregateBody_Errors(t *testing.T) {
+	var uploaded bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/files") {
+			uploaded = true
+			_ = json.NewEncoder(w).Encode(fileObject{ID: "file-api-should-not-exist", Object: "file"})
+		}
+	}))
+	defer server.Close()
+
+	c := &client{
+		baseURL:      server.URL,
+		httpClient:   server.Client(),
+		logger:       &ports.NoOpLogger{},
+		capabilities: llm.Capabilities{SupportsVision: true, FileUploadMode: llm.FileUploadDeepSeek},
+	}
+	c.authenticator = &fakeAuthenticator{}
+
+	// Two 20 MiB images stay inline; their base64 sizes sum to ~53 MiB,
+	// exceeding the 48 MiB aggregate request-body cap.
+	parts := []*llm.Part{
+		{InlineData: &llm.Blob{MIMEType: "image/png", Data: make([]byte, 20<<20)}},
+		{InlineData: &llm.Blob{MIMEType: "image/png", Data: make([]byte, 20<<20)}},
+	}
+	_, _, err := c.prepareMediaAssets(context.Background(), parts, nil)
+	if err == nil {
+		t.Fatal("expected error for aggregate inline size over 48 MiB, got nil")
+	}
+	if !strings.Contains(err.Error(), "aggregate inline image size exceeds 48 MiB limit") {
+		t.Errorf("expected 'aggregate inline image size exceeds 48 MiB limit' in error, got %q", err.Error())
+	}
+	if uploaded {
+		t.Error("no upload should be attempted when the aggregate body limit is exceeded")
+	}
+}
+
+// TestUploadMediaParts_NoneMode_SkipsUploads covers the FileUploadNone
+// early return in uploadMediaParts: no upload is attempted (the failing
+// transport acts as the detector) and no bindings are recorded.
+func TestUploadMediaParts_NoneMode_SkipsUploads(t *testing.T) {
+	c := &client{
+		baseURL:      "http://uploads.invalid",
+		httpClient:   &http.Client{Transport: &customRoundTripper{}},
+		logger:       &ports.NoOpLogger{},
+		capabilities: llm.Capabilities{FileUploadMode: llm.FileUploadNone},
+	}
+	c.authenticator = &fakeAuthenticator{}
+
+	parts := []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("x")}}}
+	ta := newTurnAssets()
+	if err := c.uploadMediaParts(context.Background(), parts, ta); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ta.bindings) != 0 || len(ta.uploaded) != 0 {
+		t.Error("None mode should not upload or bind media parts")
+	}
+}
+
+// TestMediaUploadPurpose_DefaultCase covers the defensive default arm of
+// mediaUploadPurpose for an out-of-range FileUploadMode value.
+func TestMediaUploadPurpose_DefaultCase(t *testing.T) {
+	c := &client{
+		logger:       &ports.NoOpLogger{},
+		capabilities: llm.Capabilities{FileUploadMode: llm.FileUploadMode(3)}, // out-of-range value
+	}
+	p := &llm.Part{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{1}}}
+	if got := c.mediaUploadPurpose(p); got != "" {
+		t.Errorf("expected empty purpose for out-of-range mode, got %q", got)
+	}
+}
+
+// TestPrepareMediaAssets_DeepSeek_SkipsNilAndNonImageParts covers the
+// checkDeepSeekMediaSizes nil/empty and non-image skips, plus the
+// mediaUploadPurpose DeepSeek non-image skip: nil-InlineData and
+// application/pdf parts must not error and must not be uploaded.
+func TestPrepareMediaAssets_DeepSeek_SkipsNilAndNonImageParts(t *testing.T) {
+	var uploaded bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/files") {
+			uploaded = true
+			_ = json.NewEncoder(w).Encode(fileObject{ID: "file-api-should-not-exist", Object: "file"})
+		}
+	}))
+	defer server.Close()
+
+	c := &client{
+		baseURL:      server.URL,
+		httpClient:   server.Client(),
+		logger:       &ports.NoOpLogger{},
+		capabilities: llm.Capabilities{SupportsVision: true, FileUploadMode: llm.FileUploadDeepSeek},
+	}
+	c.authenticator = &fakeAuthenticator{}
+
+	parts := []*llm.Part{
+		{InlineData: nil},
+		{InlineData: &llm.Blob{MIMEType: "application/pdf", Data: []byte{1}}},
+		{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89}}}, // tiny image stays inline
+	}
+	ta, out, err := c.prepareMediaAssets(context.Background(), parts, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_ = out
+	if uploaded {
+		t.Error("no upload expected for nil/non-image/tiny-inline parts")
+	}
+	if len(ta.uploaded) != 0 || len(ta.bindings) != 0 {
+		t.Error("expected no uploads or bindings")
+	}
+	ta.release(context.Background(), c)
+}
+
+// TestUploadFile_DeepSeekMissingID covers the DeepSeek missing-id branch
+// of parseFileUploadResponse: an upload response without an id fails
+// loudly even though the status field is absent.
+func TestUploadFile_DeepSeekMissingID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(fileObject{Object: "file"}) // no id
+	}))
+	defer server.Close()
+
+	c := &client{
+		baseURL:      strings.TrimSuffix(server.URL, "/"),
+		httpClient:   server.Client(),
+		logger:       &ports.NoOpLogger{},
+		capabilities: llm.Capabilities{FileUploadMode: llm.FileUploadDeepSeek},
+	}
+	c.authenticator = &fakeAuthenticator{}
+
+	_, err := c.uploadFile(context.Background(), []byte("data"), "image.png", "user_data")
+	if err == nil || !strings.Contains(err.Error(), "upload response missing id") {
+		t.Errorf("expected 'upload response missing id' error, got %v", err)
+	}
+}
+
+// TestUploadFile_DeepSeekWrongObject covers the DeepSeek wrong-object
+// branch of parseFileUploadResponse: an object other than "file" fails
+// loudly.
+func TestUploadFile_DeepSeekWrongObject(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(fileObject{ID: "file-api-1", Object: "list"})
+	}))
+	defer server.Close()
+
+	c := &client{
+		baseURL:      strings.TrimSuffix(server.URL, "/"),
+		httpClient:   server.Client(),
+		logger:       &ports.NoOpLogger{},
+		capabilities: llm.Capabilities{FileUploadMode: llm.FileUploadDeepSeek},
+	}
+	c.authenticator = &fakeAuthenticator{}
+
+	_, err := c.uploadFile(context.Background(), []byte("data"), "image.png", "user_data")
+	if err == nil || !strings.Contains(err.Error(), "expected file") {
+		t.Errorf("expected 'expected file' object error, got %v", err)
+	}
+}
+
+// TestUploadFile_NoneMode_Unsupported covers the FileUploadNone defensive
+// branch of parseFileUploadResponse: a direct uploadFile call on a
+// client without a file-upload mode fails loudly instead of silently
+// accepting a response.
+func TestUploadFile_NoneMode_Unsupported(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(fileObject{ID: "file-api-1", Object: "file"})
+	}))
+	defer server.Close()
+
+	c := &client{
+		baseURL:      strings.TrimSuffix(server.URL, "/"),
+		httpClient:   server.Client(),
+		logger:       &ports.NoOpLogger{},
+		capabilities: llm.Capabilities{FileUploadMode: llm.FileUploadNone},
+	}
+	c.authenticator = &fakeAuthenticator{}
+
+	_, err := c.uploadFile(context.Background(), []byte("data"), "image.png", "user_data")
+	if err == nil || !strings.Contains(err.Error(), "file upload not supported") {
+		t.Errorf("expected 'file upload not supported' error, got %v", err)
 	}
 }

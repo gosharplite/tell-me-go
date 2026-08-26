@@ -19,27 +19,28 @@ func TestMediaBlocks(t *testing.T) {
 	tests := []struct {
 		name  string
 		parts []*llm.Part
+		caps  llm.Capabilities
 		want  int // expected number of blocks
 	}{
-		{"single image", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89, 0x50, 0x4E, 0x47}}}}, 1},
+		{"single image", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89, 0x50, 0x4E, 0x47}}}}, llm.Capabilities{SupportsVision: true, SupportsVideo: true}, 1},
 		{"multiple images", []*llm.Part{
 			{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{1}}},
-			{InlineData: &llm.Blob{MIMEType: "image/jpeg", Data: []byte{2}}},
-		}, 2},
-		{"single video", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "video/mp4", Data: []byte{0x00, 0x00, 0x00}}}}, 1},
+			{InlineData: &llm.Blob{MIMEType: "image/jpeg", Data: []byte{2}}}}, llm.Capabilities{SupportsVision: true, SupportsVideo: true}, 2},
+		{"single video", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "video/mp4", Data: []byte{0x00, 0x00, 0x00}}}}, llm.Capabilities{SupportsVision: true, SupportsVideo: true}, 1},
 		{"mixed image and video", []*llm.Part{
 			{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{1}}},
-			{InlineData: &llm.Blob{MIMEType: "video/mp4", Data: []byte{2}}},
-		}, 2},
-		{"no media", []*llm.Part{{Text: "hello"}}, 0},
-		{"nil InlineData", []*llm.Part{{InlineData: nil}}, 0},
-		{"empty data", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: nil}}}, 0},
-		{"pdf skipped", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "application/pdf", Data: []byte{1}}}}, 0},
-		{"audio skipped", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "audio/mp3", Data: []byte{2}}}}, 0},
+			{InlineData: &llm.Blob{MIMEType: "video/mp4", Data: []byte{2}}}}, llm.Capabilities{SupportsVision: true, SupportsVideo: true}, 2},
+		{"no media", []*llm.Part{{Text: "hello"}}, llm.Capabilities{SupportsVision: true, SupportsVideo: true}, 0},
+		{"nil InlineData", []*llm.Part{{InlineData: nil}}, llm.Capabilities{SupportsVision: true, SupportsVideo: true}, 0},
+		{"empty data", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: nil}}}, llm.Capabilities{SupportsVision: true, SupportsVideo: true}, 0},
+		{"pdf skipped", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "application/pdf", Data: []byte{1}}}}, llm.Capabilities{SupportsVision: true, SupportsVideo: true}, 0},
+		{"audio skipped", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "audio/mp3", Data: []byte{2}}}}, llm.Capabilities{SupportsVision: true, SupportsVideo: true}, 0},
+		{"vision-without-video skips video", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "video/mp4", Data: []byte{0x00}}}}, llm.Capabilities{SupportsVision: true, SupportsVideo: false}, 0},
+		{"image dropped without vision", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89}}}}, llm.Capabilities{SupportsVision: false, SupportsVideo: true}, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			blocks := mediaBlocks(tt.parts, nil)
+			blocks := mediaBlocks(tt.parts, nil, tt.caps)
 			if len(blocks) != tt.want {
 				t.Errorf("got %d blocks, want %d", len(blocks), tt.want)
 			}
@@ -374,7 +375,7 @@ func TestPrepareMediaForTurn_ResolverError(t *testing.T) {
 func TestPrepareMediaForTurn_SuccessAppliesParts(t *testing.T) {
 	c := NewClient("", "test-model", &auth.BearerAuth{Token: "test"})
 	c.capabilities.SupportsVision = true
-	c.capabilities.SupportsFileUpload = false
+	c.capabilities.FileUploadMode = llm.FileUploadNone
 
 	history := []*llm.Content{{
 		Role: "user",
@@ -414,5 +415,109 @@ func TestSendChat_MediaPrepError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "asset not found") {
 		t.Errorf("expected 'asset not found' in error, got %q", err.Error())
+	}
+}
+
+func TestVision_DeepSeekImagePayload(t *testing.T) {
+	c := NewClient("https://api.deepseek.com", "deepseek-v4-flash-vision-exp",
+		&auth.BearerAuth{Token: "test"},
+		WithLogger(&ports.NoOpLogger{}),
+	)
+	if !c.capabilities.SupportsVision {
+		t.Fatal("deepseek-v4-flash-vision-exp should have SupportsVision")
+	}
+	if c.capabilities.SupportsVideo {
+		t.Fatal("deepseek-v4-flash-vision-exp should NOT have SupportsVideo")
+	}
+	if c.capabilities.FileUploadMode != llm.FileUploadDeepSeek {
+		t.Fatalf("expected FileUploadDeepSeek mode, got %d", c.capabilities.FileUploadMode)
+	}
+
+	history := []*llm.Content{{
+		Role: "user",
+		Parts: []*llm.Part{
+			{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89, 0x50}}},
+			{Text: "describe this"},
+		},
+	}}
+
+	msgs, err := c.toStandardMessages(context.Background(), history, nil)
+	if err != nil {
+		t.Fatalf("toStandardMessages failed: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	b, err := json.Marshal(msgs[0])
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	s := string(b)
+	assertVisionJSONContains(t, s, `"type":"image_url"`, "image_url block")
+	assertVisionJSONContains(t, s, "data:image/png;base64", "base64 data URI")
+	assertVisionJSONContains(t, s, `"type":"text"`, "text block")
+	assertVisionJSONContains(t, s, "describe this", "text content")
+	assertVisionJSONAbsent(t, s, `"type":"file"`, "file block")
+	assertVisionJSONAbsent(t, s, "file_id", "file_id")
+	assertVisionJSONAbsent(t, s, "ms://", "ms:// reference")
+}
+
+func TestVision_DeepSeekFileBlockPayload(t *testing.T) {
+	c := NewClient("https://api.deepseek.com", "deepseek-v4-flash-vision-exp",
+		&auth.BearerAuth{Token: "test"},
+		WithLogger(&ports.NoOpLogger{}),
+	)
+
+	imgPart := &llm.Part{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89, 0x50}}}
+	history := []*llm.Content{{
+		Role: "user",
+		Parts: []*llm.Part{
+			imgPart,
+			{Text: "describe this"},
+		},
+	}}
+
+	ta := newTurnAssets()
+	ta.bindings[imgPart] = "file-api-123"
+
+	msgs, err := c.toStandardMessages(context.Background(), history, ta)
+	if err != nil {
+		t.Fatalf("toStandardMessages failed: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	b, err := json.Marshal(msgs[0])
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	s := string(b)
+	if !strings.Contains(s, `"type":"file"`) || !strings.Contains(s, `"file_id":"file-api-123"`) {
+		t.Error("JSON payload missing file block with file_id")
+	}
+	if strings.Contains(s, `"type":"image_url"`) {
+		t.Error("JSON payload should NOT contain image_url for a bound DeepSeek part")
+	}
+	if strings.Contains(s, "ms://") {
+		t.Error("JSON payload should NOT contain ms:// references")
+	}
+	if !strings.Contains(s, `"type":"text"`) || !strings.Contains(s, "describe this") {
+		t.Error("JSON payload missing text block")
+	}
+}
+
+// assertVisionJSONContains fails the test when needle is absent from s.
+func assertVisionJSONContains(t *testing.T, s, needle, what string) {
+	t.Helper()
+	if !strings.Contains(s, needle) {
+		t.Errorf("JSON payload missing %s (needle %q)", what, needle)
+	}
+}
+
+// assertVisionJSONAbsent fails the test when needle is present in s.
+func assertVisionJSONAbsent(t *testing.T, s, needle, what string) {
+	t.Helper()
+	if strings.Contains(s, needle) {
+		t.Errorf("JSON payload should NOT contain %s (needle %q)", what, needle)
 	}
 }

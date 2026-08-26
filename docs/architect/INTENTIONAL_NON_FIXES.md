@@ -1336,14 +1336,14 @@ to reason about.
 ### internal/infrastructure/llm/openai/client_vision_test.go — TestHydrateMediaAssets (CC=13)
 
 - **Status**: ACCEPTED (2026-07)
-- **Rationale**: Table-driven test covering 8 distinct media hydration scenarios (image URL, base64, video, mixed, error paths). CC comes from assertion boilerplate across cases, not branching business logic. Splitting would fragment a coherent coverage matrix.
-- **See**: `internal/infrastructure/llm/openai/client_vision_test.go:243`
+- **Rationale**: Table-driven test covering 8 distinct media hydration scenarios (image URL, base64, video, mixed, error paths). CC comes from assertion boilerplate across cases, not branching business logic. Splitting would fragment a coherent coverage matrix. Re-anchored 2026-09 (#1429 T2): line drifted 243→244 as the TestMediaBlocks coverage row was added.
+- **See**: `internal/infrastructure/llm/openai/client_vision_test.go:244`
 
 ### internal/infrastructure/llm/openai/client_vision_test.go — TestVision_KimiImagePayload (CC=12)
 
 - **Status**: ACCEPTED (2026-07)
-- **Rationale**: Provider-specific payload validation test with multiple assertion paths for Kimi's non-standard image format. CC is assertion boilerplate, not branching logic. Same acceptance class as `TestHydrateMediaAssets`.
-- **See**: `internal/infrastructure/llm/openai/client_vision_test.go:128`
+- **Rationale**: Provider-specific payload validation test with multiple assertion paths for Kimi's non-standard image format. CC is assertion boilerplate, not branching logic. Same acceptance class as `TestHydrateMediaAssets`. Re-anchored 2026-09 (#1429 T2): line drifted 128→129 as the TestMediaBlocks coverage row was added.
+- **See**: `internal/infrastructure/llm/openai/client_vision_test.go:129`
 
 ### internal/infrastructure/llm/openai/client_vision_test.go — TestMediaBlocks (CC=11)
 
