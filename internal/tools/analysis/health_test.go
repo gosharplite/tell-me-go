@@ -768,6 +768,69 @@ func TestGetDetailedCoverage_ExcludedPackages(t *testing.T) {
 	}
 }
 
+func TestGetDetailedCoverage_DefaultExclusions(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-coverprofile=") {
+					path := strings.TrimPrefix(arg, "-coverprofile=")
+					coverageContent := "mode: set\n" +
+						"github.com/user/repo/internal/agent/agenttest/mock_agent.go:10.0,12.0 3 0\n" +
+						"github.com/user/repo/internal/domain/config/configtest/helper.go:1.0,2.0 1 0\n" +
+						"github.com/user/repo/internal/tools/toolstest/fake.go:1.0,2.0 1 0\n" +
+						"github.com/user/repo/internal/domain/logic.go:5.0,7.0 2 0\n"
+					if err := os.WriteFile(path, []byte(coverageContent), 0644); err != nil {
+						t.Errorf("failed to write mock coverage file: %v", err)
+					}
+				}
+			}
+			return []byte("ok"), nil
+		},
+	}
+	m := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
+
+	// No excluded_packages argument → the nine documented dirs are excluded by default.
+	args := map[string]interface{}{"path": "."}
+	result, err := m.GetDetailedCoverage(ctx, args, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(result.Text, "mock_agent.go") {
+		t.Error("expected agenttest block excluded by default")
+	}
+	if strings.Contains(result.Text, "configtest") {
+		t.Error("expected configtest block excluded by default")
+	}
+	if strings.Contains(result.Text, "toolstest") {
+		t.Error("expected toolstest block excluded by default")
+	}
+	if !strings.Contains(result.Text, "logic.go") {
+		t.Error("expected logic.go to appear in report")
+	}
+	if !strings.Contains(result.Text, "Total Gaps: 1") {
+		t.Errorf("expected 1 total gap after default exclusions, got: %s", result.Text)
+	}
+
+	// An explicitly passed EMPTY list overrides the default: nothing is excluded.
+	args = map[string]interface{}{"path": ".", "excluded_packages": []interface{}{}}
+	result, err = m.GetDetailedCoverage(ctx, args, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result.Text, "mock_agent.go") {
+		t.Error("expected explicit empty excluded_packages to keep all blocks")
+	}
+	if !strings.Contains(result.Text, "Total Gaps: 4") {
+		t.Errorf("expected 4 total gaps with explicit empty exclusions, got: %s", result.Text)
+	}
+}
+
 func TestRunTestsAndCoverage_ErrorPaths(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

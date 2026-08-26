@@ -488,3 +488,38 @@ func TestDetailedCoverageReport_ConfigPackageCataloged(t *testing.T) {
 	catalogedIdx := strings.Index(report, "[CATALOGED GAPS (ACCEPTED)]")
 	require.Greater(t, gapIdx, catalogedIdx, "redact.go (Lines 53-55) must appear under [CATALOGED GAPS (ACCEPTED)], not as an actionable gap")
 }
+
+// TestDetailedCoverageReport_AgentTestDefaultExclusions is the end-to-end
+// regression for the option-B default: the nine documented test-double
+// directories (defaultCoverageExclusions, mirroring the Makefile test-coverage
+// grep -v list) must remove ALL agenttest blocks from the report — the
+// package is entirely test doubles, so an excluded run reports zero gaps and
+// renders no helpers.go noise. Same full report path as the sibling
+// TestDetailedCoverageReport_* tests, scoped to ./internal/agent/agenttest.
+func TestDetailedCoverageReport_AgentTestDefaultExclusions(t *testing.T) {
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoRoot))
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	executor := &exec.RealExecutor{}
+	m := &healthManager{
+		SP:          &mockSecurityProvider{},
+		Exec:        executor,
+		Runner:      toolchain.NewGoRunner(executor),
+		clk:         clock.RealClock{},
+		catalogPath: defaultNonFixCatalogPath,
+	}
+
+	report, err := m.getDetailedCoverageReport(context.Background(), "./internal/agent/agenttest", defaultCoverageExclusions, nil)
+	require.NoError(t, err)
+
+	// Every agenttest block matches the "internal/agent/agenttest/" substring
+	// pattern, so the exclusion list removes the whole package: zero gaps.
+	require.Contains(t, report, "- Total Gaps: 0")
+	require.NotContains(t, report, "helpers.go")
+	require.NotContains(t, report, "[HIGH PRIORITY GAPS]")
+}
