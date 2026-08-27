@@ -26,6 +26,8 @@ Following the ADR-024 `MaxTokensField` precedent (enums over coupled booleans ma
 ### Decision 3: Vision/video decoupling in the OpenAI transport
 `mediaBlocks(parts, ta, caps)` emits `image_url`/`file` blocks only when `SupportsVision` is true and `video_url` blocks only when `SupportsVideo` is true. Video parts on vision-only models are dropped, not proxied or error-coupled. Mode-aware block creation: DeepSeek bound parts → `file` blocks; Kimi bound parts → `ms://` `image_url`/`video_url` blocks; unbound parts → base64 data-URI `image_url` blocks.
 
+**Addendum (issue #1439):** when capability filtering drops *all* media parts from a user message that carries no text, `buildMessageContent` now replaces the would-be-empty content with a truth-telling placeholder string via `mediaOmittedFallback` — `"(video content omitted — this model does not support video input)"` for `video/*` on `!SupportsVideo` models, `"(image content omitted — this model does not support image input)"` for `image/*` on `!SupportsVision` models, and a generic `"(media content omitted — this model does not support this media type)"` fallback. The OpenAI-compatible endpoint rejects both a JSON `null` `content` (a typed-nil slice assigned to `interface{}` survives `omitempty`) and an omitted `content` key (an empty string is stripped by `omitempty`) with HTTP 400; the placeholder keeps `content` a valid non-empty string, preserves user-role message presence for strict role alternation, and leaks no transport capability into the domain layer.
+
 ### Decision 4: Turn-scoped Files API lifecycle with automated cleanup
 Uploaded files are bound in `turnAssets`, referenced via `file_id` blocks for the duration of the turn, and deleted via `DELETE /files/{id}` by `turnAssets.release`, deferred in `SendChat` on every exit path (success and error). Cleanup uses a detached context with a bounded timeout so it proceeds even when the caller's context is at deadline. Size guards fail loud before any request: single images > 64 MiB error with `image exceeds 64 MiB upload limit: %d bytes`; aggregate base64 size of inline images > 48 MiB errors with `aggregate inline image size exceeds 48 MiB limit`.
 
@@ -46,7 +48,7 @@ Uploaded files are bound in `turnAssets`, referenced via `file_id` blocks for th
 - Size guards fail loud before network I/O, preventing silent truncation or 4xx/5xx from oversized payloads.
 
 ### Negative / Accepted Trade-offs
-- Video parts on vision-only models are silently dropped (no proxy-to-image fallback).
+- Video parts on vision-only models are silently dropped (no proxy-to-image fallback). The dropping never produces an empty user message on the wire: `buildMessageContent` substitutes a truth-telling placeholder via `mediaOmittedFallback` (issue #1439), so `content` remains a valid non-empty string — the media itself is still not proxied or error-coupled.
 - Uploaded files leak on process crash mid-turn (turn-scoped cleanup is best-effort; no reaper).
 - The suffix-based vision detection (`strings.Contains(model, "vision")`) is a heuristic; a future non-vision model whose ID contains "vision" would be misclassified (mitigated by the `-exp` experimental naming and architect review on model additions).
 - The `FileUploadMode` enum adds a third dispatch dimension to the transport; each new mode must be handled in `parseFileUploadResponse`, `uploadMediaParts`/`mediaUploadPurpose`, and `mediaBlockFor`.
@@ -76,7 +78,8 @@ Uploaded files are bound in `turnAssets`, referenced via `file_id` blocks for th
 ## References
 - DeepSeek vision documentation snapshot (pinned): <https://gist.github.com/gosharplite/b723baa51271546edabd68ed8c988788> (commit `3d4d61e`).
 - Predecessor issue #1427 (superseded).
+- Issue #1439 (media-only content fallback addendum).
 - Files changed: `internal/domain/llm/capabilities.go`, `internal/infrastructure/llm/openai/{client.go,files.go}`, `internal/infrastructure/llm/openai/{client_vision_test.go,files_test.go,client_edge_test.go}`, `configs/butler.yaml`, `README.md`, `docs/user/niffler/ait-base/engineers/configs/butler.yaml`.
 
 ---
-*Last Updated: 2026-09*
+*Last Updated: 2026-09 (issue #1439 addendum)*
