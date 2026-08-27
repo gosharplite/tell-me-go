@@ -521,3 +521,74 @@ func assertVisionJSONAbsent(t *testing.T, s, needle, what string) {
 		t.Errorf("JSON payload should NOT contain %s (needle %q)", what, needle)
 	}
 }
+
+func TestVision_DeepSeekVideoOnly_NoEmptyContent(t *testing.T) {
+	c := NewClient("https://api.deepseek.com", "deepseek-v4-flash-vision-exp",
+		&auth.BearerAuth{Token: "test"},
+		WithLogger(&ports.NoOpLogger{}),
+	)
+	if !c.capabilities.SupportsVision {
+		t.Fatal("deepseek-v4-flash-vision-exp should have SupportsVision")
+	}
+	if c.capabilities.SupportsVideo {
+		t.Fatal("deepseek-v4-flash-vision-exp should NOT have SupportsVideo")
+	}
+
+	history := []*llm.Content{{
+		Role: "user",
+		Parts: []*llm.Part{
+			{InlineData: &llm.Blob{MIMEType: "video/mp4", Data: []byte{0x00, 0x00, 0x00, 0x18}}},
+		},
+	}}
+
+	msgs, err := c.toStandardMessages(context.Background(), history, nil)
+	if err != nil {
+		t.Fatalf("toStandardMessages failed: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+
+	b, err := json.Marshal(msgs[0])
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	want := `{"role":"user","content":"(video content omitted — this model does not support video input)"}`
+	if string(b) != want {
+		t.Errorf("exact JSON mismatch:\ngot  %s\nwant %s", b, want)
+	}
+}
+
+func TestVision_TextOnlyImageOnly_NoEmptyContent(t *testing.T) {
+	c := NewClient("https://api.deepseek.com", "deepseek-v4-flash",
+		&auth.BearerAuth{Token: "test"},
+		WithLogger(&ports.NoOpLogger{}),
+	)
+	if c.capabilities.SupportsVision {
+		t.Fatal("deepseek-v4-flash should NOT have SupportsVision")
+	}
+
+	history := []*llm.Content{{
+		Role: "user",
+		Parts: []*llm.Part{
+			{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89, 0x50, 0x4E, 0x47}}},
+		},
+	}}
+
+	msgs, err := c.toStandardMessages(context.Background(), history, nil)
+	if err != nil {
+		t.Fatalf("toStandardMessages failed: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+
+	b, err := json.Marshal(msgs[0])
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	want := `{"role":"user","content":"(image content omitted — this model does not support image input)"}`
+	if string(b) != want {
+		t.Errorf("exact JSON mismatch:\ngot  %s\nwant %s", b, want)
+	}
+}
