@@ -491,20 +491,47 @@ func hasSupportedMedia(caps llm.Capabilities, mediaParts []*llm.Part) bool {
 // a plain text string when no media parts are present or the model lacks
 // vision/video support. Returns []any (mixed text + image_url/video_url blocks)
 // otherwise, with media blocks placed before text (media-first ordering).
+// Media parts dropped by capability filtering that would otherwise yield
+// empty content are replaced by mediaOmittedFallback.
 func (c *client) buildMessageContent(text string, mediaParts []*llm.Part, ta *turnAssets) any {
-	// Build content: array format when media present AND vision/video supported,
-	// string format otherwise.
 	if !hasSupportedMedia(c.capabilities, mediaParts) {
+		if text != "" {
+			return text
+		}
+		if len(mediaParts) > 0 {
+			return c.mediaOmittedFallback(mediaParts)
+		}
 		return text
 	}
-	// Media blocks are placed before text (media-first ordering). This is
-	// intentional for the describe-this-image use case — interleaved
-	// part ordering within a single history item is not preserved.
 	blocks := mediaBlocks(mediaParts, ta, c.capabilities)
 	if text != "" {
 		blocks = append(blocks, requestContentBlock{Type: "text", Text: text})
 	}
+	if len(blocks) == 0 {
+		return c.mediaOmittedFallback(mediaParts)
+	}
 	return blocks
+}
+
+// mediaOmittedFallback returns a descriptive, truth-telling placeholder for
+// user messages whose media parts were dropped because the active model does
+// not support them. A non-empty string keeps the OpenAI wire contract valid
+// (content must be a string or a list — never null or omitted) and preserves
+// user-role message presence for strict role alternation.
+func (c *client) mediaOmittedFallback(mediaParts []*llm.Part) string {
+	for _, p := range mediaParts {
+		if p.InlineData == nil || len(p.InlineData.Data) == 0 {
+			continue
+		}
+		mime := p.InlineData.MIMEType
+		switch {
+		case strings.HasPrefix(mime, "video/") && !c.capabilities.SupportsVideo:
+			return "(video content omitted — this model does not support video input)"
+		case strings.HasPrefix(mime, "image/") && !c.capabilities.SupportsVision:
+			return "(image content omitted — this model does not support image input)"
+		}
+	}
+	return "(media content omitted — this model does not support this media type)"
 }
 
 func (c *client) appendMessagesFromHistoryItem(
