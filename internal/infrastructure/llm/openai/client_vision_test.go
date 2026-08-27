@@ -521,3 +521,135 @@ func assertVisionJSONAbsent(t *testing.T, s, needle, what string) {
 		t.Errorf("JSON payload should NOT contain %s (needle %q)", what, needle)
 	}
 }
+
+func TestVision_DeepSeekVideoOnly_NoEmptyContent(t *testing.T) {
+	c := NewClient("https://api.deepseek.com", "deepseek-v4-flash-vision-exp",
+		&auth.BearerAuth{Token: "test"},
+		WithLogger(&ports.NoOpLogger{}),
+	)
+	if !c.capabilities.SupportsVision {
+		t.Fatal("deepseek-v4-flash-vision-exp should have SupportsVision")
+	}
+	if c.capabilities.SupportsVideo {
+		t.Fatal("deepseek-v4-flash-vision-exp should NOT have SupportsVideo")
+	}
+
+	history := []*llm.Content{{
+		Role: "user",
+		Parts: []*llm.Part{
+			{InlineData: &llm.Blob{MIMEType: "video/mp4", Data: []byte{0x00, 0x00, 0x00, 0x18}}},
+		},
+	}}
+
+	msgs, err := c.toStandardMessages(context.Background(), history, nil)
+	if err != nil {
+		t.Fatalf("toStandardMessages failed: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+
+	b, err := json.Marshal(msgs[0])
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	want := `{"role":"user","content":"(video content omitted — this model does not support video input)"}`
+	if string(b) != want {
+		t.Errorf("exact JSON mismatch:\ngot  %s\nwant %s", b, want)
+	}
+}
+
+func TestVision_TextOnlyImageOnly_NoEmptyContent(t *testing.T) {
+	c := NewClient("https://api.deepseek.com", "deepseek-v4-flash",
+		&auth.BearerAuth{Token: "test"},
+		WithLogger(&ports.NoOpLogger{}),
+	)
+	if c.capabilities.SupportsVision {
+		t.Fatal("deepseek-v4-flash should NOT have SupportsVision")
+	}
+
+	history := []*llm.Content{{
+		Role: "user",
+		Parts: []*llm.Part{
+			{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89, 0x50, 0x4E, 0x47}}},
+		},
+	}}
+
+	msgs, err := c.toStandardMessages(context.Background(), history, nil)
+	if err != nil {
+		t.Fatalf("toStandardMessages failed: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+
+	b, err := json.Marshal(msgs[0])
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	want := `{"role":"user","content":"(image content omitted — this model does not support image input)"}`
+	if string(b) != want {
+		t.Errorf("exact JSON mismatch:\ngot  %s\nwant %s", b, want)
+	}
+}
+
+func TestMediaOmittedFallback(t *testing.T) {
+	tests := []struct {
+		name  string
+		caps  llm.Capabilities
+		parts []*llm.Part
+		want  string
+	}{
+		{
+			name:  "video dropped without video support",
+			caps:  llm.Capabilities{SupportsVision: true, SupportsVideo: false},
+			parts: []*llm.Part{{InlineData: &llm.Blob{MIMEType: "video/mp4", Data: []byte{1}}}},
+			want:  "(video content omitted — this model does not support video input)",
+		},
+		{
+			name:  "image dropped without vision support",
+			caps:  llm.Capabilities{SupportsVision: false, SupportsVideo: true},
+			parts: []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{1}}}},
+			want:  "(image content omitted — this model does not support image input)",
+		},
+		{
+			name:  "video supported falls through to generic",
+			caps:  llm.Capabilities{SupportsVision: true, SupportsVideo: true},
+			parts: []*llm.Part{{InlineData: &llm.Blob{MIMEType: "video/mp4", Data: []byte{1}}}},
+			want:  "(media content omitted — this model does not support this media type)",
+		},
+		{
+			name:  "image supported falls through to generic",
+			caps:  llm.Capabilities{SupportsVision: true, SupportsVideo: true},
+			parts: []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{1}}}},
+			want:  "(media content omitted — this model does not support this media type)",
+		},
+		{
+			name:  "nil InlineData falls through to generic",
+			caps:  llm.Capabilities{SupportsVision: false, SupportsVideo: false},
+			parts: []*llm.Part{{InlineData: nil}},
+			want:  "(media content omitted — this model does not support this media type)",
+		},
+		{
+			name:  "empty data falls through to generic",
+			caps:  llm.Capabilities{SupportsVision: false, SupportsVideo: false},
+			parts: []*llm.Part{{InlineData: &llm.Blob{MIMEType: "video/mp4"}}},
+			want:  "(media content omitted — this model does not support this media type)",
+		},
+		{
+			name:  "unsupported MIME falls through to generic",
+			caps:  llm.Capabilities{SupportsVision: false, SupportsVideo: false},
+			parts: []*llm.Part{{InlineData: &llm.Blob{MIMEType: "application/pdf", Data: []byte{1}}}},
+			want:  "(media content omitted — this model does not support this media type)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &client{capabilities: tt.caps}
+			got := c.mediaOmittedFallback(tt.parts)
+			if got != tt.want {
+				t.Errorf("mediaOmittedFallback() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
