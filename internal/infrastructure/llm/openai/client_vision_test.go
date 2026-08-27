@@ -592,3 +592,64 @@ func TestVision_TextOnlyImageOnly_NoEmptyContent(t *testing.T) {
 		t.Errorf("exact JSON mismatch:\ngot  %s\nwant %s", b, want)
 	}
 }
+
+func TestMediaOmittedFallback(t *testing.T) {
+	tests := []struct {
+		name  string
+		caps  llm.Capabilities
+		parts []*llm.Part
+		want  string
+	}{
+		{
+			name:  "video dropped without video support",
+			caps:  llm.Capabilities{SupportsVision: true, SupportsVideo: false},
+			parts: []*llm.Part{{InlineData: &llm.Blob{MIMEType: "video/mp4", Data: []byte{1}}}},
+			want:  "(video content omitted — this model does not support video input)",
+		},
+		{
+			name:  "image dropped without vision support",
+			caps:  llm.Capabilities{SupportsVision: false, SupportsVideo: true},
+			parts: []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{1}}}},
+			want:  "(image content omitted — this model does not support image input)",
+		},
+		{
+			name:  "video supported falls through to generic",
+			caps:  llm.Capabilities{SupportsVision: true, SupportsVideo: true},
+			parts: []*llm.Part{{InlineData: &llm.Blob{MIMEType: "video/mp4", Data: []byte{1}}}},
+			want:  "(media content omitted — this model does not support this media type)",
+		},
+		{
+			name:  "image supported falls through to generic",
+			caps:  llm.Capabilities{SupportsVision: true, SupportsVideo: true},
+			parts: []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{1}}}},
+			want:  "(media content omitted — this model does not support this media type)",
+		},
+		{
+			name:  "nil InlineData falls through to generic",
+			caps:  llm.Capabilities{SupportsVision: false, SupportsVideo: false},
+			parts: []*llm.Part{{InlineData: nil}},
+			want:  "(media content omitted — this model does not support this media type)",
+		},
+		{
+			name:  "empty data falls through to generic",
+			caps:  llm.Capabilities{SupportsVision: false, SupportsVideo: false},
+			parts: []*llm.Part{{InlineData: &llm.Blob{MIMEType: "video/mp4"}}},
+			want:  "(media content omitted — this model does not support this media type)",
+		},
+		{
+			name:  "unsupported MIME falls through to generic",
+			caps:  llm.Capabilities{SupportsVision: false, SupportsVideo: false},
+			parts: []*llm.Part{{InlineData: &llm.Blob{MIMEType: "application/pdf", Data: []byte{1}}}},
+			want:  "(media content omitted — this model does not support this media type)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &client{capabilities: tt.caps}
+			got := c.mediaOmittedFallback(tt.parts)
+			if got != tt.want {
+				t.Errorf("mediaOmittedFallback() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
