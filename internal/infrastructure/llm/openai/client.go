@@ -779,6 +779,19 @@ func (c *client) prepareMediaAssets(ctx context.Context, parts []*llm.Part, reso
 		}
 	}
 
+	// D3 (issue #1448): the 2048 px longest-edge dimension guard applies to
+	// the /responses image path — gated on RequiresResponsesAPI so it covers
+	// exactly the image turns that route to /responses (gpt-5.4+). GLM and
+	// DeepSeek vision are excluded (RequiresResponsesAPI false — ADR-071's
+	// no-inline-guard for GLM is preserved). gpt-5.0–5.3 Chat Completions
+	// image turns are UNGUARDED by design — deferred with the untested
+	// tool+image combination (ADR open item).
+	if c.capabilities.RequiresResponsesAPI {
+		if err := c.checkResponsesImageDimensions(out); err != nil {
+			return ta, out, err
+		}
+	}
+
 	if c.capabilities.FileUploadMode != llm.FileUploadNone {
 		if err := c.uploadMediaParts(ctx, out, ta); err != nil {
 			return ta, out, err
