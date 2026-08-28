@@ -79,7 +79,8 @@ type Capabilities struct {
 	// multi-turn protocol.
 	//
 	// Set for all models known to use reasoning_content natively:
-	// deepseek-* and kimi-* model families.
+	// deepseek-* and kimi-* model families, and the Z.AI GLM always-on
+	// reasoning allowlist (glm-5.3, glm-5.3-flash) — see ADR-072.
 	SupportsReasoningContent bool
 	// SupportsThinkingToggle indicates the model accepts the
 	// {"thinking":{"type":"enabled|disabled"}} request field to
@@ -201,12 +202,27 @@ func isGLMVisionModel(model string) bool {
 	return model == "glm-5.3-flash" || strings.HasSuffix(model, "/glm-5.3-flash")
 }
 
-// resolveGLMFamily derives GLM capabilities from the model string. For
-// v1 this sets ONLY SupportsVision (images via inline base64 image_url
-// blocks, FileUploadMode None). Video, file input, and reasoning-effort
-// control for GLM are explicitly out of scope (issue #1449).
-func resolveGLMFamily(model string) (supportsVision bool) {
-	return isGLMVisionModel(model)
+// isGLMReasoningModel returns true for the Z.AI GLM model IDs that are
+// always-on reasoning models returning reasoning_content on responses.
+// Explicit allowlist, separate from isGLMVisionModel — the two capability
+// axes are independent: glm-5.3 is text-only but always-reasoning, while
+// glm-4.5V is vision-capable with a user-controllable thinking toggle.
+// Older GLM-4.x models (glm-4.5V, glm-4.7-flash) are excluded: thinking
+// can be disabled on them, so reasoning_content is not guaranteed on the
+// wire. Extend as Z.AI ships more always-on reasoning GLM variants.
+// Mirrors the isGLMVisionModel exact-match pattern (ADR-072).
+func isGLMReasoningModel(model string) bool {
+	return model == "glm-5.3" || strings.HasSuffix(model, "/glm-5.3") ||
+		model == "glm-5.3-flash" || strings.HasSuffix(model, "/glm-5.3-flash")
+}
+
+// resolveGLMFamily derives GLM capabilities from the model string.
+// SupportsVision: inline base64 image_url blocks for the vision allowlist
+// (issue #1449, ADR-071). SupportsReasoningContent: native reasoning_content
+// round-trip for the always-on reasoning allowlist (issue #1451, ADR-072).
+// Video, file input, and thinking-toggle control remain out of scope for GLM.
+func resolveGLMFamily(model string) (supportsVision, supportsReasoningContent bool) {
+	return isGLMVisionModel(model), isGLMReasoningModel(model)
 }
 
 // resolveGPTFamily derives GPT and o-series capabilities from the model string.
@@ -262,7 +278,7 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 	isReasoner, requireResponses := resolveGPTFamily(model)
 	isDeepSeek, dsReasoningContent, dsThinkingToggle, vertexThinkingKwargs, dsVision, dsFileMode := resolveDeepSeekFamily(model, baseURL)
 	kReasoningContent, kThinkingToggle, kVision, kVideo, kFileMode, kReasoningEffort, isKimiK3 := resolveKimiFamily(model)
-	gVision := resolveGLMFamily(model)
+	gVision, gReasoningContent := resolveGLMFamily(model)
 
 	fileUploadMode := FileUploadNone
 	if dsFileMode != FileUploadNone {
@@ -277,7 +293,7 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 		RequiresResponsesAPI:         requireResponses,
 		UseDeveloperRole:             isReasoner,
 		IsDeepSeek:                   isDeepSeek,
-		SupportsReasoningContent:     dsReasoningContent || kReasoningContent,
+		SupportsReasoningContent:     dsReasoningContent || kReasoningContent || gReasoningContent,
 		SupportsThinkingToggle:       dsThinkingToggle || kThinkingToggle,
 		SupportsVision:               dsVision || kVision || gVision,
 		SupportsVideo:                kVideo,
