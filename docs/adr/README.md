@@ -76,6 +76,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-068** | Automatic PLUR Memory Integration | 2026-09 | Accepted | [2026-09-automatic-plur-memory-integration.md](2026-09-automatic-plur-memory-integration.md) |
 | **ADR-069** | MCP stdio ENV key case preservation — total Viper bypass | 2026-09 | Accepted | [2026-09-mcp-stdio-env-key-case-preservation.md](2026-09-mcp-stdio-env-key-case-preservation.md) |
 | **ADR-070** | DeepSeek Vision Capability and FileUploadMode Decomposition | 2026-09 | Accepted | [2026-09-deepseek-vision-capability.md](2026-09-deepseek-vision-capability.md) |
+| **ADR-071** | GLM-5.3-Flash Vision Capability via OpenAI-Compatible image_url Blocks | 2026-09 | Accepted | [2026-09-glm-53-flash-vision-capability.md](2026-09-glm-53-flash-vision-capability.md) |
 
 ## How to Create a New ADR
 

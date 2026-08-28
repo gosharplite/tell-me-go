@@ -572,6 +572,7 @@ Significant architectural decisions are documented in our [Architecture Decision
 *   **[ADR-068](docs/adr/2026-09-automatic-plur-memory-integration.md)** — automatic PLUR memory integration: `plurInjector` context transformer (priority 15, marker-keyed replace-in-place) and `plurHook` TurnHook (four-tier `LEARN`) over the `tools.MCPClient` domain port (issue #1404).
 *   **[ADR-069](docs/adr/2026-09-mcp-stdio-env-key-case-preservation.md)** — MCP stdio ENV key case preservation: total Viper bypass, byte-for-byte child env keys, deterministic collision rejection (issue #1407).
 *   **[ADR-070](docs/adr/2026-09-deepseek-vision-capability.md)** — DeepSeek vision capability via suffix-based classification and `FileUploadMode` enum decomposition; vision/video decoupling in the OpenAI transport; turn-scoped Files API lifecycle (issue #1429).
+*   **[ADR-071](docs/adr/2026-09-glm-53-flash-vision-capability.md)** — Z.AI GLM-5.3-Flash vision capability via OpenAI-compatible `image_url` blocks: explicit allowlist (no GLM naming convention), inline Base64 data URLs (`FileUploadMode: FileUploadNone`), no inline size guard (issue #1449).
 
 For the evolution of the shell-based environment management tooling — from simple bash aliases through Toby, Dobby, Porter, Sprawl, Winky, Flopsy, and Niffler — see [Evolution of Environment Management](docs/architect/environments/environment-management-evolution.md).
 
