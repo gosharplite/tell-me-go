@@ -83,6 +83,8 @@ func TestIsWellKnownContract_Table(t *testing.T) {
 		// --- Positive: legacy contracts ---
 		{"Error()string", "Error", nil, []string{"string"}, true},
 		{"String()string", "String", nil, []string{"string"}, true},
+		// --- Positive: errors.Wrapper.Unwrap (errors.Is / errors.As / %w) ---
+		{"Unwrap()error", "Unwrap", nil, []string{"error"}, true},
 		// --- Positive: io contracts (basic-kind-only) ---
 		{"Read([]byte)(int,error)", "Read", []string{"[]byte"}, []string{"int", "error"}, true},
 		{"Write([]byte)(int,error)", "Write", []string{"[]byte"}, []string{"int", "error"}, true},
@@ -101,6 +103,8 @@ func TestIsWellKnownContract_Table(t *testing.T) {
 
 		// --- Negative: matching name, wrong signature ---
 		{"Write(string)", "Write", []string{"string"}, nil, false},
+		{"Unwrap()string", "Unwrap", nil, []string{"string"}, false},
+		{"Unwrap()(error,error)", "Unwrap", nil, []string{"error", "error"}, false},
 		{"Close()(error,error)", "Close", nil, []string{"error", "error"}, false},
 		{"Read()", "Read", nil, nil, false},
 		{"MarshalJSON([]byte)error", "MarshalJSON", []string{"[]byte"}, []string{"error"}, false},
