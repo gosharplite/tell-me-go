@@ -115,6 +115,11 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"(*server).dispatchTool":                                    {Line: 419, Complexity: 14, FilePath: "tests/e2e/testdata/fakeplur/main.go"},
 		"newServer":                                                 {Line: 179, Complexity: 13, FilePath: "tests/e2e/testdata/fakeplur/main.go"},
 		"newestSourceMTime":                                         {Line: 79, Complexity: 13, FilePath: "tests/e2e/e2e_test.go"},
+		"TestToSDKContent_MixedUserTurn_OrdersInlineDataFirst":      {Line: 290, Complexity: 13, FilePath: "internal/infrastructure/llm/gemini/adapter_test.go"},
+		"TestToSDKContent_PoisonedPersistedShape_Normalizes":        {Line: 326, Complexity: 15, FilePath: "internal/infrastructure/llm/gemini/adapter_test.go"},
+		"TestToSDKContent_OtherPartsMoveToEnd":                      {Line: 384, Complexity: 15, FilePath: "internal/infrastructure/llm/gemini/adapter_test.go"},
+		"TestSendChat_MixedMediaStoreRoundTrip":                     {Line: 57, Complexity: 15, FilePath: "internal/infrastructure/llm/gemini/mixed_media_roundtrip_test.go"},
+		"validateMixedMediaRoundTripReq":                            {Line: 164, Complexity: 37, FilePath: "internal/infrastructure/llm/gemini/mixed_media_roundtrip_test.go"},
 	}
 
 	require.Equal(t, expectedCataloged, cataloged)

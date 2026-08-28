@@ -563,6 +563,27 @@ func TestDispatcher_AssembleResponse_Binary(t *testing.T) {
 		}
 		assertInlineData(t, content.Parts[0], "application/pdf", []byte{1, 2, 3})
 		assertInlineData(t, content.Parts[1], "text/plain", []byte{4, 5, 6})
+		assertFunctionResponse(t, content.Parts[2], "")
+	})
+
+	t.Run("Two Results with Binary Data - Full Order", func(t *testing.T) {
+		t.Parallel()
+		calls := []*llm.FunctionCall{
+			{Name: "cam_a"},
+			{Name: "cam_b"},
+		}
+		results := []tools.ToolResult{
+			{Text: "ra", BinaryData: []tools.BinaryData{{MIMEType: "image/jpeg", Data: []byte("photo1")}}},
+			{Text: "rb", BinaryData: []tools.BinaryData{{MIMEType: "image/jpeg", Data: []byte("photo2")}}},
+		}
+		content := e.AssembleResponse(calls, results)
+		if len(content.Parts) != 4 {
+			t.Fatalf("Got %d parts, want 4", len(content.Parts))
+		}
+		assertInlineData(t, content.Parts[0], "image/jpeg", []byte("photo1"))
+		assertInlineData(t, content.Parts[1], "image/jpeg", []byte("photo2"))
+		assertFunctionResponse(t, content.Parts[2], "ra")
+		assertFunctionResponse(t, content.Parts[3], "rb")
 	})
 
 	t.Run("Multi-blob Interleaving and Ordering", func(t *testing.T) {
