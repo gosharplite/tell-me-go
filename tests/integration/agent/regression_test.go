@@ -179,38 +179,56 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 
 func newMultiModalMockClient() *agenttest.MockLLMClient {
 	return &agenttest.MockLLMClient{
-		SendChatFn: func(ctx context.Context, history []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
-			// 1. Identify the last user prompt
-			lastUserPrompt := ""
-			for i := len(history) - 1; i >= 0; i-- {
-				if history[i].Role == "user" && len(history[i].Parts) > 0 && history[i].Parts[0].Text != "" && !strings.Contains(history[i].Parts[0].Text, "System") {
-					lastUserPrompt = history[i].Parts[0].Text
-					break
-				}
-			}
-
-			// 2. Handle Tool Response state
-			if len(history) > 0 && len(history[len(history)-1].Parts) > 0 && history[len(history)-1].Parts[0].FunctionResponse != nil {
-				return &domain_llm.Content{
-					Role:  "model",
-					Parts: []*domain_llm.Part{{Text: "I see the cat image."}},
-				}, &domain_llm.Metrics{}, nil
-			}
-
-			// 3. Handle Initial Prompt state
-			if lastUserPrompt == "Show me a cat" {
-				return &domain_llm.Content{
-					Role: "model",
-					Parts: []*domain_llm.Part{
-						{FunctionCall: &domain_llm.FunctionCall{ID: "call_123", Name: "get_image", Args: map[string]interface{}{}}},
-					},
-				}, &domain_llm.Metrics{}, nil
-			}
-
-			return &domain_llm.Content{
-				Role:  "model",
-				Parts: []*domain_llm.Part{{Text: "Default response"}},
-			}, &domain_llm.Metrics{}, nil
-		},
+		SendChatFn: multiModalSendChat,
 	}
+}
+
+func multiModalSendChat(ctx context.Context, history []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
+	lastUserPrompt := getLastUserPrompt(history)
+	hasFunctionResponse := hasFuncResp(history)
+
+	// 2. Handle Tool Response state
+	if hasFunctionResponse {
+		return &domain_llm.Content{
+			Role:  "model",
+			Parts: []*domain_llm.Part{{Text: "I see the cat image."}},
+		}, &domain_llm.Metrics{}, nil
+	}
+
+	// 3. Handle Initial Prompt state
+	if lastUserPrompt == "Show me a cat" {
+		return &domain_llm.Content{
+			Role: "model",
+			Parts: []*domain_llm.Part{
+				{FunctionCall: &domain_llm.FunctionCall{ID: "call_123", Name: "get_image", Args: map[string]interface{}{}}},
+			},
+		}, &domain_llm.Metrics{}, nil
+	}
+
+	return &domain_llm.Content{
+		Role:  "model",
+		Parts: []*domain_llm.Part{{Text: "Default response"}},
+	}, &domain_llm.Metrics{}, nil
+}
+
+func getLastUserPrompt(history []*domain_llm.Content) string {
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == "user" && len(history[i].Parts) > 0 && history[i].Parts[0].Text != "" && !strings.Contains(history[i].Parts[0].Text, "System") {
+			return history[i].Parts[0].Text
+		}
+	}
+	return ""
+}
+
+func hasFuncResp(history []*domain_llm.Content) bool {
+	if len(history) == 0 {
+		return false
+	}
+	lastTurn := history[len(history)-1]
+	for _, p := range lastTurn.Parts {
+		if p.FunctionResponse != nil {
+			return true
+		}
+	}
+	return false
 }

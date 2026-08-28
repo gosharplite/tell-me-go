@@ -368,7 +368,6 @@ func (e *Dispatcher) extractFunctionCalls(respContent *llm.Content) []*llm.Funct
 func (e *Dispatcher) AssembleResponse(calls []*llm.FunctionCall, results []tools.ToolResult) *llm.Content {
 	var responseParts []*llm.Part
 	for i, tr := range results {
-		responseParts = append(responseParts, e.strategy.Format(calls[i], tr))
 		for _, b := range tr.BinaryData {
 			responseParts = append(responseParts, &llm.Part{
 				InlineData: &llm.Blob{
@@ -377,6 +376,7 @@ func (e *Dispatcher) AssembleResponse(calls []*llm.FunctionCall, results []tools
 				},
 			})
 		}
+		responseParts = append(responseParts, e.strategy.Format(calls[i], tr))
 	}
 	return &llm.Content{
 		Role:  "user",
