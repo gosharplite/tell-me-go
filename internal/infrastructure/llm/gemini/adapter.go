@@ -26,7 +26,53 @@ func toSDKContent(ctx context.Context, c *llm.Content, resolver llm.AssetResolve
 	for _, p := range c.TransientParts {
 		res.Parts = append(res.Parts, toSDKPart(ctx, p, resolver))
 	}
+	// Normalize at the wire boundary, after conversion and hydration, so the
+	// partition runs on the final wire shape (hydrateAsset has populated
+	// InlineData for every blob by this point). TransientParts exemption:
+	// the sole production writer of TransientParts is warning_injector.go:109
+	// (injectWarning), which appends a Text-only part — no partition class
+	// can ever arrive via the transient suffix, so the three-zone partition
+	// is only ever exercised by c.Parts-derived content.
+	res.Parts = normalizeUserTurnParts(res.Parts, c.Role)
 	return res
+}
+
+// normalizeUserTurnParts reorders a user-role turn's parts into the
+// [InlineData][FunctionResponse][other] zones the Gemini/Vertex AI parser
+// requires. The parser invalidates a user turn whose FunctionResponse part
+// precedes an InlineData part (see #1441): the preceding model turn
+// (containing the FunctionCall) appears unanswered, which triggers
+// "Error 400: Requests ending with a model turn are not supported" on the
+// next inference cycle. This normalization heals persisted/reloaded
+// history — the assembled user turn is written to history.jsonl and re-sent
+// verbatim on later turns — not just freshly assembled turns (the executor
+// already guarantees the order via two-pass assembly, #1442/#1444).
+//
+// The gate is load-bearing: only user turns mixing InlineData with
+// FunctionResponse are reordered; text-only, blob-only, and text+blob turns
+// (and every model/system role) are returned unchanged. The partition is
+// stable (relative order preserved within each zone) and idempotent
+// (already-canonical input is a no-op). Nil parts are classified as "other"
+// so the slice length is invariant.
+func normalizeUserTurnParts(parts []*genai.Part, role string) []*genai.Part {
+	if role != "user" {
+		return parts
+	}
+
+	var inline, responses, other []*genai.Part
+	for _, p := range parts {
+		if p != nil && p.InlineData != nil {
+			inline = append(inline, p)
+		} else if p != nil && p.FunctionResponse != nil {
+			responses = append(responses, p)
+		} else {
+			other = append(other, p)
+		}
+	}
+	if len(inline) == 0 || len(responses) == 0 {
+		return parts
+	}
+	return append(append(inline, responses...), other...)
 }
 
 // toSDKPart converts internal Part to genai.Part.
