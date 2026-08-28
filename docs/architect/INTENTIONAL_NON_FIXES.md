@@ -1405,7 +1405,7 @@ to reason about.
 ### internal/domain/llm/capabilities_test.go — TestResolveCapabilities (CC=13)
 
 - **Status**: ACCEPTED (2026-08)
-- **Rationale**: Table-driven combinatorial test covering provider × model × feature capability resolution. CC increased from 12→13 since acceptance (re-verified 2026-08) — still the same acceptance class. CC comes from the 10+ test cases in the table, each a simple assertion. Splitting the table into subtests would obscure the cross-provider comparison intent.
+- **Rationale**: Table-driven combinatorial test covering provider × model × feature capability resolution. CC increased from 12→13 since acceptance (re-verified 2026-08) — still the same acceptance class. CC comes from the 10+ test cases in the table, each a simple assertion. Splitting the table into subtests would obscure the cross-provider comparison intent. Re-anchored 2026-09 (issue #1448 T2): CC re-measured 13 (unchanged) after gpt-5.x supportsVision rows were added.
 - **See**: `internal/domain/llm/capabilities_test.go:10`
 
 ### internal/tools/analysis/precision_test.go — TestDeadCodeAnalyzer_Precision (CC=12)

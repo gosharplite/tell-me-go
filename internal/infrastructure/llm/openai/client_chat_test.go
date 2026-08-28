@@ -408,6 +408,106 @@ func TestDeepSeekHistoryWithToolCalls(t *testing.T) {
 	}
 }
 
+// assertNativeReasoningMessage asserts the assistant-message shape of the
+// GLM reasoning_content wire contract: the model role normalized to
+// assistant, thought text carried in reasoning_content, plain text in
+// content.
+func assertNativeReasoningMessage(t *testing.T, msg message) {
+	t.Helper()
+	if msg.Role != "assistant" {
+		t.Errorf("expected role 'assistant', got %q", msg.Role)
+	}
+	if msg.ReasoningContent == nil || *msg.ReasoningContent != "Thinking..." {
+		val := "<nil>"
+		if msg.ReasoningContent != nil {
+			val = *msg.ReasoningContent
+		}
+		t.Errorf("expected reasoning_content 'Thinking...', got %q", val)
+	}
+	content, ok := msg.Content.(string)
+	if !ok {
+		t.Fatalf("expected string content, got %T", msg.Content)
+	}
+	if content != "Answer" {
+		t.Errorf("expected content 'Answer', got %q", content)
+	}
+	if strings.Contains(content, "<thought>") {
+		t.Errorf("content must not contain <thought> XML wrapper, got %q", content)
+	}
+}
+
+// assertJSONReasoningContract asserts the marshaled JSON shape of the GLM
+// reasoning_content wire contract: the reasoning_content key is present and
+// no <thought> XML wrapper leaks into the payload.
+func assertJSONReasoningContract(t *testing.T, msg message) {
+	t.Helper()
+	b, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	jsonStr := string(b)
+	if !strings.Contains(jsonStr, `"reasoning_content"`) {
+		t.Errorf("expected reasoning_content field in JSON, got %s", jsonStr)
+	}
+	if strings.Contains(jsonStr, "<thought>") {
+		t.Errorf("JSON must not contain <thought> XML wrapper, got %s", jsonStr)
+	}
+}
+
+// TestGLMReasoningContentRoundTrip pins the native reasoning_content wire
+// contract for the Z.AI GLM always-on reasoning allowlist (issue #1451,
+// ADR-072, PR #1450 review finding #3): an assistant message with an
+// IsThought part must serialize its thought text into reasoning_content —
+// not the non-native <thought> XML wrapper — while models outside the
+// allowlist (glm-4.7-flash) keep the <thought> fallback.
+func TestGLMReasoningContentRoundTrip(t *testing.T) {
+	history := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
+		{Role: "model", Parts: []*llm.Part{
+			{Text: "Thinking...", IsThought: true},
+			{Text: "Answer"},
+		}},
+	}
+
+	for _, model := range []string{"glm-5.3-flash", "z.ai/glm-5.3-flash", "glm-5.3", "z.ai/glm-5.3"} {
+		t.Run(model, func(t *testing.T) {
+			c := NewClient("", model, nil)
+			messages, err := c.toStandardMessages(context.Background(), history, nil)
+			if err != nil {
+				t.Fatalf("toStandardMessages failed: %v", err)
+			}
+			if len(messages) != 2 {
+				t.Fatalf("expected 2 messages, got %d", len(messages))
+			}
+			assertNativeReasoningMessage(t, messages[1])
+			assertJSONReasoningContract(t, messages[1])
+		})
+	}
+
+	// Negative control: glm-4.7-flash is outside the allowlist — its thought
+	// parts keep the non-native <thought> XML fallback and reasoning_content
+	// stays absent. This pins the allowlist boundary at the transport layer.
+	c := NewClient("", "glm-4.7-flash", nil)
+	messages, err := c.toStandardMessages(context.Background(), history, nil)
+	if err != nil {
+		t.Fatalf("toStandardMessages failed: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+	neg := messages[1]
+	if neg.ReasoningContent != nil {
+		t.Errorf("expected nil reasoning_content for glm-4.7-flash, got %q", *neg.ReasoningContent)
+	}
+	negContent, ok := neg.Content.(string)
+	if !ok {
+		t.Fatalf("expected string content for glm-4.7-flash, got %T", neg.Content)
+	}
+	if !strings.Contains(negContent, "<thought>") {
+		t.Errorf("expected <thought> XML fallback for glm-4.7-flash, got %q", negContent)
+	}
+}
+
 func TestSendChat_ErrorHandling(t *testing.T) {
 	type testCase struct {
 		name               string

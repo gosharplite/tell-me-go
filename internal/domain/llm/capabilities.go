@@ -79,7 +79,8 @@ type Capabilities struct {
 	// multi-turn protocol.
 	//
 	// Set for all models known to use reasoning_content natively:
-	// deepseek-* and kimi-* model families.
+	// deepseek-* and kimi-* model families, and the Z.AI GLM always-on
+	// reasoning allowlist (glm-5.3, glm-5.3-flash) — see ADR-072.
 	SupportsReasoningContent bool
 	// SupportsThinkingToggle indicates the model accepts the
 	// {"thinking":{"type":"enabled|disabled"}} request field to
@@ -98,7 +99,8 @@ type Capabilities struct {
 	// parts are serialized as base64 image_url blocks rather than being
 	// silently dropped.
 	//
-	// Set for: kimi-* models (K3, K2.7, K2.6).
+	// Set for: kimi-* models (K3, K2.7, K2.6), deepseek-*-vision* models,
+	// and the Z.AI GLM allowlist (glm-5.3-flash).
 	SupportsVision bool
 	// SupportsVideo indicates the model natively understands video via
 	// video_url content parts in the messages array. When true, InlineData
@@ -189,13 +191,53 @@ func isKimiK3Model(model string) bool {
 	return model == "kimi-k3" || strings.HasSuffix(model, "/kimi-k3")
 }
 
+// isGLMVisionModel returns true for the Z.AI GLM model IDs that natively
+// accept image input via image_url content blocks. Explicit allowlist —
+// there is no reliable naming convention across GLM generations: older
+// vision models use a V suffix (glm-4.5V, glm-4.6V), text models use bare
+// -flash (glm-4.7-flash is text-only), and the first native multimodal
+// GLM-5 (glm-5.3-flash) has no V marker at all. Extend as Z.AI ships more
+// multimodal GLM variants. Mirrors the isKimiK3Model exact-match pattern.
+func isGLMVisionModel(model string) bool {
+	return model == "glm-5.3-flash" || strings.HasSuffix(model, "/glm-5.3-flash")
+}
+
+// isGLMReasoningModel returns true for the Z.AI GLM model IDs that are
+// always-on reasoning models returning reasoning_content on responses.
+// Explicit allowlist, separate from isGLMVisionModel — the two capability
+// axes are independent: glm-5.3 is text-only but always-reasoning, while
+// glm-4.5V is vision-capable with a user-controllable thinking toggle.
+// Older GLM-4.x models (glm-4.5V, glm-4.7-flash) are excluded: thinking
+// can be disabled on them, so reasoning_content is not guaranteed on the
+// wire. Extend as Z.AI ships more always-on reasoning GLM variants.
+// Mirrors the isGLMVisionModel exact-match pattern (ADR-072).
+func isGLMReasoningModel(model string) bool {
+	return model == "glm-5.3" || strings.HasSuffix(model, "/glm-5.3") ||
+		model == "glm-5.3-flash" || strings.HasSuffix(model, "/glm-5.3-flash")
+}
+
+// resolveGLMFamily derives GLM capabilities from the model string.
+// SupportsVision: inline base64 image_url blocks for the vision allowlist
+// (issue #1449, ADR-071). SupportsReasoningContent: native reasoning_content
+// round-trip for the always-on reasoning allowlist (issue #1451, ADR-072).
+// Video, file input, and thinking-toggle control remain out of scope for GLM.
+func resolveGLMFamily(model string) (supportsVision, supportsReasoningContent bool) {
+	return isGLMVisionModel(model), isGLMReasoningModel(model)
+}
+
 // resolveGPTFamily derives GPT and o-series capabilities from the model string.
-func resolveGPTFamily(model string) (isReasoner bool, requireResponses bool) {
+// SupportsVision (D2, issue #1448): ALL gpt-5.x models are vision-capable via
+// isGpt5OrNewer — no allowlist, no separate threshold. Note gpt-5.0–5.3 do NOT
+// RequireResponsesAPI: their image input flows through the existing Chat
+// Completions image_url path; only RequiresResponsesAPI models route images
+// to /responses (spec §3 routing formula).
+func resolveGPTFamily(model string) (isReasoner bool, requireResponses bool, supportsVision bool) {
 	v := parseGPTVersion(model)
 	isReasoner = strings.HasPrefix(model, "o1") ||
 		strings.HasPrefix(model, "o3") ||
 		isGpt5OrNewer(v)
 	requireResponses = isGpt54OrNewer(model)
+	supportsVision = isGpt5OrNewer(v) // D2: all gpt-5+
 	return
 }
 
@@ -233,15 +275,25 @@ func resolveKimiFamily(model string) (supportsReasoningContent, supportsThinking
 	return
 }
 
+// supportsVisionFor resolves the vision-capability union across the
+// OpenAI-compatible families (DeepSeek, Kimi, GLM, GPT). Extracted from
+// ResolveCapabilities so that function stays at the CC <= 10 policy
+// threshold — every family or axis added to the union would otherwise
+// creep it over the boundary (issue #1448, T2 adjudication: Option B).
+func supportsVisionFor(dsVision, kVision, gVision, gptVision bool) bool {
+	return dsVision || kVision || gVision || gptVision
+}
+
 // ResolveCapabilities returns the capability set for a given model name and
 // provider base URL. The base URL is required for transport-conditional
 // capabilities such as RequiresVertexThinkingKwargs. Pass an empty string
 // if the URL is not available; transport-conditional capabilities will
 // default to false.
 func ResolveCapabilities(model, baseURL string) Capabilities {
-	isReasoner, requireResponses := resolveGPTFamily(model)
+	isReasoner, requireResponses, gptVision := resolveGPTFamily(model)
 	isDeepSeek, dsReasoningContent, dsThinkingToggle, vertexThinkingKwargs, dsVision, dsFileMode := resolveDeepSeekFamily(model, baseURL)
 	kReasoningContent, kThinkingToggle, kVision, kVideo, kFileMode, kReasoningEffort, isKimiK3 := resolveKimiFamily(model)
+	gVision, gReasoningContent := resolveGLMFamily(model)
 
 	fileUploadMode := FileUploadNone
 	if dsFileMode != FileUploadNone {
@@ -256,9 +308,9 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 		RequiresResponsesAPI:         requireResponses,
 		UseDeveloperRole:             isReasoner,
 		IsDeepSeek:                   isDeepSeek,
-		SupportsReasoningContent:     dsReasoningContent || kReasoningContent,
+		SupportsReasoningContent:     dsReasoningContent || kReasoningContent || gReasoningContent,
 		SupportsThinkingToggle:       dsThinkingToggle || kThinkingToggle,
-		SupportsVision:               dsVision || kVision,
+		SupportsVision:               supportsVisionFor(dsVision, kVision, gVision, gptVision),
 		SupportsVideo:                kVideo,
 		FileUploadMode:               fileUploadMode,
 		RequiresVertexThinkingKwargs: vertexThinkingKwargs,

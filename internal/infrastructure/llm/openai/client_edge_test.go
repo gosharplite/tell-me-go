@@ -6,6 +6,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -294,16 +295,20 @@ func TestExtractDocument_ExportedWrapper(t *testing.T) {
 	}
 }
 
-func TestResponsesSink_AddMessage_NonStringContent(t *testing.T) {
-	spy := &testfixtures.SpyLogger{}
-	sink := &responsesSink{client: &client{logger: spy, model: "test-model"}}
+func TestResponsesSink_AddMessage_UnsupportedBlock_FailLoud(t *testing.T) {
+	// A raw map element (not a requestContentBlock/imageURLBlock/videoURLBlock)
+	// is an unconvertible input block: the sink must fail loud (record the
+	// sentinel) and append nothing — supersedes the pre-D1 warn-and-drop
+	// behavior (responses_sink_non_string_content), per spec §2 correction
+	// #4 / REVISION 2.
+	sink := &responsesSink{client: &client{logger: &ports.NoOpLogger{}, model: "test-model"}}
 
 	sink.AddMessage("user", []any{map[string]any{"type": "image_url"}}, nil, nil)
 
-	if !spy.CalledWith("Warn", "responses_sink_non_string_content") {
-		t.Error("expected Warn responses_sink_non_string_content for non-string content")
+	if !errors.Is(sink.err, errUnhandledInputBlockType) {
+		t.Errorf("expected errUnhandledInputBlockType, got %v", sink.err)
 	}
 	if len(sink.items) != 0 {
-		t.Errorf("expected no items appended for non-string content, got %d", len(sink.items))
+		t.Errorf("expected no items appended for unconvertible block, got %d", len(sink.items))
 	}
 }

@@ -8,13 +8,13 @@ SPDX-License-Identifier: MIT
 
 # tell-me-go: A Multi-Provider Reasoning Agent for the Terminal
 
-A high-performance CLI assistant unifying the world's most powerful reasoning engines (**Gemini, OpenAI, DeepSeek, Claude, Kimi**) under a single, resilient interface.
+A high-performance CLI assistant unifying the world's most powerful reasoning engines (**Gemini, OpenAI, DeepSeek, Claude, Kimi, Z.ai**) under a single, resilient interface.
 
 ## Overview
-`tell-me-go` is a production-ready reasoning agent designed for complex developer workflows. By abstracting the complexities of diverse LLM providers (**Google Vertex AI, OpenAI, DeepSeek, Anthropic, Kimi-K3**) into a unified domain model, it provides a stable platform for tool-augmented intelligence and multi-turn reasoning. Built with the speed of Go, it prioritizes session durability through automated context maintenance, provides a rich TUI for history exploration, and prevents "hidden" expenses with deterministic cost auditing and safety guardrails.
+`tell-me-go` is a production-ready reasoning agent designed for complex developer workflows. By abstracting the complexities of diverse LLM providers (**Google Vertex AI, OpenAI, DeepSeek, Anthropic, Kimi-K3, GLM-5.3**) into a unified domain model, it provides a stable platform for tool-augmented intelligence and multi-turn reasoning. Built with the speed of Go, it prioritizes session durability through automated context maintenance, provides a rich TUI for history exploration, and prevents "hidden" expenses with deterministic cost auditing and safety guardrails.
 
 ## 🚀 Features
-*   **Multi-Provider Reasoning**: Native support for Gemini 3.0/3.1, GPT-5.4/5.5, DeepSeek V3.2/V4, Kimi-K3, and Claude 4.7 — across Google Vertex AI, OpenAI, DeepSeek, Moonshot, and Anthropic APIs.
+*   **Multi-Provider Reasoning**: Native support for Gemini 3.0/3.1, GPT-5.4/5.5, DeepSeek V3.2/V4, Kimi-K3, GLM-5.3 and Claude 4.7 — across Google Vertex AI, OpenAI, DeepSeek, Moonshot, Z.ai and Anthropic APIs.
 *   **Intelligence & Context**:
     *   **Skills.sh Ecosystem**: Discover, install, and remove skills on the fly from the open agent skills ecosystem. Skills are installed via `git clone` into `.skills/` and are available immediately. Requires user approval for installation.
     *   **Unified Domain Model**: Optimized for a provider-agnostic `Thought` architecture, ensuring consistent reasoning across models.
@@ -572,6 +572,9 @@ Significant architectural decisions are documented in our [Architecture Decision
 *   **[ADR-068](docs/adr/2026-09-automatic-plur-memory-integration.md)** — automatic PLUR memory integration: `plurInjector` context transformer (priority 15, marker-keyed replace-in-place) and `plurHook` TurnHook (four-tier `LEARN`) over the `tools.MCPClient` domain port (issue #1404).
 *   **[ADR-069](docs/adr/2026-09-mcp-stdio-env-key-case-preservation.md)** — MCP stdio ENV key case preservation: total Viper bypass, byte-for-byte child env keys, deterministic collision rejection (issue #1407).
 *   **[ADR-070](docs/adr/2026-09-deepseek-vision-capability.md)** — DeepSeek vision capability via suffix-based classification and `FileUploadMode` enum decomposition; vision/video decoupling in the OpenAI transport; turn-scoped Files API lifecycle (issue #1429).
+*   **[ADR-071](docs/adr/2026-09-glm-53-flash-vision-capability.md)** — Z.AI GLM-5.3-Flash vision capability via OpenAI-compatible `image_url` blocks: explicit allowlist (no GLM naming convention), inline Base64 data URLs (`FileUploadMode: FileUploadNone`), no inline size guard (issue #1449).
+*   **[ADR-072](docs/adr/2026-09-glm-reasoning-content-capability.md)** — native `reasoning_content` round-trip for Z.AI GLM models via a separate always-on reasoning allowlist (`glm-5.3`, `glm-5.3-flash`): capability flag + tests + ADR mirror of the ADR-071 vision pattern on an independent capability axis; zero transport changes (issue #1451).
+*   **[ADR-073](docs/adr/2026-09-gpt5x-responses-vision.md)** — gpt-5.x vision via the OpenAI Responses API: full-history sticky image routing (D1), all gpt-5+ vision-capable via `isGpt5OrNewer` with gpt-5.0–5.3 on the Chat Completions `image_url` path (D2), and a 2048px longest-edge dimension guard via the domain-typed `MediaSizeError` (D3) (issue #1448).
 
 For the evolution of the shell-based environment management tooling — from simple bash aliases through Toby, Dobby, Porter, Sprawl, Winky, Flopsy, and Niffler — see [Evolution of Environment Management](docs/architect/environments/environment-management-evolution.md).
 

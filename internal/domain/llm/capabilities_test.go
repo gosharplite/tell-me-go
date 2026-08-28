@@ -51,7 +51,29 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldCompletion,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
-			supportsVision:           false,
+			supportsVision:           true,
+		},
+		{
+			name:                     "gpt-5.0 vision-capable without responses API (D2 boundary)",
+			model:                    "gpt-5.0",
+			supportsReasoningEffort:  true,
+			requiresResponsesAPI:     false,
+			useDeveloperRole:         true,
+			maxTokensField:           MaxTokensFieldCompletion,
+			isDeepSeek:               false,
+			supportsReasoningContent: false,
+			supportsVision:           true,
+		},
+		{
+			name:                     "gpt-5.2 vision-capable without responses API",
+			model:                    "gpt-5.2",
+			supportsReasoningEffort:  true,
+			requiresResponsesAPI:     false,
+			useDeveloperRole:         true,
+			maxTokensField:           MaxTokensFieldCompletion,
+			isDeepSeek:               false,
+			supportsReasoningContent: false,
+			supportsVision:           true,
 		},
 		{
 			name:                     "gpt-5.3 does not require responses API (minor < 4)",
@@ -62,7 +84,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldCompletion,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
-			supportsVision:           false,
+			supportsVision:           true,
 		},
 		{
 			name:                     "gpt-4.5 does not require responses API (major < 5)",
@@ -83,7 +105,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldOutput,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
-			supportsVision:           false,
+			supportsVision:           true,
 		},
 		{
 			model:                    "gpt-6",
@@ -93,7 +115,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldOutput,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
-			supportsVision:           false,
+			supportsVision:           true,
 		},
 		{
 			model:                    "gpt-7",
@@ -103,7 +125,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldOutput,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
-			supportsVision:           false,
+			supportsVision:           true,
 		},
 		{
 			name:                     "gpt-7.0 requires responses API (major>5, n>=2)",
@@ -114,7 +136,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldOutput,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
-			supportsVision:           false,
+			supportsVision:           true,
 		},
 		{
 			name:                     "gpt-10.1 requires responses API (major>5, n>=2, two-digit major)",
@@ -125,7 +147,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldOutput,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
-			supportsVision:           false,
+			supportsVision:           true,
 		},
 		{
 			model:                    "deepseek-reasoner",
@@ -296,6 +318,72 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsVision:           false,
 			supportsVideo:            false,
 		},
+		{
+			name:                     "glm-5.3-flash is native multimodal + always-reasoning (Z.AI)",
+			model:                    "glm-5.3-flash",
+			supportsReasoningEffort:  false,
+			requiresResponsesAPI:     false,
+			useDeveloperRole:         false,
+			maxTokensField:           MaxTokensFieldLegacy,
+			isDeepSeek:               false,
+			supportsReasoningContent: true,
+			supportsVision:           true,
+		},
+		{
+			name:                     "glm-5.3-flash namespaced (z.ai/glm-5.3-flash)",
+			model:                    "z.ai/glm-5.3-flash",
+			supportsReasoningEffort:  false,
+			requiresResponsesAPI:     false,
+			useDeveloperRole:         false,
+			maxTokensField:           MaxTokensFieldLegacy,
+			isDeepSeek:               false,
+			supportsReasoningContent: true,
+			supportsVision:           true,
+		},
+		{
+			name:                     "glm-5.3 is text-only but always-reasoning (Z.AI docs)",
+			model:                    "glm-5.3",
+			supportsReasoningEffort:  false,
+			requiresResponsesAPI:     false,
+			useDeveloperRole:         false,
+			maxTokensField:           MaxTokensFieldLegacy,
+			isDeepSeek:               false,
+			supportsReasoningContent: true,
+			supportsVision:           false,
+		},
+		{
+			name:                     "glm-4.7-flash is text-only (allowlist, not suffix heuristic)",
+			model:                    "glm-4.7-flash",
+			supportsReasoningEffort:  false,
+			requiresResponsesAPI:     false,
+			useDeveloperRole:         false,
+			maxTokensField:           MaxTokensFieldLegacy,
+			isDeepSeek:               false,
+			supportsReasoningContent: false,
+			supportsVision:           false,
+		},
+		{
+			name:                     "glm-4.5V not in allowlist (V-suffix heuristic rejected)",
+			model:                    "glm-4.5V",
+			supportsReasoningEffort:  false,
+			requiresResponsesAPI:     false,
+			useDeveloperRole:         false,
+			maxTokensField:           MaxTokensFieldLegacy,
+			isDeepSeek:               false,
+			supportsReasoningContent: false,
+			supportsVision:           false,
+		},
+		{
+			name:                     "glm-5.3 namespaced (z.ai/glm-5.3) is always-reasoning",
+			model:                    "z.ai/glm-5.3",
+			supportsReasoningEffort:  false,
+			requiresResponsesAPI:     false,
+			useDeveloperRole:         false,
+			maxTokensField:           MaxTokensFieldLegacy,
+			isDeepSeek:               false,
+			supportsReasoningContent: true,
+			supportsVision:           false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -393,6 +481,7 @@ func TestResolveCapabilities_FileUploadMode(t *testing.T) {
 		{"deepseek-v4-pro", FileUploadNone},
 		{"deepseek-reasoner", FileUploadNone},
 		{"gpt-5.5", FileUploadNone},
+		{"glm-5.3-flash", FileUploadNone},
 	}
 	for _, tt := range tests {
 		t.Run(tt.model, func(t *testing.T) {
@@ -408,6 +497,7 @@ func TestCapabilities_FileUploadMode_OutOfRange(t *testing.T) {
 		"gpt-5.5", "deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4-flash-vision-exp",
 		"deepseek-reasoner", "kimi-k3", "kimi-k2.7-code", "kimi-k2.6",
 		"claude-opus-4-7", "gemini-3-flash-preview",
+		"glm-5.3-flash",
 	}
 	for _, m := range models {
 		t.Run(m, func(t *testing.T) {

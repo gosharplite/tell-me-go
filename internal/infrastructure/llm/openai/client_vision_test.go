@@ -653,3 +653,47 @@ func TestMediaOmittedFallback(t *testing.T) {
 		})
 	}
 }
+
+func TestVision_GLMImagePayload(t *testing.T) {
+	c := NewClient("", "glm-5.3-flash",
+		&auth.BearerAuth{Token: "test"},
+		WithLogger(&ports.NoOpLogger{}),
+	)
+	if !c.capabilities.SupportsVision {
+		t.Fatal("glm-5.3-flash should have SupportsVision")
+	}
+	if c.capabilities.SupportsVideo {
+		t.Fatal("glm-5.3-flash should NOT have SupportsVideo")
+	}
+	if c.capabilities.FileUploadMode != llm.FileUploadNone {
+		t.Fatalf("expected FileUploadNone mode, got %d", c.capabilities.FileUploadMode)
+	}
+
+	history := []*llm.Content{{
+		Role: "user",
+		Parts: []*llm.Part{
+			{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89, 0x50}}},
+			{Text: "describe this"},
+		},
+	}}
+
+	msgs, err := c.toStandardMessages(context.Background(), history, nil)
+	if err != nil {
+		t.Fatalf("toStandardMessages failed: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	b, err := json.Marshal(msgs[0])
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	s := string(b)
+	assertVisionJSONContains(t, s, `"type":"image_url"`, "image_url block")
+	assertVisionJSONContains(t, s, "data:image/png;base64", "base64 data URI")
+	assertVisionJSONContains(t, s, `"type":"text"`, "text block")
+	assertVisionJSONContains(t, s, "describe this", "text content")
+	assertVisionJSONAbsent(t, s, `"type":"file"`, "file block")
+	assertVisionJSONAbsent(t, s, "file_id", "file_id")
+	assertVisionJSONAbsent(t, s, "ms://", "ms:// reference")
+}

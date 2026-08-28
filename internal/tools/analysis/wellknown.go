@@ -29,6 +29,7 @@ import (
 //	encoding.TextUnmarshaler.UnmarshalText params=[[]byte] results=[error]
 //	encoding.BinaryMarshaler.MarshalBinary     params=[] results=[[]byte error]
 //	encoding.BinaryUnmarshaler.UnmarshalBinary params=[[]byte] results=[error]
+//	errors.Wrapper.Unwrap       params=[]       results=[error]
 //	http.Handler.ServeHTTP params=[net/http.ResponseWriter *net/http.Request] results=[]
 //	sql.Scanner.Scan       params=[any] results=[error]
 //
@@ -95,6 +96,12 @@ var wellKnownContractMethods = map[string][]wellKnownContractSignature{
 	"ServeHTTP": {{params: []string{"net/http.ResponseWriter", "*net/http.Request"}, results: nil}},
 	// database/sql.Scanner.Scan
 	"Scan": {{params: []string{"any"}, results: []string{"error"}}},
+	// errors.Wrapper.Unwrap — consumed structurally by errors.Is / errors.As /
+	// fmt.Errorf("%w") (Go 1.13+ protocol). The call sites live inside the
+	// stdlib, so static analysis never sees the method's name; without this
+	// entry every error type with an Unwrap() error method (e.g. MediaSizeError,
+	// agentError) is a DEAD/PRIVATE false positive.
+	"Unwrap": {{params: nil, results: []string{"error"}}},
 	// github.com/charmbracelet/bubbletea.Model.Init
 	"Init": {{params: nil, results: []string{"github.com/charmbracelet/bubbletea.Cmd"}}},
 	// github.com/charmbracelet/bubbletea.Model.Update
