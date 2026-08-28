@@ -296,6 +296,61 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsVision:           false,
 			supportsVideo:            false,
 		},
+		{
+			name:                     "glm-5.3-flash is native multimodal (Z.AI)",
+			model:                    "glm-5.3-flash",
+			supportsReasoningEffort:  false,
+			requiresResponsesAPI:     false,
+			useDeveloperRole:         false,
+			maxTokensField:           MaxTokensFieldLegacy,
+			isDeepSeek:               false,
+			supportsReasoningContent: false,
+			supportsVision:           true,
+		},
+		{
+			name:                     "glm-5.3-flash namespaced (z.ai/glm-5.3-flash)",
+			model:                    "z.ai/glm-5.3-flash",
+			supportsReasoningEffort:  false,
+			requiresResponsesAPI:     false,
+			useDeveloperRole:         false,
+			maxTokensField:           MaxTokensFieldLegacy,
+			isDeepSeek:               false,
+			supportsReasoningContent: false,
+			supportsVision:           true,
+		},
+		{
+			name:                     "glm-5.3 is text-only per Z.AI docs",
+			model:                    "glm-5.3",
+			supportsReasoningEffort:  false,
+			requiresResponsesAPI:     false,
+			useDeveloperRole:         false,
+			maxTokensField:           MaxTokensFieldLegacy,
+			isDeepSeek:               false,
+			supportsReasoningContent: false,
+			supportsVision:           false,
+		},
+		{
+			name:                     "glm-4.7-flash is text-only (allowlist, not suffix heuristic)",
+			model:                    "glm-4.7-flash",
+			supportsReasoningEffort:  false,
+			requiresResponsesAPI:     false,
+			useDeveloperRole:         false,
+			maxTokensField:           MaxTokensFieldLegacy,
+			isDeepSeek:               false,
+			supportsReasoningContent: false,
+			supportsVision:           false,
+		},
+		{
+			name:                     "glm-4.5V not in allowlist (V-suffix heuristic rejected)",
+			model:                    "glm-4.5V",
+			supportsReasoningEffort:  false,
+			requiresResponsesAPI:     false,
+			useDeveloperRole:         false,
+			maxTokensField:           MaxTokensFieldLegacy,
+			isDeepSeek:               false,
+			supportsReasoningContent: false,
+			supportsVision:           false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -393,6 +448,7 @@ func TestResolveCapabilities_FileUploadMode(t *testing.T) {
 		{"deepseek-v4-pro", FileUploadNone},
 		{"deepseek-reasoner", FileUploadNone},
 		{"gpt-5.5", FileUploadNone},
+		{"glm-5.3-flash", FileUploadNone},
 	}
 	for _, tt := range tests {
 		t.Run(tt.model, func(t *testing.T) {
@@ -408,6 +464,7 @@ func TestCapabilities_FileUploadMode_OutOfRange(t *testing.T) {
 		"gpt-5.5", "deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4-flash-vision-exp",
 		"deepseek-reasoner", "kimi-k3", "kimi-k2.7-code", "kimi-k2.6",
 		"claude-opus-4-7", "gemini-3-flash-preview",
+		"glm-5.3-flash",
 	}
 	for _, m := range models {
 		t.Run(m, func(t *testing.T) {

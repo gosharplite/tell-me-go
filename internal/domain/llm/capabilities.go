@@ -98,7 +98,8 @@ type Capabilities struct {
 	// parts are serialized as base64 image_url blocks rather than being
 	// silently dropped.
 	//
-	// Set for: kimi-* models (K3, K2.7, K2.6).
+	// Set for: kimi-* models (K3, K2.7, K2.6), deepseek-*-vision* models,
+	// and the Z.AI GLM allowlist (glm-5.3-flash).
 	SupportsVision bool
 	// SupportsVideo indicates the model natively understands video via
 	// video_url content parts in the messages array. When true, InlineData
@@ -189,6 +190,25 @@ func isKimiK3Model(model string) bool {
 	return model == "kimi-k3" || strings.HasSuffix(model, "/kimi-k3")
 }
 
+// isGLMVisionModel returns true for the Z.AI GLM model IDs that natively
+// accept image input via image_url content blocks. Explicit allowlist —
+// there is no reliable naming convention across GLM generations: older
+// vision models use a V suffix (glm-4.5V, glm-4.6V), text models use bare
+// -flash (glm-4.7-flash is text-only), and the first native multimodal
+// GLM-5 (glm-5.3-flash) has no V marker at all. Extend as Z.AI ships more
+// multimodal GLM variants. Mirrors the isKimiK3Model exact-match pattern.
+func isGLMVisionModel(model string) bool {
+	return model == "glm-5.3-flash" || strings.HasSuffix(model, "/glm-5.3-flash")
+}
+
+// resolveGLMFamily derives GLM capabilities from the model string. For
+// v1 this sets ONLY SupportsVision (images via inline base64 image_url
+// blocks, FileUploadMode None). Video, file input, and reasoning-effort
+// control for GLM are explicitly out of scope (issue #1449).
+func resolveGLMFamily(model string) (supportsVision bool) {
+	return isGLMVisionModel(model)
+}
+
 // resolveGPTFamily derives GPT and o-series capabilities from the model string.
 func resolveGPTFamily(model string) (isReasoner bool, requireResponses bool) {
 	v := parseGPTVersion(model)
@@ -242,6 +262,7 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 	isReasoner, requireResponses := resolveGPTFamily(model)
 	isDeepSeek, dsReasoningContent, dsThinkingToggle, vertexThinkingKwargs, dsVision, dsFileMode := resolveDeepSeekFamily(model, baseURL)
 	kReasoningContent, kThinkingToggle, kVision, kVideo, kFileMode, kReasoningEffort, isKimiK3 := resolveKimiFamily(model)
+	gVision := resolveGLMFamily(model)
 
 	fileUploadMode := FileUploadNone
 	if dsFileMode != FileUploadNone {
@@ -258,7 +279,7 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 		IsDeepSeek:                   isDeepSeek,
 		SupportsReasoningContent:     dsReasoningContent || kReasoningContent,
 		SupportsThinkingToggle:       dsThinkingToggle || kThinkingToggle,
-		SupportsVision:               dsVision || kVision,
+		SupportsVision:               dsVision || kVision || gVision,
 		SupportsVideo:                kVideo,
 		FileUploadMode:               fileUploadMode,
 		RequiresVertexThinkingKwargs: vertexThinkingKwargs,
