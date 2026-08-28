@@ -19,6 +19,7 @@ func TestResolveEndpoint(t *testing.T) {
 		model            string
 		hasTools         bool
 		reasoningEffort  string
+		routeResponses   bool
 		expectedEndpoint string
 	}{
 		{
@@ -26,6 +27,7 @@ func TestResolveEndpoint(t *testing.T) {
 			model:            "gpt-4",
 			hasTools:         true,
 			reasoningEffort:  "high",
+			routeResponses:   false,
 			expectedEndpoint: "/chat/completions",
 		},
 		{
@@ -33,6 +35,7 @@ func TestResolveEndpoint(t *testing.T) {
 			model:            "gpt-5.0",
 			hasTools:         true,
 			reasoningEffort:  "high",
+			routeResponses:   false,
 			expectedEndpoint: "/chat/completions",
 		},
 		{
@@ -40,6 +43,7 @@ func TestResolveEndpoint(t *testing.T) {
 			model:            "gpt-5.4",
 			hasTools:         true,
 			reasoningEffort:  "high",
+			routeResponses:   true,
 			expectedEndpoint: "/responses",
 		},
 		{
@@ -47,6 +51,7 @@ func TestResolveEndpoint(t *testing.T) {
 			model:            "gpt-5.5-preview",
 			hasTools:         true,
 			reasoningEffort:  "medium",
+			routeResponses:   true,
 			expectedEndpoint: "/responses",
 		},
 		{
@@ -54,6 +59,7 @@ func TestResolveEndpoint(t *testing.T) {
 			model:            "gpt-6",
 			hasTools:         true,
 			reasoningEffort:  "low",
+			routeResponses:   true,
 			expectedEndpoint: "/responses",
 		},
 		{
@@ -61,6 +67,7 @@ func TestResolveEndpoint(t *testing.T) {
 			model:            "gpt-5.4",
 			hasTools:         false,
 			reasoningEffort:  "high",
+			routeResponses:   false,
 			expectedEndpoint: "/chat/completions",
 		},
 		{
@@ -68,6 +75,7 @@ func TestResolveEndpoint(t *testing.T) {
 			model:            "gpt-5.4",
 			hasTools:         true,
 			reasoningEffort:  "",
+			routeResponses:   false,
 			expectedEndpoint: "/chat/completions",
 		},
 	}
@@ -78,9 +86,7 @@ func TestResolveEndpoint(t *testing.T) {
 			c := &client{model: tt.model, capabilities: llm.ResolveCapabilities(tt.model, "")}
 			req := &chatRequest{
 				ReasoningEffort: tt.reasoningEffort,
-			}
-			if tt.hasTools {
-				req.Tools = []tool{{Type: "function"}}
+				routeResponses:  tt.routeResponses,
 			}
 
 			endpoint := c.resolveEndpoint(req)

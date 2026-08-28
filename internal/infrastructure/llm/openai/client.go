@@ -187,16 +187,19 @@ type chatRequest struct {
 	// deepseek-ai/deepseek-v3.2-maas, which silently ignores the standard
 	// "thinking" field. See Capabilities.RequiresVertexThinkingKwargs.
 	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
+	// routeResponses is the internal routing decision computed by
+	// resolveAPIStrategy; consumed by resolveEndpoint. Never serialized.
+	routeResponses bool `json:"-"`
 }
 
 type historyItem struct {
-	Type      string                `json:"type"`
-	Role      *string               `json:"role,omitempty"`
-	Content   []requestContentBlock `json:"content,omitempty"`
-	CallID    *string               `json:"call_id,omitempty"`
-	Name      *string               `json:"name,omitempty"`      // For function_call
-	Arguments *string               `json:"arguments,omitempty"` // For function_call
-	Output    *string               `json:"output,omitempty"`    // For function_call_output
+	Type      string  `json:"type"`
+	Role      *string `json:"role,omitempty"`
+	Content   []any   `json:"content,omitempty"` // requestContentBlock (text) or requestInputImageBlock (image); mixed []any
+	CallID    *string `json:"call_id,omitempty"`
+	Name      *string `json:"name,omitempty"`      // For function_call
+	Arguments *string `json:"arguments,omitempty"` // For function_call
+	Output    *string `json:"output,omitempty"`    // For function_call_output
 }
 
 type reasoningConfig struct {
