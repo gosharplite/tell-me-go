@@ -226,12 +226,18 @@ func resolveGLMFamily(model string) (supportsVision, supportsReasoningContent bo
 }
 
 // resolveGPTFamily derives GPT and o-series capabilities from the model string.
-func resolveGPTFamily(model string) (isReasoner bool, requireResponses bool) {
+// SupportsVision (D2, issue #1448): ALL gpt-5.x models are vision-capable via
+// isGpt5OrNewer — no allowlist, no separate threshold. Note gpt-5.0–5.3 do NOT
+// RequireResponsesAPI: their image input flows through the existing Chat
+// Completions image_url path; only RequiresResponsesAPI models route images
+// to /responses (spec §3 routing formula).
+func resolveGPTFamily(model string) (isReasoner bool, requireResponses bool, supportsVision bool) {
 	v := parseGPTVersion(model)
 	isReasoner = strings.HasPrefix(model, "o1") ||
 		strings.HasPrefix(model, "o3") ||
 		isGpt5OrNewer(v)
 	requireResponses = isGpt54OrNewer(model)
+	supportsVision = isGpt5OrNewer(v) // D2: all gpt-5+
 	return
 }
 
@@ -269,13 +275,22 @@ func resolveKimiFamily(model string) (supportsReasoningContent, supportsThinking
 	return
 }
 
+// supportsVisionFor resolves the vision-capability union across the
+// OpenAI-compatible families (DeepSeek, Kimi, GLM, GPT). Extracted from
+// ResolveCapabilities so that function stays at the CC <= 10 policy
+// threshold — every family or axis added to the union would otherwise
+// creep it over the boundary (issue #1448, T2 adjudication: Option B).
+func supportsVisionFor(dsVision, kVision, gVision, gptVision bool) bool {
+	return dsVision || kVision || gVision || gptVision
+}
+
 // ResolveCapabilities returns the capability set for a given model name and
 // provider base URL. The base URL is required for transport-conditional
 // capabilities such as RequiresVertexThinkingKwargs. Pass an empty string
 // if the URL is not available; transport-conditional capabilities will
 // default to false.
 func ResolveCapabilities(model, baseURL string) Capabilities {
-	isReasoner, requireResponses := resolveGPTFamily(model)
+	isReasoner, requireResponses, gptVision := resolveGPTFamily(model)
 	isDeepSeek, dsReasoningContent, dsThinkingToggle, vertexThinkingKwargs, dsVision, dsFileMode := resolveDeepSeekFamily(model, baseURL)
 	kReasoningContent, kThinkingToggle, kVision, kVideo, kFileMode, kReasoningEffort, isKimiK3 := resolveKimiFamily(model)
 	gVision, gReasoningContent := resolveGLMFamily(model)
@@ -295,7 +310,7 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 		IsDeepSeek:                   isDeepSeek,
 		SupportsReasoningContent:     dsReasoningContent || kReasoningContent || gReasoningContent,
 		SupportsThinkingToggle:       dsThinkingToggle || kThinkingToggle,
-		SupportsVision:               dsVision || kVision || gVision,
+		SupportsVision:               supportsVisionFor(dsVision, kVision, gVision, gptVision),
 		SupportsVideo:                kVideo,
 		FileUploadMode:               fileUploadMode,
 		RequiresVertexThinkingKwargs: vertexThinkingKwargs,
