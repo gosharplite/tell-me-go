@@ -15,6 +15,26 @@ import (
 var errUnhandledBlockType = errors.New("unhandled content block type")
 var errMissingToolID = errors.New("tool_use content block missing ID")
 
+// errUnhandledInputBlockType is the INPUT-side sentinel. Unlike the
+// output-side errUnhandledBlockType (suppressible via the ADR-024 errors.Is
+// guard in processDirectOutputItem), the input side is NEVER suppressible:
+// an unconvertible input block is a spec violation and must abort the turn
+// before any HTTP request.
+var errUnhandledInputBlockType = errors.New("unhandled input content block type")
+
+// errVideoInputNotImplemented marks video input on the Responses API —
+// explicitly out of scope (issue #1447). Fail-loud, never dropped.
+var errVideoInputNotImplemented = errors.New("video input on the Responses API is not implemented")
+
+// requestInputImageBlock is a Responses API input_image content block.
+// image_url is a STRING data URI (unlike the Chat Completions image_url
+// object shape).
+type requestInputImageBlock struct {
+	Type     string `json:"type"` // "input_image"
+	ImageURL string `json:"image_url"`
+	Detail   string `json:"detail,omitempty"` // "auto"
+}
+
 // ---------------------------------------------------------------------------
 // Responses API sink
 // ---------------------------------------------------------------------------
@@ -22,26 +42,24 @@ var errMissingToolID = errors.New("tool_use content block missing ID")
 type responsesSink struct {
 	client *client
 	items  []historyItem
+	err    error // first fail-loud input-conversion error; aborts toResponsesInput
+}
+
+// fail records the first input-conversion error. Subsequent failures are
+// ignored — the first one is the root cause surfaced to the caller.
+func (s *responsesSink) fail(err error) {
+	if s.err == nil {
+		s.err = err
+	}
 }
 
 func (s *responsesSink) AddMessage(role string, content any, reasoning *string, toolCalls []toolCall) {
 	r := role
-	// content is either a string (text-only) or []any (mixed text+image blocks).
-	// Vision-capable models use the standard sink; the responses sink only
-	// sees string content. Log a warning if non-string content arrives —
-	// no model has both SupportsVision + RequiresResponsesAPI today.
-	text, ok := content.(string)
-	if !ok {
-		s.client.logger.Warn("responses_sink_non_string_content",
-			"model", s.client.model,
-			"note", "images in content dropped — /responses API not used with vision models")
-		return
+	blocks := s.toResponseContentBlocks(role, content)
+	if s.err != nil {
+		return // fail-loud: append nothing
 	}
-	s.items = append(s.items, historyItem{
-		Type:    "message",
-		Role:    &r,
-		Content: []requestContentBlock{{Type: s.client.resolveBlockType(role), Text: text}},
-	})
+	s.items = append(s.items, historyItem{Type: "message", Role: &r, Content: blocks})
 	for _, tc := range toolCalls {
 		cid := tc.ID
 		name := tc.Function.Name
@@ -76,6 +94,56 @@ func (c *client) resolveBlockType(role string) string {
 	return "input_text"
 }
 
+// toResponseContentBlocks converts a message's content value (string or
+// []any of Chat Completions content blocks) into Responses API input
+// content blocks. On any unconvertible element it records the failure on
+// the sink (fail-loud) and returns nil — AddMessage then appends nothing
+// and toResponsesInput aborts before any HTTP request.
+func (s *responsesSink) toResponseContentBlocks(role string, content any) []any {
+	switch v := content.(type) {
+	case string:
+		return []any{requestContentBlock{Type: s.client.resolveBlockType(role), Text: v}}
+	case []any:
+		blocks := make([]any, 0, len(v))
+		for _, b := range v {
+			block, ok := s.convertInputBlock(role, b)
+			if !ok {
+				return nil
+			}
+			blocks = append(blocks, block)
+		}
+		return blocks
+	default:
+		s.fail(fmt.Errorf("%w: %T", errUnhandledInputBlockType, content))
+		return nil
+	}
+}
+
+// convertInputBlock converts a single Chat Completions content block to its
+// Responses API counterpart. Returns ok=false (after recording the failure
+// on the sink) when the block cannot be converted: an image block on a
+// non-vision model is a gate-agreement violation, video input is not
+// implemented (issue #1447), and any unknown block type is a spec
+// violation — all fail-loud, never dropped.
+func (s *responsesSink) convertInputBlock(role string, b any) (any, bool) {
+	switch block := b.(type) {
+	case requestContentBlock:
+		return requestContentBlock{Type: s.client.resolveBlockType(role), Text: block.Text}, true
+	case imageURLBlock:
+		if !s.client.capabilities.SupportsVision {
+			s.fail(fmt.Errorf("image_url input block on the Responses API but SupportsVision is false: %w", errUnhandledInputBlockType))
+			return nil, false
+		}
+		return requestInputImageBlock{Type: "input_image", ImageURL: block.ImageURL.URL, Detail: "auto"}, true
+	case videoURLBlock:
+		s.fail(errVideoInputNotImplemented)
+		return nil, false
+	default:
+		s.fail(fmt.Errorf("%w: %T", errUnhandledInputBlockType, b))
+		return nil, false
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Responses API input conversion
 // ---------------------------------------------------------------------------
@@ -88,6 +156,9 @@ func (c *client) toResponsesInput(ctx context.Context, history []*llm.Content, t
 		if err := c.appendMessagesFromHistoryItem(ctx, sink, h, ta, &personaInjected); err != nil {
 			return nil, err
 		}
+	}
+	if sink.err != nil {
+		return nil, sink.err // fail-loud: abort before any HTTP request
 	}
 	return sink.items, nil
 }

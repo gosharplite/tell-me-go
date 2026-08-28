@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -82,12 +83,37 @@ func (c *client) toStandardMessages(ctx context.Context, history []*llm.Content,
 // API strategy & budget resolution
 // ---------------------------------------------------------------------------
 
+// historyHasImage reports whether any non-system part in the FULL history
+// carries image InlineData. Full-history scan makes the routing decision
+// sticky for gpt-5.4+ (RequiresResponsesAPI) sessions: once an image enters
+// the history, every subsequent turn still routes to /responses. Derived,
+// never stored — the client is process-cached (lazyClient), so a stored
+// latch would leak across sessions.
+func historyHasImage(history []*llm.Content) bool {
+	for _, h := range history {
+		if h.Role == "system" {
+			continue
+		}
+		for _, p := range h.Parts {
+			if p.InlineData != nil && len(p.InlineData.Data) > 0 && strings.HasPrefix(p.InlineData.MIMEType, "image/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // resolveAPIStrategy decides between the standard and /responses API
-// surfaces based on model capabilities and the presence of tools with
-// a reasoning-effort header.
-func (c *client) resolveAPIStrategy(toolCount int) apiStrategy {
+// surfaces. Formula (spec §3): the /responses surface is used when the
+// model RequiresResponsesAPI AND (the full history contains an image —
+// full-history scan, sticky while the image is present — OR tools are
+// declared with a reasoning_effort header). gpt-5.0–5.3 image turns stay
+// on /chat/completions (RequiresResponsesAPI false); GLM/DeepSeek/Kimi
+// cannot be captured; the gpt-5.4 text-only auto rule is preserved.
+func (c *client) resolveAPIStrategy(toolCount int, history []*llm.Content) apiStrategy {
 	effort, hasEffort := c.headers["reasoning_effort"]
-	useResponses := c.capabilities.RequiresResponsesAPI && toolCount > 0 && hasEffort
+	useResponses := c.capabilities.RequiresResponsesAPI &&
+		(historyHasImage(history) || (toolCount > 0 && hasEffort))
 	return apiStrategy{useResponses: useResponses, effort: effort, hasEffort: hasEffort}
 }
 
@@ -132,7 +158,13 @@ func (c *client) buildRequestBody(ctx context.Context, strat apiStrategy, histor
 			return nil, err
 		}
 		req.Input = items
-		req.Reasoning = &reasoningConfig{Effort: strat.effort}
+		// Omit the reasoning object entirely on no-effort image-forced turns
+		// (spec §3: never "reasoning":{}). Provider acceptance of the omission
+		// is an ADR open item (deferred, needs-credentials) — the omission
+		// itself is the required code contract.
+		if strat.hasEffort {
+			req.Reasoning = &reasoningConfig{Effort: strat.effort}
+		}
 	} else {
 		messages, err := c.toStandardMessages(ctx, history, ta)
 		if err != nil {
@@ -181,12 +213,13 @@ func (c *client) injectTransportHints(req *chatRequest) {
 // to focused helpers for API strategy, body assembly, output budget,
 // and transport hints.
 func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, ta *turnAssets) (*chatRequest, error) {
-	strat := c.resolveAPIStrategy(len(toolDecls))
+	strat := c.resolveAPIStrategy(len(toolDecls), history)
 
 	req, err := c.buildRequestBody(ctx, strat, history, toolDecls, ta)
 	if err != nil {
 		return nil, err
 	}
+	req.routeResponses = strat.useResponses
 
 	c.applyOutputBudget(req, strat.useResponses)
 
@@ -216,8 +249,11 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 // HTTP plumbing
 // ---------------------------------------------------------------------------
 
+// resolveEndpoint is a pure read of the routing hint computed by
+// resolveAPIStrategy (routeResponses). No lossy re-derivation from
+// request fields — the decision is made exactly once, up front.
 func (c *client) resolveEndpoint(req *chatRequest) string {
-	if c.capabilities.RequiresResponsesAPI && len(req.Tools) > 0 && (req.Reasoning != nil || req.ReasoningEffort != "") {
+	if req.routeResponses {
 		return "/responses"
 	}
 	return "/chat/completions"

@@ -187,16 +187,19 @@ type chatRequest struct {
 	// deepseek-ai/deepseek-v3.2-maas, which silently ignores the standard
 	// "thinking" field. See Capabilities.RequiresVertexThinkingKwargs.
 	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
+	// routeResponses is the internal routing decision computed by
+	// resolveAPIStrategy; consumed by resolveEndpoint. Never serialized.
+	routeResponses bool `json:"-"`
 }
 
 type historyItem struct {
-	Type      string                `json:"type"`
-	Role      *string               `json:"role,omitempty"`
-	Content   []requestContentBlock `json:"content,omitempty"`
-	CallID    *string               `json:"call_id,omitempty"`
-	Name      *string               `json:"name,omitempty"`      // For function_call
-	Arguments *string               `json:"arguments,omitempty"` // For function_call
-	Output    *string               `json:"output,omitempty"`    // For function_call_output
+	Type      string  `json:"type"`
+	Role      *string `json:"role,omitempty"`
+	Content   []any   `json:"content,omitempty"` // requestContentBlock (text) or requestInputImageBlock (image); mixed []any
+	CallID    *string `json:"call_id,omitempty"`
+	Name      *string `json:"name,omitempty"`      // For function_call
+	Arguments *string `json:"arguments,omitempty"` // For function_call
+	Output    *string `json:"output,omitempty"`    // For function_call_output
 }
 
 type reasoningConfig struct {
@@ -772,6 +775,19 @@ func (c *client) prepareMediaAssets(ctx context.Context, parts []*llm.Part, reso
 
 	if c.capabilities.FileUploadMode == llm.FileUploadDeepSeek {
 		if err := c.checkDeepSeekMediaSizes(out); err != nil {
+			return ta, out, err
+		}
+	}
+
+	// D3 (issue #1448): the 2048 px longest-edge dimension guard applies to
+	// the /responses image path — gated on RequiresResponsesAPI so it covers
+	// exactly the image turns that route to /responses (gpt-5.4+). GLM and
+	// DeepSeek vision are excluded (RequiresResponsesAPI false — ADR-071's
+	// no-inline-guard for GLM is preserved). gpt-5.0–5.3 Chat Completions
+	// image turns are UNGUARDED by design — deferred with the untested
+	// tool+image combination (ADR open item).
+	if c.capabilities.RequiresResponsesAPI {
+		if err := c.checkResponsesImageDimensions(out); err != nil {
 			return ta, out, err
 		}
 	}
