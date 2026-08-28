@@ -365,10 +365,23 @@ func (e *Dispatcher) extractFunctionCalls(respContent *llm.Content) []*llm.Funct
 	return functionCalls
 }
 
+// AssembleResponse builds the user-role turn carrying tool outputs back to
+// the LLM. Parts are appended in TWO passes — every InlineData (media) part
+// first, then every FunctionResponse part — because the Gemini/Vertex AI
+// parser invalidates a user turn whose FunctionResponse part precedes an
+// InlineData part (cf. the media-first ordering comment at
+// internal/infrastructure/llm/openai/client.go). See #1441 and #1442: with
+// the reversed order the preceding model turn (containing the FunctionCall)
+// appears unanswered, which triggers "Error 400: Requests ending with a
+// model turn are not supported" on the next inference cycle. #1442 fixed the
+// single-result case (InlineData before FunctionResponse within one result);
+// the two-pass assembly additionally guarantees ALL InlineData parts precede
+// ANY FunctionResponse part for the parallel multi-tool batch case that
+// #1442's single-result fix missed.
 func (e *Dispatcher) AssembleResponse(calls []*llm.FunctionCall, results []tools.ToolResult) *llm.Content {
 	var responseParts []*llm.Part
-	for i, tr := range results {
-		responseParts = append(responseParts, e.strategy.Format(calls[i], tr))
+	// Pass 1: all media parts, in result index order (blob order preserved).
+	for _, tr := range results {
 		for _, b := range tr.BinaryData {
 			responseParts = append(responseParts, &llm.Part{
 				InlineData: &llm.Blob{
@@ -377,6 +390,10 @@ func (e *Dispatcher) AssembleResponse(calls []*llm.FunctionCall, results []tools
 				},
 			})
 		}
+	}
+	// Pass 2: all FunctionResponse parts, in result index order, after media.
+	for i, tr := range results {
+		responseParts = append(responseParts, e.strategy.Format(calls[i], tr))
 	}
 	return &llm.Content{
 		Role:  "user",

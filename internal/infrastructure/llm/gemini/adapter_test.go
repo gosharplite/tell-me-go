@@ -286,3 +286,197 @@ func TestHydrateAsset_Errors(t *testing.T) {
 		}
 	})
 }
+
+func TestToSDKContent_MixedUserTurn_OrdersInlineDataFirst(t *testing.T) {
+	c := &llm.Content{Role: "user", Parts: []*llm.Part{
+		{FunctionResponse: &llm.FunctionResponse{ID: "f0", Name: "tool_a", Response: map[string]interface{}{"result": "r0"}}},
+		{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("b0")}},
+		{FunctionResponse: &llm.FunctionResponse{ID: "f1", Name: "tool_b", Response: map[string]interface{}{"result": "r1"}}},
+		{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("b1")}},
+	}}
+
+	parts := toSDKContent(context.Background(), c, nil).Parts
+
+	if len(parts) != 4 {
+		t.Fatalf("expected 4 parts, got %d", len(parts))
+	}
+	if parts[0].InlineData == nil || parts[0].FunctionResponse != nil {
+		t.Errorf("parts[0]: expected InlineData only, got %+v", parts[0])
+	}
+	if parts[1].InlineData == nil || parts[1].FunctionResponse != nil {
+		t.Errorf("parts[1]: expected InlineData only, got %+v", parts[1])
+	}
+	if parts[2].FunctionResponse == nil || parts[2].InlineData != nil {
+		t.Errorf("parts[2]: expected FunctionResponse only, got %+v", parts[2])
+	}
+	if parts[3].FunctionResponse == nil || parts[3].InlineData != nil {
+		t.Errorf("parts[3]: expected FunctionResponse only, got %+v", parts[3])
+	}
+	if string(parts[0].InlineData.Data) != "b0" {
+		t.Errorf("parts[0]: expected data %q, got %q", "b0", parts[0].InlineData.Data)
+	}
+	if parts[2].FunctionResponse.ID != "f0" {
+		t.Errorf("parts[2]: expected FR ID %q, got %q", "f0", parts[2].FunctionResponse.ID)
+	}
+	if parts[3].FunctionResponse.ID != "f1" {
+		t.Errorf("parts[3]: expected FR ID %q, got %q", "f1", parts[3].FunctionResponse.ID)
+	}
+}
+
+func TestToSDKContent_PoisonedPersistedShape_Normalizes(t *testing.T) {
+	const (
+		asset0 = "asset-0"
+		asset1 = "asset-1"
+	)
+	blob0 := []byte("resolved-0")
+	blob1 := []byte("resolved-1")
+	resolver := &mockResolver{
+		resolveFunc: func(ctx context.Context, assetID string) ([]byte, error) {
+			switch assetID {
+			case asset0:
+				return blob0, nil
+			case asset1:
+				return blob1, nil
+			default:
+				return nil, nil
+			}
+		},
+	}
+
+	// Blob parts in the persisted shape: AssetID set + InlineData with nil
+	// Data (exactly what prepareForStorage writes and Load re-parses).
+	c := &llm.Content{Role: "user", Parts: []*llm.Part{
+		{FunctionResponse: &llm.FunctionResponse{ID: "f0", Name: "tool_a", Response: map[string]interface{}{"result": "r0"}}},
+		{AssetID: asset0, InlineData: &llm.Blob{MIMEType: "image/png"}},
+		{FunctionResponse: &llm.FunctionResponse{ID: "f1", Name: "tool_b", Response: map[string]interface{}{"result": "r1"}}},
+		{AssetID: asset1, InlineData: &llm.Blob{MIMEType: "image/png"}},
+	}}
+
+	parts := toSDKContent(context.Background(), c, resolver).Parts
+
+	if len(parts) != 4 {
+		t.Fatalf("expected 4 parts, got %d", len(parts))
+	}
+	// Order: [blob0, blob1, FR0, FR1].
+	if parts[0].InlineData == nil || parts[0].FunctionResponse != nil {
+		t.Errorf("parts[0]: expected InlineData only, got %+v", parts[0])
+	}
+	if parts[1].InlineData == nil || parts[1].FunctionResponse != nil {
+		t.Errorf("parts[1]: expected InlineData only, got %+v", parts[1])
+	}
+	if parts[2].FunctionResponse == nil || parts[2].FunctionResponse.ID != "f0" {
+		t.Errorf("parts[2]: expected FR f0, got %+v", parts[2])
+	}
+	if parts[3].FunctionResponse == nil || parts[3].FunctionResponse.ID != "f1" {
+		t.Errorf("parts[3]: expected FR f1, got %+v", parts[3])
+	}
+	// Hydration proof: classification ran on the post-hydration wire shape,
+	// not the persisted nil-Data shape — the InlineData blobs must carry the
+	// resolver bytes for their AssetIDs.
+	if string(parts[0].InlineData.Data) != "resolved-0" {
+		t.Errorf("parts[0]: expected hydrated data %q, got %q", blob0, parts[0].InlineData.Data)
+	}
+	if string(parts[1].InlineData.Data) != "resolved-1" {
+		t.Errorf("parts[1]: expected hydrated data %q, got %q", blob1, parts[1].InlineData.Data)
+	}
+}
+
+func TestToSDKContent_OtherPartsMoveToEnd(t *testing.T) {
+	tests := []struct {
+		name    string
+		parts   []*llm.Part
+		wantLen int
+		check   func(t *testing.T, parts []*genai.Part)
+	}{
+		{
+			name: "warning before blob and FR",
+			parts: []*llm.Part{
+				{Text: "w"},
+				{FunctionResponse: &llm.FunctionResponse{ID: "f0", Name: "tool_a", Response: map[string]interface{}{"result": "r0"}}},
+				{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("b0")}},
+			},
+			wantLen: 3,
+			check: func(t *testing.T, parts []*genai.Part) {
+				if parts[0].InlineData == nil || parts[0].FunctionResponse != nil {
+					t.Errorf("parts[0]: expected InlineData only, got %+v", parts[0])
+				}
+				if parts[1].FunctionResponse == nil || parts[1].InlineData != nil {
+					t.Errorf("parts[1]: expected FunctionResponse only, got %+v", parts[1])
+				}
+				if parts[2].Text != "w" {
+					t.Errorf("parts[2]: expected warning text %q, got %q", "w", parts[2].Text)
+				}
+			},
+		},
+		{
+			name: "interleaved warning, blobs and FRs",
+			parts: []*llm.Part{
+				{FunctionResponse: &llm.FunctionResponse{ID: "f0", Name: "tool_a", Response: map[string]interface{}{"result": "r0"}}},
+				{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("b0")}},
+				{Text: "w"},
+				{FunctionResponse: &llm.FunctionResponse{ID: "f1", Name: "tool_b", Response: map[string]interface{}{"result": "r1"}}},
+				{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("b1")}},
+			},
+			wantLen: 5,
+			check: func(t *testing.T, parts []*genai.Part) {
+				if parts[0].InlineData == nil || parts[1].InlineData == nil {
+					t.Errorf("parts[0..1]: expected InlineData, got %+v / %+v", parts[0], parts[1])
+				}
+				if parts[2].FunctionResponse == nil || parts[2].FunctionResponse.ID != "f0" {
+					t.Errorf("parts[2]: expected FR f0, got %+v", parts[2])
+				}
+				if parts[3].FunctionResponse == nil || parts[3].FunctionResponse.ID != "f1" {
+					t.Errorf("parts[3]: expected FR f1, got %+v", parts[3])
+				}
+				if parts[4].Text != "w" {
+					t.Errorf("parts[4]: expected warning text %q, got %q", "w", parts[4].Text)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &llm.Content{Role: "user", Parts: tt.parts}
+			parts := toSDKContent(context.Background(), c, nil).Parts
+			if len(parts) != tt.wantLen {
+				t.Fatalf("expected %d parts, got %d", tt.wantLen, len(parts))
+			}
+			tt.check(t, parts)
+		})
+	}
+}
+
+func TestToSDKContent_ModelRole_MixedParts_NoReorder(t *testing.T) {
+	// The role gate must leave every non-user role untouched, even when the
+	// content mixes FunctionResponse with InlineData (FR before blob).
+	tests := []struct {
+		name string
+		role string
+	}{
+		{name: "model role", role: "model"},
+		{name: "system role", role: "system"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &llm.Content{Role: tt.role, Parts: []*llm.Part{
+				{FunctionResponse: &llm.FunctionResponse{ID: "f0", Name: "tool_a", Response: map[string]interface{}{"result": "r0"}}},
+				{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("b0")}},
+			}}
+
+			parts := toSDKContent(context.Background(), c, nil).Parts
+
+			if len(parts) != 2 {
+				t.Fatalf("expected 2 parts, got %d", len(parts))
+			}
+			// Slice order must be IDENTICAL to input: FR stays BEFORE the blob.
+			if parts[0].FunctionResponse == nil {
+				t.Errorf("parts[0]: expected FunctionResponse (no reorder for role %q), got %+v", tt.role, parts[0])
+			}
+			if parts[1].InlineData == nil {
+				t.Errorf("parts[1]: expected InlineData (no reorder for role %q), got %+v", tt.role, parts[1])
+			}
+		})
+	}
+}
