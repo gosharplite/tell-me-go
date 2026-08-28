@@ -98,8 +98,8 @@ type Capabilities struct {
 	// parts are serialized as base64 image_url blocks rather than being
 	// silently dropped.
 	//
-	// Set for: kimi-* models (K3, K2.7, K2.6) and the Z.AI GLM allowlist
-	// (glm-5.3-flash).
+	// Set for: kimi-* models (K3, K2.7, K2.6), deepseek-*-vision* models,
+	// and the Z.AI GLM allowlist (glm-5.3-flash).
 	SupportsVision bool
 	// SupportsVideo indicates the model natively understands video via
 	// video_url content parts in the messages array. When true, InlineData
