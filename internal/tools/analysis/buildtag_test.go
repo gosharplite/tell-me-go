@@ -66,3 +66,28 @@ func TestBuildTagExcluded(t *testing.T) {
 		require.Equal(t, "windows", label)
 	})
 }
+
+// TestHeaderBuildLabel is the issue #1457 direct-call contract for
+// headerBuildLabel. Direct calls are required: the os.ReadFile error branch
+// (buildtag.go:38-40) is unreachable deterministically through
+// buildTagExcluded — MatchFile errors on a missing file and returns before
+// the call — and permission-based fault injection is host-dependent (root on
+// POSIX, ACLs on Windows), violating ADR-036 determinism. The legacy
+// // +build extraction branch (buildtag.go:47-49) has no coverage through
+// buildTagExcluded either. Host-independent; no GOOS skip.
+func TestHeaderBuildLabel(t *testing.T) {
+	t.Parallel()
+
+	t.Run("unreadable file returns empty", func(t *testing.T) {
+		t.Parallel()
+		got := headerBuildLabel(filepath.Join(t.TempDir(), "missing.go"))
+		require.Empty(t, got)
+	})
+
+	t.Run("legacy +build constraint extracted", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "legacy.go")
+		require.NoError(t, os.WriteFile(path, []byte("// +build anunexpectedtag\n\npackage x\nfunc W() {}\n"), 0644))
+		require.Equal(t, "anunexpectedtag", headerBuildLabel(path))
+	})
+}
