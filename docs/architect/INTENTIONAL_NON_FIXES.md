@@ -453,7 +453,14 @@ catalog a new gap no one reviewed. Policy:
   The package exists to enable deterministic time control in tests across the
   project. Every line of code is either an interface definition, a stdlib
   delegation, or a test fake. There is no business logic to cover.
-- **See**: `internal/pkg/clock/clock.go`
+  Re-anchored 2026-09 (#1455): the file-only See ref was dropped by the
+  coverage matcher (interval-overlap matching requires a line spec), so all
+  15 zero-coverage blocks surfaced as uncataloged gaps; replaced with
+  per-symbol line specs per the #1433 agenttest/helpers.go re-anchor pattern.
+- **See**: `internal/pkg/clock/clock.go:81-83,85-87,89-92,95-97,99-103,106-108`
+  (FakeClock test fakes: Now, Since, Sleep, After, NewTicker, Jitter),
+  `internal/pkg/clock/clock.go:116-118,120-122,124-127,131`
+  (FakeTicker methods + `realTicker.Stop`)
 
 ### ui/tui/progress/renderer.go — glamour render error paths
 

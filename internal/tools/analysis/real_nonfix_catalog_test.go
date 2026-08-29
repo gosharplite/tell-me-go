@@ -260,6 +260,8 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"manager.go capBestBlock error branch", "internal/agent/session/context/manager.go", 571, 573},
 		{"failover.go ExtractDocument body", "internal/infrastructure/llm/failover.go", 131, 133},
 		{"resilient_client.go ExtractDocument body", "internal/infrastructure/llm/resilient_client.go", 106, 108},
+		{"clock.go FakeClock fake methods", "internal/pkg/clock/clock.go", 81, 108},
+		{"clock.go FakeTicker methods and realTicker.Stop", "internal/pkg/clock/clock.go", 116, 131},
 		{"mcp_factory.go resolveServerToken default case", "internal/infrastructure/di/mcp_factory.go", 246, 249},
 		{"mcp_factory.go gh auth token resolver", "internal/infrastructure/di/mcp_factory.go", 73, 75},
 		{"toolchain_factory.go registerSkillsShTools error", "internal/infrastructure/di/toolchain_factory.go", 127, 129},
