@@ -491,6 +491,12 @@ catalog a new gap no one reviewed. Policy:
   structurally unreachable in normal operation, cosmetic degrade only.
   Re-anchored 2026-09 (#1431): lines drifted 746 → 669-676 as the
   #1419-style render-path additions grew the file above the function.
+  Re-scoped 2026-09 (#1455, T6): the closure's success path is now covered
+  deterministically by executing the returned `tea.Cmd` directly
+  (`TestRenderMarkdownAsyncCmd` — no TUI harness required, contrary to the
+  original premise); coverage 13.3% → 81.8%. The two glamour error branches
+  (`model.go:670-672`, `:674-676`) remain uncovered and still justify this
+  record; the See ref still overlaps both.
 - **See**: `internal/ui/tui/progress/model.go:669-676` (`renderMarkdownAsync`)
 
 ### ui/renderer.go — SetWordWrap renderer rebuild error branch
