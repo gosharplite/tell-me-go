@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -73,6 +74,12 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 	// Their ACCEPTED catalog entries are retained (with drift notes) as the
 	// architectural acceptance record. The gate stays RED-first for every
 	// compiled over-threshold function it still measures.
+	//
+	// R2 scope correction (issue #1455): build-tag-excluded files leave the
+	// measured population too — tests/e2e/memory_live_test.go carries
+	// //go:build e2e_live (ADR-068 §8), so TestLivePlurCapturePersists is no
+	// longer walked on a plain host and its gate row is removed. Its ACCEPTED
+	// catalog entry is retained as the architectural acceptance record.
 	expectedCataloged := map[string]funcComplexity{
 		"TestHistoryManager_SetPinned_WithFunctionCall":             {Line: 392, Complexity: 21, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestStartSpinnerLifecycle":                                 {Line: 176, Complexity: 17, FilePath: "internal/ui/renderer_spinner_test.go"},
@@ -116,7 +123,6 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"TestHookCaptureBranchI":                                    {Line: 61, Complexity: 13, FilePath: "internal/agent/memory/hook_test.go"},
 		"TestHookFull":                                              {Line: 359, Complexity: 21, FilePath: "internal/agent/memory/hook_test.go"},
 		"TestInjectorEnabledInsert":                                 {Line: 109, Complexity: 22, FilePath: "internal/agent/memory/injector_test.go"},
-		"TestLivePlurCapturePersists":                               {Line: 285, Complexity: 12, FilePath: "tests/e2e/memory_live_test.go"},
 		"TestNewChatter_MemoryClientLookup":                         {Line: 226, Complexity: 12, FilePath: "internal/app/chatter_test.go"},
 		"newestSourceMTime":                                         {Line: 79, Complexity: 13, FilePath: "tests/e2e/e2e_test.go"},
 		"TestToSDKContent_MixedUserTurn_OrdersInlineDataFirst":      {Line: 290, Complexity: 13, FilePath: "internal/infrastructure/llm/gemini/adapter_test.go"},
@@ -148,6 +154,40 @@ func TestVerifyNonFixCatalog_NoTestdataInComplexityWalk(t *testing.T) {
 				"complexity walk must not traverse testdata/ (R1, issue #1455): got %s", c.FilePath)
 		}
 	}
+}
+
+// TestVerifyNonFixCatalog_NoBuildTagExcludedFunctions is the R2 (issue #1455)
+// end-to-end regression: files excluded by build constraints on the host are
+// skipped by the live-repo complexity walk and reported in NotCompiled, not
+// analyzed. Host-relative by definition — skipped on Windows hosts where
+// these files compile.
+func TestVerifyNonFixCatalog_NoBuildTagExcludedFunctions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("build-tag files compile on windows; guarantee is host-relative")
+	}
+	analyzer := newComplexityAnalyzer(newASTCache("."), &mockSecurityProvider{}, persistencetest.NewPlainOSFileSystem())
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	complexities, skips, err := analyzer.GatherComplexities(context.Background(), repoRoot, nil)
+	require.NoError(t, err)
+
+	for _, c := range complexities {
+		base := filepath.Base(c.FilePath)
+		require.NotEqual(t, "proc_windows.go", base,
+			"build-tag-excluded file must not be analyzed (R2, issue #1455): got %s", c.FilePath)
+		require.NotEqual(t, "shell_windows_test.go", base,
+			"build-tag-excluded file must not be analyzed (R2, issue #1455): got %s", c.FilePath)
+		require.NotEqual(t, "shell_windows_encoding_test.go", base,
+			"build-tag-excluded file must not be analyzed (R2, issue #1455): got %s", c.FilePath)
+	}
+	found := false
+	for _, s := range skips.NotCompiled {
+		if strings.Contains(s, filepath.Join("internal", "tools", "workspace", "shell_windows")) {
+			found = true
+		}
+	}
+	require.True(t, found, "expected at least one shell_windows file reported as not compiled on host; got %v", skips.NotCompiled)
 }
 
 // TestVerifyCoveragePinsMatchLiveCatalog is the coverage-pin regression gate

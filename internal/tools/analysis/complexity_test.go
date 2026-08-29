@@ -161,10 +161,10 @@ func TestProcessFileTask_SemAcquireError(t *testing.T) {
 
 	var complexities []funcComplexity
 	var mu sync.Mutex
-	var skippedErrs []string
+	skips := walkSkips{}
 	var skippedMu sync.Mutex
 
-	err := analyzer.processFileTask(ctx, sem, "test.go", nil, 0, &complexities, &mu, &skippedErrs, &skippedMu)
+	err := analyzer.processFileTask(ctx, sem, "test.go", nil, 0, &complexities, &mu, &skips, &skippedMu)
 	if err == nil {
 		t.Error("expected error from sem.Acquire with cancelled context")
 	}
@@ -583,7 +583,7 @@ func TestGatherComplexities_ContextCancelled_MockFS(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately, before GatherComplexities starts
 
-	complexities, skipped, err := analyzer.GatherComplexities(ctx, "testdata", nil)
+	complexities, skips, err := analyzer.GatherComplexities(ctx, "testdata", nil)
 	if err == nil {
 		t.Fatal("expected error from cancelled context, got nil")
 	}
@@ -593,9 +593,7 @@ func TestGatherComplexities_ContextCancelled_MockFS(t *testing.T) {
 	if complexities != nil {
 		t.Errorf("expected nil complexities on cancellation, got %d", len(complexities))
 	}
-	if skipped != nil {
-		t.Errorf("expected nil skipped on cancellation, got %d", len(skipped))
-	}
+	require.Equal(t, walkSkips{}, skips, "expected zero walkSkips on cancellation")
 }
 
 // TestComplexityAnalyzer_ErrgroupError exercises the g.Wait() error return

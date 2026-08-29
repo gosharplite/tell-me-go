@@ -40,6 +40,14 @@ type funcComplexity struct {
 	FilePath   string
 }
 
+// walkSkips partitions the files the complexity walk skipped, so the tool
+// report can distinguish broken sources (parse errors) from files that are
+// legitimately outside the host build (R2, issue #1455).
+type walkSkips struct {
+	ParseErrors []string // "<path>: <parse error>"
+	NotCompiled []string // "<path>: build tag: <label>"
+}
+
 // normalizeGoWildcard strips a trailing "/..." Go package wildcard from path.
 // "..." at the end of a path means "this directory and all subdirectories"
 // in Go tooling. Since GatherComplexities already walks recursively,
@@ -66,7 +74,7 @@ func (a *defaultComplexityAnalyzer) Analyze(ctx context.Context, args map[string
 		return tools.ToolResult{}, err
 	}
 
-	complexities, skippedErrs, err := a.GatherComplexities(ctx, resolvedPath, hb)
+	complexities, skips, err := a.GatherComplexities(ctx, resolvedPath, hb)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -78,27 +86,32 @@ func (a *defaultComplexityAnalyzer) Analyze(ctx context.Context, args map[string
 		text = a.formatResults(complexities)
 	}
 
-	if len(skippedErrs) > 0 {
-		text += "\n\n⚠️ Skipped " + strconv.Itoa(len(skippedErrs)) +
-			" file(s) due to parse errors:\n" + strings.Join(skippedErrs, "\n")
+	if len(skips.ParseErrors) > 0 {
+		text += "\n\n⚠️ Skipped " + strconv.Itoa(len(skips.ParseErrors)) +
+			" file(s) due to parse errors:\n" + strings.Join(skips.ParseErrors, "\n")
+	}
+
+	if len(skips.NotCompiled) > 0 {
+		text += "\n\nℹ️ Skipped " + strconv.Itoa(len(skips.NotCompiled)) +
+			" file(s) not compiled on host:\n" + strings.Join(skips.NotCompiled, "\n")
 	}
 
 	return tools.ToolResult{Text: text}, nil
 }
 
-func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root string, hb chan<- struct{}) ([]funcComplexity, []string, error) {
+func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root string, hb chan<- struct{}) ([]funcComplexity, walkSkips, error) {
 	g, gCtx := errgroup.WithContext(ctx)
 	sem := semaphore.NewWeighted(a.getConcurrencyLimit())
 
 	var complexities []funcComplexity
 	var mu sync.Mutex
-	var skippedErrs []string
+	skips := walkSkips{}
 	var skippedMu sync.Mutex
 	count := 0
 
-	walkFn := a.makeWalkFunc(root, g, gCtx, sem, hb, &complexities, &mu, &skippedErrs, &skippedMu, &count)
+	walkFn := a.makeWalkFunc(root, g, gCtx, sem, hb, &complexities, &mu, &skips, &skippedMu, &count)
 	if err := a.fs.Walk(ctx, root, walkFn); err != nil {
-		return nil, nil, err
+		return nil, walkSkips{}, err
 	}
 
 	// Coverage gap accepted by architect — the g.Wait() error path
@@ -108,10 +121,10 @@ func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root
 	// returning errors after a successful Walk) requires a filesystem
 	// that fails selectively mid-traversal, which is not reproducible.
 	if err := g.Wait(); err != nil {
-		return nil, nil, fmt.Errorf("gathering complexity metrics: %w", err)
+		return nil, walkSkips{}, fmt.Errorf("gathering complexity metrics: %w", err)
 	}
 
-	return complexities, skippedErrs, nil
+	return complexities, skips, nil
 }
 
 // getConcurrencyLimit returns the number of goroutines to use for parallel
@@ -130,7 +143,7 @@ func (a *defaultComplexityAnalyzer) getConcurrencyLimit() int64 {
 	return limit
 }
 
-func (a *defaultComplexityAnalyzer) makeWalkFunc(root string, g *errgroup.Group, ctx context.Context, sem *semaphore.Weighted, hb chan<- struct{}, complexities *[]funcComplexity, mu *sync.Mutex, skippedErrs *[]string, skippedMu *sync.Mutex, count *int) persistence.WalkFunc {
+func (a *defaultComplexityAnalyzer) makeWalkFunc(root string, g *errgroup.Group, ctx context.Context, sem *semaphore.Weighted, hb chan<- struct{}, complexities *[]funcComplexity, mu *sync.Mutex, skips *walkSkips, skippedMu *sync.Mutex, count *int) persistence.WalkFunc {
 	return func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -153,19 +166,28 @@ func (a *defaultComplexityAnalyzer) makeWalkFunc(root string, g *errgroup.Group,
 		if filepath.Ext(filePath) != ".go" {
 			return nil
 		}
+		// R2 (issue #1455): a file excluded from the host build by build
+		// constraints is never compiled by `go tool` on this host — skip it
+		// synchronously (single-threaded callback, no lock needed) and report
+		// it under NotCompiled instead of analyzing it.
+		if label, excluded := buildTagExcluded(filepath.Dir(filePath), filepath.Base(filePath)); excluded {
+			skips.NotCompiled = append(skips.NotCompiled,
+				fmt.Sprintf("%s: build tag: %s", filePath, label))
+			return nil
+		}
 
 		*count++
 		counter := *count
 		path := filePath
 
 		g.Go(func() error {
-			return a.processFileTask(ctx, sem, path, hb, counter, complexities, mu, skippedErrs, skippedMu)
+			return a.processFileTask(ctx, sem, path, hb, counter, complexities, mu, skips, skippedMu)
 		})
 		return nil
 	}
 }
 
-func (a *defaultComplexityAnalyzer) processFileTask(ctx context.Context, sem *semaphore.Weighted, path string, hb chan<- struct{}, counter int, complexities *[]funcComplexity, mu *sync.Mutex, skippedErrs *[]string, skippedMu *sync.Mutex) error {
+func (a *defaultComplexityAnalyzer) processFileTask(ctx context.Context, sem *semaphore.Weighted, path string, hb chan<- struct{}, counter int, complexities *[]funcComplexity, mu *sync.Mutex, skips *walkSkips, skippedMu *sync.Mutex) error {
 	if err := sem.Acquire(ctx, 1); err != nil {
 		return err
 	}
@@ -181,7 +203,7 @@ func (a *defaultComplexityAnalyzer) processFileTask(ctx context.Context, sem *se
 	fileComplexities, err := a.analyzeFile(path)
 	if err != nil {
 		skippedMu.Lock()
-		*skippedErrs = append(*skippedErrs, fmt.Sprintf("%s: %v", path, err))
+		skips.ParseErrors = append(skips.ParseErrors, fmt.Sprintf("%s: %v", path, err))
 		skippedMu.Unlock()
 		return nil // soft-fail: individual file errors don't stop the entire analysis
 	}
