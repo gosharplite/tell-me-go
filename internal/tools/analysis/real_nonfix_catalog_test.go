@@ -294,6 +294,8 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"container.go GetMCPClient nil-guard", "internal/infrastructure/di/container.go", 284, 286},
 		{"imports.go format.Node error branch", "internal/tools/analysis/imports.go", 50, 52},
 		{"process_executor.go RunCommand Start error", "internal/tools/workspace/process_executor.go", 90, 92},
+		{"process_executor.go setupCommand empty-parts guard", "internal/tools/workspace/process_executor.go", 131, 133},
+		{"process_executor.go resolveAndValidateOutputPath windows branch", "internal/tools/workspace/process_executor.go", 368, 378},
 		{"analysistest MockSymbolIndex HarvestDeclarations stub", "internal/tools/analysis/analysistest/mock_index.go", 61, 63},
 		{"process_executor.go LookPath delegation", "internal/tools/workspace/process_executor.go", 496, 498},
 		{"darwin system_metrics GetCPUStats fallback", "internal/infrastructure/telemetry/system_metrics_darwin_cgo.go", 38, 41},

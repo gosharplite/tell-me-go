@@ -654,12 +654,15 @@ catalog a new gap no one reviewed. Policy:
     `state.SetInfo` (`AtomicWrite` disk fault), `getConcurrencyLimit` (`runtime.NumCPU() < 1`
     structurally unreachable), `processWatcherEvents` (goroutine timing).
   Re-anchored 2026-09: sqlite_store RowsAffected refs 200/218 → 207-209/224-226 (actual gap lines); state.go:56 ref dropped (AtomicWrite branch covered).
+  Re-anchored 2026-09 (#1455): setupCommand 118→131-133 and
+  resolveAndValidateOutputPath Windows branch 356→368-378 as preceding code
+  grew; verified against the live source and a fresh coverage profile.
 - **See**: Inline architect-acceptance comments at each gap site:
   `internal/tools/analysis/propagate_named_interface_assertions.go:62`,
   `internal/tools/analysis/propagate_transitive.go:32`,
   `internal/tools/analysis/propagate_transitive.go:128`,
-  `internal/tools/workspace/process_executor.go:118`,
-  `internal/tools/workspace/process_executor.go:356`,
+  `internal/tools/workspace/process_executor.go:131-133`,
+  `internal/tools/workspace/process_executor.go:368-378`,
   `internal/tools/workspace/pipeline.go:56`,
   `internal/tools/analysis/complexity.go:125`,
   `internal/infrastructure/persistence/sqlite_store.go:207-209,224-226`,
@@ -1050,6 +1053,11 @@ catalog a new gap no one reviewed. Policy:
   acceptance class as `TestHistoryNavigation_CompleteWorkflow` (CC=15) —
   sequential workflow where steps depend on prior state; splitting would
   duplicate the expensive live-store setup. New 2026-09 (#1410, T7).
+  Re-scoped 2026-09 (#1455): build-tag-excluded files are skipped by the
+  complexity walk (R2); `tests/e2e/memory_live_test.go` carries
+  `//go:build e2e_live` (ADR-068 §8) and is never compiled on a plain host, so
+  the mechanical gate no longer measures this function. Entry retained as the
+  architectural acceptance record; recorded CC values remain valid.
 - **See**: `tests/e2e/memory_live_test.go:285`
 
 ### tests/e2e/e2e_test.go — newestSourceMTime (CC=13)
