@@ -484,8 +484,8 @@ type stubComplexityAnalyzer struct {
 func (s *stubComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	return tools.ToolResult{}, nil
 }
-func (s *stubComplexityAnalyzer) GatherComplexities(ctx context.Context, root string, hb chan<- struct{}) ([]funcComplexity, []string, error) {
-	return s.complexities, nil, s.err
+func (s *stubComplexityAnalyzer) GatherComplexities(ctx context.Context, root string, hb chan<- struct{}) ([]funcComplexity, walkSkips, error) {
+	return s.complexities, walkSkips{}, s.err
 }
 
 func TestCheckComplexity_AllPaths(t *testing.T) {

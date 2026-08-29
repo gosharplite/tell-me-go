@@ -453,7 +453,14 @@ catalog a new gap no one reviewed. Policy:
   The package exists to enable deterministic time control in tests across the
   project. Every line of code is either an interface definition, a stdlib
   delegation, or a test fake. There is no business logic to cover.
-- **See**: `internal/pkg/clock/clock.go`
+  Re-anchored 2026-09 (#1455): the file-only See ref was dropped by the
+  coverage matcher (interval-overlap matching requires a line spec), so all
+  15 zero-coverage blocks surfaced as uncataloged gaps; replaced with
+  per-symbol line specs per the #1433 agenttest/helpers.go re-anchor pattern.
+- **See**: `internal/pkg/clock/clock.go:81-83,85-87,89-92,95-97,99-103,106-108`
+  (FakeClock test fakes: Now, Since, Sleep, After, NewTicker, Jitter),
+  `internal/pkg/clock/clock.go:116-118,120-122,124-127,131`
+  (FakeTicker methods + `realTicker.Stop`)
 
 ### ui/tui/progress/renderer.go — glamour render error paths
 
@@ -484,6 +491,12 @@ catalog a new gap no one reviewed. Policy:
   structurally unreachable in normal operation, cosmetic degrade only.
   Re-anchored 2026-09 (#1431): lines drifted 746 → 669-676 as the
   #1419-style render-path additions grew the file above the function.
+  Re-scoped 2026-09 (#1455, T6): the closure's success path is now covered
+  deterministically by executing the returned `tea.Cmd` directly
+  (`TestRenderMarkdownAsyncCmd` — no TUI harness required, contrary to the
+  original premise); coverage 13.3% → 81.8%. The two glamour error branches
+  (`model.go:670-672`, `:674-676`) remain uncovered and still justify this
+  record; the See ref still overlaps both.
 - **See**: `internal/ui/tui/progress/model.go:669-676` (`renderMarkdownAsync`)
 
 ### ui/renderer.go — SetWordWrap renderer rebuild error branch
@@ -654,12 +667,15 @@ catalog a new gap no one reviewed. Policy:
     `state.SetInfo` (`AtomicWrite` disk fault), `getConcurrencyLimit` (`runtime.NumCPU() < 1`
     structurally unreachable), `processWatcherEvents` (goroutine timing).
   Re-anchored 2026-09: sqlite_store RowsAffected refs 200/218 → 207-209/224-226 (actual gap lines); state.go:56 ref dropped (AtomicWrite branch covered).
+  Re-anchored 2026-09 (#1455): setupCommand 118→131-133 and
+  resolveAndValidateOutputPath Windows branch 356→368-378 as preceding code
+  grew; verified against the live source and a fresh coverage profile.
 - **See**: Inline architect-acceptance comments at each gap site:
   `internal/tools/analysis/propagate_named_interface_assertions.go:62`,
   `internal/tools/analysis/propagate_transitive.go:32`,
   `internal/tools/analysis/propagate_transitive.go:128`,
-  `internal/tools/workspace/process_executor.go:118`,
-  `internal/tools/workspace/process_executor.go:356`,
+  `internal/tools/workspace/process_executor.go:131-133`,
+  `internal/tools/workspace/process_executor.go:368-378`,
   `internal/tools/workspace/pipeline.go:56`,
   `internal/tools/analysis/complexity.go:125`,
   `internal/infrastructure/persistence/sqlite_store.go:207-209,224-226`,
@@ -1010,7 +1026,10 @@ catalog a new gap no one reviewed. Policy:
   it (T5 measurement); CC re-verified 13 (unchanged). Re-anchored 2026-09
   (#1412): line drifted 142→179 as the T1 delayFile/delayTool server fields
   and FAKE_PLUR_DELAY_* env wiring grew the file above it; CC re-verified
-  13 (unchanged).
+  13 (unchanged). Re-scoped 2026-09 (#1455): `testdata/` directories are
+  excluded from the complexity walk (R1); the mechanical gate no longer
+  measures these functions. Entry retained as the architectural acceptance
+  record; recorded CC values remain valid.
 - **See**: `tests/e2e/testdata/fakeplur/main.go:179`
 
 ### tests/e2e/testdata/fakeplur/main.go — (*server).dispatchTool (CC=14)
@@ -1029,7 +1048,10 @@ catalog a new gap no one reviewed. Policy:
   `plur_learn_batch` case were added (T5). Re-anchored 2026-09 (#1412):
   line drifted 381→419 as the T1 delayFile/delayTool plumbing grew the file
   above it; CC re-measured 13→14 — the delay guard adds one decision point,
-  still the same dispatch-structural class.
+  still the same dispatch-structural class. Re-scoped 2026-09 (#1455):
+  `testdata/` directories are excluded from the complexity walk (R1); the
+  mechanical gate no longer measures these functions. Entry retained as the
+  architectural acceptance record; recorded CC values remain valid.
 - **See**: `tests/e2e/testdata/fakeplur/main.go:419`
 
 ### tests/e2e/memory_live_test.go — TestLivePlurCapturePersists (CC=12)
@@ -1044,6 +1066,11 @@ catalog a new gap no one reviewed. Policy:
   acceptance class as `TestHistoryNavigation_CompleteWorkflow` (CC=15) —
   sequential workflow where steps depend on prior state; splitting would
   duplicate the expensive live-store setup. New 2026-09 (#1410, T7).
+  Re-scoped 2026-09 (#1455): build-tag-excluded files are skipped by the
+  complexity walk (R2); `tests/e2e/memory_live_test.go` carries
+  `//go:build e2e_live` (ADR-068 §8) and is never compiled on a plain host, so
+  the mechanical gate no longer measures this function. Entry retained as the
+  architectural acceptance record; recorded CC values remain valid.
 - **See**: `tests/e2e/memory_live_test.go:285`
 
 ### tests/e2e/e2e_test.go — newestSourceMTime (CC=13)

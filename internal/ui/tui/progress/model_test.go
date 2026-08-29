@@ -5,6 +5,7 @@ package progress
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/metricsfmt"
 	"github.com/stretchr/testify/assert"
@@ -1868,4 +1870,311 @@ func TestWaitEventsRenderSpinnerInView(t *testing.T) {
 			assert.True(t, foundFrame, "View() must contain a braille spinner frame")
 		})
 	}
+}
+
+// recordMetricsProvider records GetCPUStats/GetMemoryPercent calls. The first
+// GetCPUStats call returns the fixed (100, 40) baseline; subsequent calls
+// return cumulative totals so a second sample computes a real CPU delta.
+type recordMetricsProvider struct {
+	cpuCalls, memCalls int
+}
+
+func (r *recordMetricsProvider) GetCPUStats() (int64, int64) {
+	r.cpuCalls++
+	return int64(100 * r.cpuCalls), int64(40 * r.cpuCalls)
+}
+
+func (r *recordMetricsProvider) GetMemoryPercent() float64 {
+	r.memCalls++
+	return 42.5
+}
+
+// newDispatchTestModel returns a production-default model (NewModel) wired to
+// an already-closed event channel: an accidental waitForEvent returns
+// channelClosedMsg immediately instead of blocking (ADR-036 — no goroutines,
+// no waits, deterministic primitives only).
+func newDispatchTestModel(t *testing.T, provider ports.SystemMetricsProvider) *model {
+	t.Helper()
+	ch := make(chan events.Event)
+	close(ch)
+	return NewModel(context.Background(), ch, provider).(*model)
+}
+
+// unhandledEvent is an event type the domainEventMsg switch does not know,
+// for asserting the handleDomainEvent fallthrough.
+type unhandledEvent struct{}
+
+func (unhandledEvent) Type() string { return "unhandled" }
+
+func TestModel_Update_Dispatch(t *testing.T) {
+	t.Run("q key quits", func(t *testing.T) {
+		m := newDispatchTestModel(t, nil)
+		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+		require.NotNil(t, cmd)
+		assert.IsType(t, tea.QuitMsg{}, cmd())
+	})
+
+	t.Run("ctrl+c quits", func(t *testing.T) {
+		m := newDispatchTestModel(t, nil)
+		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+		require.NotNil(t, cmd)
+		assert.IsType(t, tea.QuitMsg{}, cmd())
+	})
+
+	t.Run("unmatched key leaves model unchanged", func(t *testing.T) {
+		m := newDispatchTestModel(t, nil)
+		updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		assert.Nil(t, cmd)
+		assert.Equal(t, stateIdle, updated.(*model).currentState)
+		assert.Equal(t, 80, updated.(*model).width)
+		assert.Equal(t, 24, updated.(*model).height)
+	})
+
+	t.Run("window size height above 8 sets body viewport", func(t *testing.T) {
+		m := newDispatchTestModel(t, nil)
+		updated, cmd := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+		assert.Nil(t, cmd)
+		assert.Equal(t, 100, updated.(*model).width)
+		assert.Equal(t, 30, updated.(*model).height)
+		assert.Equal(t, 22, updated.(*model).bodyVP.Height)
+	})
+
+	t.Run("window size height at or below 8 zeroes body viewport", func(t *testing.T) {
+		m := newDispatchTestModel(t, nil)
+		updated, cmd := m.Update(tea.WindowSizeMsg{Width: 100, Height: 6})
+		assert.Nil(t, cmd)
+		assert.Equal(t, 0, updated.(*model).bodyVP.Height)
+	})
+
+	t.Run("matching-generation tick advances frame and reschedules", func(t *testing.T) {
+		m := newDispatchTestModel(t, &recordMetricsProvider{})
+		m.spinner.start("Working", false)
+		updated, cmd := m.Update(spinnerTickMsg{generation: m.spinner.generation})
+		assert.Equal(t, 1, updated.(*model).spinner.frame, "frame must advance 0→1")
+		assert.NotNil(t, cmd, "next tick must be scheduled")
+	})
+
+	t.Run("stale-generation tick is dropped", func(t *testing.T) {
+		m := newDispatchTestModel(t, &recordMetricsProvider{})
+		m.spinner.start("Working", false)
+		updated, cmd := m.Update(spinnerTickMsg{generation: m.spinner.generation - 1})
+		assert.Nil(t, cmd)
+		assert.False(t, updated.(*model).spinner.tickActive)
+	})
+
+	t.Run("session-complete suppresses ticks", func(t *testing.T) {
+		m := newDispatchTestModel(t, &recordMetricsProvider{})
+		m.spinner.start("Working", false)
+		m.sessionComplete = true
+		updated, cmd := m.Update(spinnerTickMsg{generation: m.spinner.generation})
+		assert.Nil(t, cmd)
+		assert.True(t, updated.(*model).sessionComplete)
+	})
+
+	t.Run("metrics-sampling tick populates metrics state", func(t *testing.T) {
+		m := newDispatchTestModel(t, &recordMetricsProvider{})
+		m.spinner.start("Working", true)
+		updated, cmd := m.Update(spinnerTickMsg{generation: m.spinner.generation})
+		rp := updated.(*model).metricsProvider.(*recordMetricsProvider)
+		assert.Equal(t, 1, rp.cpuCalls)
+		assert.Equal(t, 1, rp.memCalls)
+		assert.Equal(t, 42.5, updated.(*model).lastMemPercent)
+		assert.False(t, updated.(*model).lastSampleTime.IsZero())
+		assert.NotNil(t, cmd, "next tick must be scheduled")
+	})
+
+	t.Run("metrics throttle samples at most once per second", func(t *testing.T) {
+		m := newDispatchTestModel(t, &recordMetricsProvider{})
+		m.spinner.start("Working", true)
+		gen := m.spinner.generation
+		_, _ = m.Update(spinnerTickMsg{generation: gen})
+		updated, _ := m.Update(spinnerTickMsg{generation: gen})
+		rp := updated.(*model).metricsProvider.(*recordMetricsProvider)
+		assert.Equal(t, 1, rp.cpuCalls, "second consecutive tick must hit the <1s throttle")
+		assert.Equal(t, 2, updated.(*model).spinner.frame, "frame still advances on throttled tick")
+	})
+
+	t.Run("mdRenderCompleteMsg out-of-bounds indices leave bodyLines unchanged", func(t *testing.T) {
+		m := newDispatchTestModel(t, nil)
+		m.bodyLines = append(m.bodyLines, bodyEntry{text: "Current", raw: "Current", needsRender: true})
+		for _, idx := range []int{-1, len(m.bodyLines)} {
+			updated, cmd := m.Update(mdRenderCompleteMsg{index: idx, rendered: "Stale"})
+			assert.Nil(t, cmd)
+			assert.Equal(t, "Current", updated.(*model).bodyLines[0].text)
+			assert.True(t, updated.(*model).bodyLines[0].needsRender)
+		}
+	})
+
+	t.Run("mdRenderCompleteMsg on non-renderable entry leaves it unchanged", func(t *testing.T) {
+		m := newDispatchTestModel(t, nil)
+		m.bodyLines = append(m.bodyLines, bodyEntry{text: "Done", needsRender: false})
+		updated, cmd := m.Update(mdRenderCompleteMsg{index: 0, rendered: "Rendered"})
+		assert.Nil(t, cmd)
+		assert.Equal(t, "Done", updated.(*model).bodyLines[0].text)
+		assert.False(t, updated.(*model).bodyLines[0].needsRender)
+	})
+
+	t.Run("mdRenderCompleteMsg on renderable entry applies the render", func(t *testing.T) {
+		m := newDispatchTestModel(t, nil)
+		m.bodyLines = append(m.bodyLines, bodyEntry{text: "raw fallback", raw: "raw", needsRender: true})
+		updated, cmd := m.Update(mdRenderCompleteMsg{index: 0, rendered: "Rendered"})
+		assert.Nil(t, cmd)
+		assert.Equal(t, "Rendered", updated.(*model).bodyLines[0].text)
+		assert.False(t, updated.(*model).bodyLines[0].needsRender)
+	})
+
+	t.Run("channelClosedMsg completes the session and quits", func(t *testing.T) {
+		m := newDispatchTestModel(t, nil)
+		updated, cmd := m.Update(channelClosedMsg{})
+		require.NotNil(t, cmd)
+		assert.IsType(t, tea.QuitMsg{}, cmd())
+		assert.True(t, updated.(*model).sessionComplete)
+	})
+
+	t.Run("error message is stored", func(t *testing.T) {
+		m := newDispatchTestModel(t, nil)
+		updated, cmd := m.Update(errors.New("boom"))
+		assert.Nil(t, cmd)
+		require.NotNil(t, updated.(*model).err)
+		assert.Equal(t, "boom", updated.(*model).err.Error())
+	})
+
+	t.Run("UserPromptEvent appends the prompt entry", func(t *testing.T) {
+		m := newDispatchTestModel(t, nil)
+		updated, cmd := m.Update(domainEventMsg(events.UserPromptEvent{Text: "hi"}))
+		assert.NotNil(t, cmd, "dispatch must return the batched waitForEvent/render cmd")
+		require.Len(t, updated.(*model).bodyLines, 1)
+		assert.Equal(t, "[You] hi", updated.(*model).bodyLines[0].text)
+		assert.Equal(t, "hi", updated.(*model).bodyLines[0].raw)
+		assert.True(t, updated.(*model).bodyLines[0].needsRender)
+	})
+
+	t.Run("default branch leaves model unchanged", func(t *testing.T) {
+		m := newDispatchTestModel(t, nil)
+		updated, cmd := m.Update(struct{}{})
+		assert.Nil(t, cmd)
+		assert.Equal(t, stateIdle, updated.(*model).currentState)
+		assert.Empty(t, updated.(*model).bodyLines)
+	})
+
+	t.Run("unhandled domain event falls through to waitForEvent", func(t *testing.T) {
+		m := newDispatchTestModel(t, nil)
+		updated, cmd := m.Update(domainEventMsg(unhandledEvent{}))
+		assert.NotNil(t, cmd, "fallthrough returns waitForEvent")
+		assert.Equal(t, stateIdle, updated.(*model).currentState)
+		assert.Empty(t, updated.(*model).bodyLines)
+	})
+}
+
+func TestModel_Init_WaitForEvent(t *testing.T) {
+	t.Run("closed channel yields channelClosedMsg", func(t *testing.T) {
+		m := newDispatchTestModel(t, nil)
+		msg := m.Init()()
+		assert.IsType(t, channelClosedMsg{}, msg)
+	})
+
+	t.Run("buffered channel yields the wrapped domain event", func(t *testing.T) {
+		ch := make(chan events.Event, 1)
+		ch <- events.UserPromptEvent{Text: "hi"}
+		m := NewModel(context.Background(), ch, nil).(*model)
+		msg := m.Init()()
+		dm, ok := msg.(domainEventMsg)
+		require.True(t, ok, "expected domainEventMsg, got %T", msg)
+		assert.Equal(t, events.UserPromptEvent{Text: "hi"}, events.Event(dm))
+	})
+}
+
+func TestModel_SampleMetrics_CPUCompute(t *testing.T) {
+	m := newDispatchTestModel(t, &recordMetricsProvider{})
+
+	cpu1, mem1 := m.sampleMetrics(time.Now())
+	assert.Equal(t, 0.0, cpu1, "first sample has no delta: CPU percent stays zero")
+	assert.Equal(t, 42.5, mem1)
+
+	cpu2, mem2 := m.sampleMetrics(time.Now().Add(2 * time.Second))
+	assert.Equal(t, 60.0, cpu2, "(1 - 40/100) * 100 after a 100→200 total / 40→80 idle delta")
+	assert.Equal(t, 42.5, mem2)
+}
+
+func TestModel_SafeTruncate(t *testing.T) {
+	tests := []struct {
+		name   string
+		in     string
+		maxLen int
+		want   string
+	}{
+		{"short string returned as-is", "hello", 10, "hello"},
+		{"ascii cut at maxLen", "hello world", 5, "hello"},
+		{"multibyte cut never splits a rune", "héllo", 2, "hé"},
+		{"zero maxLen yields empty", "hello", 0, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, safeTruncate(tt.in, tt.maxLen))
+		})
+	}
+}
+
+func TestModel_LogToolCall_DedupReturn(t *testing.T) {
+	ch := make(chan events.Event)
+	close(ch)
+	m := NewModel(context.Background(), ch, nil).(*model)
+
+	dup := &llm.FunctionCall{ID: "call_1", Name: "read_file", Args: map[string]interface{}{"filepath": "main.go"}}
+	content := &llm.Content{Parts: []*llm.Part{{FunctionCall: dup}, {FunctionCall: dup}}}
+	m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
+
+	assert.Len(t, m.bodyLines, 1, "duplicate call ID within one response logs only once (second hits the logToolCall dedup return)")
+}
+
+func TestModel_LogToolCall_TruncatesLongValues(t *testing.T) {
+	ch := make(chan events.Event)
+	close(ch)
+	m := NewModel(context.Background(), ch, nil).(*model)
+
+	long := strings.Repeat("x", 250)
+	m.logToolCall(&llm.FunctionCall{
+		ID:   "call_1",
+		Name: "read_file",
+		Args: map[string]interface{}{"content": long},
+	})
+
+	require.Len(t, m.bodyLines, 1)
+	action := m.bodyLines[0].text
+	assert.Contains(t, action, "read_file(content: ")
+	assert.Contains(t, action, "...", "long values must be truncated with an ellipsis")
+	assert.Less(t, len(action), len(long)+30, "truncated action must be far shorter than the raw value")
+}
+
+func TestModel_ToolResultEvent_EmptyTextIsNoOp(t *testing.T) {
+	m := newDispatchTestModel(t, nil)
+	before := len(m.bodyLines)
+	updated, cmd := m.Update(domainEventMsg(events.ToolResultEvent{
+		Name:   "read_file",
+		Result: tools.ToolResult{Text: ""},
+	}))
+	assert.NotNil(t, cmd)
+	assert.Len(t, updated.(*model).bodyLines, before, "empty result text must not append a log line")
+}
+
+func TestModel_RenderMarkdownAsyncCmd(t *testing.T) {
+	m := newDispatchTestModel(t, nil)
+	m.bodyLines = append(m.bodyLines, bodyEntry{text: "raw fallback", raw: "plain text", needsRender: true})
+
+	msg := m.renderMarkdownAsync("plain text", 80, 0)()
+	md, ok := msg.(mdRenderCompleteMsg)
+	require.True(t, ok, "expected mdRenderCompleteMsg, got %T", msg)
+	assert.Equal(t, 0, md.index)
+	assert.NotEmpty(t, md.rendered, "glamour render must produce output for plain text")
+
+	updated, _ := m.Update(md)
+	assert.Equal(t, md.rendered, updated.(*model).bodyLines[0].text)
+	assert.False(t, updated.(*model).bodyLines[0].needsRender)
+}
+
+func TestNewRenderer(t *testing.T) {
+	r := NewRenderer(nil)
+	require.NotNil(t, r)
+	_, ok := r.(ports.ProgressRenderer)
+	assert.True(t, ok, "NewRenderer must return a ports.ProgressRenderer")
 }
