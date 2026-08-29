@@ -161,10 +161,10 @@ func TestProcessFileTask_SemAcquireError(t *testing.T) {
 
 	var complexities []funcComplexity
 	var mu sync.Mutex
-	var skippedErrs []string
+	skips := walkSkips{}
 	var skippedMu sync.Mutex
 
-	err := analyzer.processFileTask(ctx, sem, "test.go", nil, 0, &complexities, &mu, &skippedErrs, &skippedMu)
+	err := analyzer.processFileTask(ctx, sem, "test.go", nil, 0, &complexities, &mu, &skips, &skippedMu)
 	if err == nil {
 		t.Error("expected error from sem.Acquire with cancelled context")
 	}
@@ -281,6 +281,63 @@ func TestFormatResults_Truncation(t *testing.T) {
 		if complexityLines != 100 {
 			t.Errorf("expected 100 complexity lines, got %d", complexityLines)
 		}
+	})
+}
+
+// TestGatherComplexities_ExcludesTestdata is the R1 (issue #1455) unit
+// regression: nested testdata/ directories are skipped by the complexity
+// walk (`go tool` never compiles them), while an explicit walk ROOT named
+// testdata is still honored (fixture workspaces are loaded by path).
+func TestGatherComplexities_ExcludesTestdata(t *testing.T) {
+	t.Parallel()
+
+	writeFile := func(t *testing.T, path, code string) {
+		t.Helper()
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0755))
+		require.NoError(t, os.WriteFile(path, []byte(code), 0644))
+	}
+
+	t.Run("nested testdata skipped", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		writeFile(t, filepath.Join(tmpDir, "a.go"), "package test\nfunc F() {}\n")
+		writeFile(t, filepath.Join(tmpDir, "testdata", "b.go"), "package test\nfunc G() {}\n")
+
+		analyzer := newComplexityAnalyzer(newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
+		complexities, _, err := analyzer.GatherComplexities(context.Background(), tmpDir, nil)
+		require.NoError(t, err)
+		require.Len(t, complexities, 1)
+		require.Equal(t, "F", complexities[0].Name)
+		for _, c := range complexities {
+			for _, seg := range strings.Split(filepath.ToSlash(c.FilePath), "/") {
+				require.NotEqual(t, "testdata", seg, "no returned FilePath may contain a testdata segment")
+			}
+		}
+	})
+
+	t.Run("explicit testdata root honored", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		writeFile(t, filepath.Join(tmpDir, "testdata", "b.go"), "package test\nfunc G() {}\n")
+
+		analyzer := newComplexityAnalyzer(newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
+		complexities, _, err := analyzer.GatherComplexities(context.Background(), filepath.Join(tmpDir, "testdata"), nil)
+		require.NoError(t, err)
+		require.Len(t, complexities, 1)
+		require.Equal(t, "G", complexities[0].Name)
+	})
+
+	t.Run("deeply nested testdata skipped", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		writeFile(t, filepath.Join(tmpDir, "x", "a.go"), "package test\nfunc F() {}\n")
+		writeFile(t, filepath.Join(tmpDir, "x", "testdata", "deep", "c.go"), "package test\nfunc G() {}\n")
+
+		analyzer := newComplexityAnalyzer(newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
+		complexities, _, err := analyzer.GatherComplexities(context.Background(), tmpDir, nil)
+		require.NoError(t, err)
+		require.Len(t, complexities, 1)
+		require.Equal(t, "F", complexities[0].Name)
 	})
 }
 
@@ -526,7 +583,7 @@ func TestGatherComplexities_ContextCancelled_MockFS(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately, before GatherComplexities starts
 
-	complexities, skipped, err := analyzer.GatherComplexities(ctx, "testdata", nil)
+	complexities, skips, err := analyzer.GatherComplexities(ctx, "testdata", nil)
 	if err == nil {
 		t.Fatal("expected error from cancelled context, got nil")
 	}
@@ -536,9 +593,7 @@ func TestGatherComplexities_ContextCancelled_MockFS(t *testing.T) {
 	if complexities != nil {
 		t.Errorf("expected nil complexities on cancellation, got %d", len(complexities))
 	}
-	if skipped != nil {
-		t.Errorf("expected nil skipped on cancellation, got %d", len(skipped))
-	}
+	require.Equal(t, walkSkips{}, skips, "expected zero walkSkips on cancellation")
 }
 
 // TestComplexityAnalyzer_ErrgroupError exercises the g.Wait() error return

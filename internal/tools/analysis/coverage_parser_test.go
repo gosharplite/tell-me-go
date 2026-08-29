@@ -967,6 +967,58 @@ func TestGetDetailedCoverage_EmptyProfile(t *testing.T) {
 	}
 }
 
+// TestParseCoverageProfile_FiltersTestdataRows is the R1 coverage-side
+// regression (issue #1455): profile rows under any testdata/ directory are
+// dropped at parse time, so testdata blocks can never surface as gap rows
+// (`go tool` never compiles testdata/, but the filter enforces it by
+// construction).
+func TestParseCoverageProfile_FiltersTestdataRows(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	mock := &mockAnalysisGoRunner{
+		getModulePathFunc: func(ctx context.Context) (string, error) {
+			return "github.com/gosharplite/tell-me-go", nil
+		},
+	}
+
+	t.Run("testdata rows dropped, normal rows kept", func(t *testing.T) {
+		t.Parallel()
+		profile := "mode: count\n" +
+			"github.com/gosharplite/tell-me-go/internal/pkg/real.go:10.1,12.2 2 0\n" +
+			"github.com/gosharplite/tell-me-go/internal/pkg/testdata/fake.go:1.1,2.2 1 0\n" +
+			"testdata/root.go:1.1,2.2 1 0\n" +
+			"github.com/gosharplite/tell-me-go/internal/pkg/real.go:20.1,22.2 2 1\n"
+
+		blocks, err := parseCoverageProfile(ctx, strings.NewReader(profile), mock)
+		require.NoError(t, err)
+		require.Len(t, blocks, 1)
+		require.True(t, strings.HasSuffix(blocks[0].File, "real.go"), "expected real.go, got %q", blocks[0].File)
+		require.Equal(t, 10, blocks[0].Start)
+	})
+
+	t.Run("all-testdata profile yields zero blocks", func(t *testing.T) {
+		t.Parallel()
+		profile := "mode: count\n" +
+			"github.com/gosharplite/tell-me-go/internal/pkg/testdata/fake.go:1.1,2.2 1 0\n" +
+			"testdata/root.go:1.1,2.2 1 0\n"
+
+		blocks, err := parseCoverageProfile(ctx, strings.NewReader(profile), mock)
+		require.NoError(t, err)
+		require.Empty(t, blocks)
+	})
+
+	t.Run("malformed testdata row does not mask errors", func(t *testing.T) {
+		t.Parallel()
+		profile := "mode: count\n" +
+			"not a profile line\n" +
+			"github.com/gosharplite/tell-me-go/internal/pkg/testdata/fake.go:1.1,2.2 1 0\n"
+
+		blocks, err := parseCoverageProfile(ctx, strings.NewReader(profile), mock)
+		require.NoError(t, err)
+		require.Empty(t, blocks)
+	})
+}
+
 func TestParseCoverageProfile_MalformedLine(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

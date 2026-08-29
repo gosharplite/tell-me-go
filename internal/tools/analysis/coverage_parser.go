@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -319,6 +320,19 @@ func parseDataParts(parts []string, modulePrefix string) (*uncoveredBlock, error
 	return block, nil
 }
 
+// isTestDataPath reports whether a coverage-profile file path passes through
+// a testdata directory segment. R1 (issue #1455): `go tool` never compiles
+// testdata/ directories, so their blocks must never surface as gap rows; the
+// filter enforces that by construction rather than by go-tool behavior.
+func isTestDataPath(file string) bool {
+	for _, seg := range strings.Split(filepath.ToSlash(file), "/") {
+		if seg == "testdata" {
+			return true
+		}
+	}
+	return false
+}
+
 // parseCoverageProfile parses a go coverage profile and returns blocks with zero coverage.
 func parseCoverageProfile(ctx context.Context, r io.Reader, runner AnalysisGoRunner) ([]uncoveredBlock, error) {
 	var blocks []uncoveredBlock
@@ -332,6 +346,9 @@ func parseCoverageProfile(ctx context.Context, r io.Reader, runner AnalysisGoRun
 	for scanner.Scan() {
 		block, err := parseCoverageLine(scanner.Text(), modulePrefix)
 		if err != nil {
+			continue
+		}
+		if block != nil && isTestDataPath(block.File) {
 			continue
 		}
 		if block != nil {

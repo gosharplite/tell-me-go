@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -67,6 +68,18 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		alerts = append(alerts, c.Name)
 	}
 
+	// R1 scope correction (issue #1455): testdata/ directories are excluded from
+	// the complexity walk, so the two tests/e2e/testdata/fakeplur/main.go
+	// functions left the measured population and are no longer gate-pinned.
+	// Their ACCEPTED catalog entries are retained (with drift notes) as the
+	// architectural acceptance record. The gate stays RED-first for every
+	// compiled over-threshold function it still measures.
+	//
+	// R2 scope correction (issue #1455): build-tag-excluded files leave the
+	// measured population too — tests/e2e/memory_live_test.go carries
+	// //go:build e2e_live (ADR-068 §8), so TestLivePlurCapturePersists is no
+	// longer walked on a plain host and its gate row is removed. Its ACCEPTED
+	// catalog entry is retained as the architectural acceptance record.
 	expectedCataloged := map[string]funcComplexity{
 		"TestHistoryManager_SetPinned_WithFunctionCall":             {Line: 392, Complexity: 21, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestStartSpinnerLifecycle":                                 {Line: 176, Complexity: 17, FilePath: "internal/ui/renderer_spinner_test.go"},
@@ -110,10 +123,7 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"TestHookCaptureBranchI":                                    {Line: 61, Complexity: 13, FilePath: "internal/agent/memory/hook_test.go"},
 		"TestHookFull":                                              {Line: 359, Complexity: 21, FilePath: "internal/agent/memory/hook_test.go"},
 		"TestInjectorEnabledInsert":                                 {Line: 109, Complexity: 22, FilePath: "internal/agent/memory/injector_test.go"},
-		"TestLivePlurCapturePersists":                               {Line: 285, Complexity: 12, FilePath: "tests/e2e/memory_live_test.go"},
 		"TestNewChatter_MemoryClientLookup":                         {Line: 226, Complexity: 12, FilePath: "internal/app/chatter_test.go"},
-		"(*server).dispatchTool":                                    {Line: 419, Complexity: 14, FilePath: "tests/e2e/testdata/fakeplur/main.go"},
-		"newServer":                                                 {Line: 179, Complexity: 13, FilePath: "tests/e2e/testdata/fakeplur/main.go"},
 		"newestSourceMTime":                                         {Line: 79, Complexity: 13, FilePath: "tests/e2e/e2e_test.go"},
 		"TestToSDKContent_MixedUserTurn_OrdersInlineDataFirst":      {Line: 290, Complexity: 13, FilePath: "internal/infrastructure/llm/gemini/adapter_test.go"},
 		"TestToSDKContent_PoisonedPersistedShape_Normalizes":        {Line: 326, Complexity: 15, FilePath: "internal/infrastructure/llm/gemini/adapter_test.go"},
@@ -124,6 +134,101 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 
 	require.Equal(t, expectedCataloged, cataloged)
 	require.Empty(t, alerts)
+}
+
+// TestVerifyNonFixCatalog_NoTestdataInComplexityWalk is the R1 (issue #1455)
+// end-to-end regression: the live-repo complexity walk must never traverse a
+// testdata/ directory — `go tool` never compiles them, so they are outside
+// the analyzer's measured population.
+func TestVerifyNonFixCatalog_NoTestdataInComplexityWalk(t *testing.T) {
+	analyzer := newComplexityAnalyzer(newASTCache("."), &mockSecurityProvider{}, persistencetest.NewPlainOSFileSystem())
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	complexities, _, err := analyzer.GatherComplexities(context.Background(), repoRoot, nil)
+	require.NoError(t, err)
+
+	for _, c := range complexities {
+		for _, seg := range strings.Split(filepath.ToSlash(c.FilePath), "/") {
+			require.NotEqual(t, "testdata", seg,
+				"complexity walk must not traverse testdata/ (R1, issue #1455): got %s", c.FilePath)
+		}
+	}
+}
+
+// TestVerifyNonFixCatalog_NoBuildTagExcludedFunctions is the R2 (issue #1455)
+// end-to-end regression: files excluded by build constraints on the host are
+// skipped by the live-repo complexity walk and reported in NotCompiled, not
+// analyzed. Host-relative by definition — skipped on Windows hosts where
+// these files compile.
+func TestVerifyNonFixCatalog_NoBuildTagExcludedFunctions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("build-tag files compile on windows; guarantee is host-relative")
+	}
+	analyzer := newComplexityAnalyzer(newASTCache("."), &mockSecurityProvider{}, persistencetest.NewPlainOSFileSystem())
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	complexities, skips, err := analyzer.GatherComplexities(context.Background(), repoRoot, nil)
+	require.NoError(t, err)
+
+	for _, c := range complexities {
+		base := filepath.Base(c.FilePath)
+		require.NotEqual(t, "proc_windows.go", base,
+			"build-tag-excluded file must not be analyzed (R2, issue #1455): got %s", c.FilePath)
+		require.NotEqual(t, "shell_windows_test.go", base,
+			"build-tag-excluded file must not be analyzed (R2, issue #1455): got %s", c.FilePath)
+		require.NotEqual(t, "shell_windows_encoding_test.go", base,
+			"build-tag-excluded file must not be analyzed (R2, issue #1455): got %s", c.FilePath)
+	}
+	found := false
+	for _, s := range skips.NotCompiled {
+		if strings.Contains(s, filepath.Join("internal", "tools", "workspace", "shell_windows")) {
+			found = true
+		}
+	}
+	require.True(t, found, "expected at least one shell_windows file reported as not compiled on host; got %v", skips.NotCompiled)
+}
+
+// TestDetailedCoverageReport_WorkspaceNoBuildTagOrTestdataRows is the R1/R2
+// coverage-side regression (issue #1455): the detailed-coverage report for
+// the workspace package must contain no testdata rows (parse-level filter)
+// and no build-tag-excluded rows (host compilation guarantee). The
+// proc_windows assertion is host-relative — skipped on Windows, where the
+// file compiles.
+func TestDetailedCoverageReport_WorkspaceNoBuildTagOrTestdataRows(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("proc_windows.go compiles on windows; guarantee is host-relative")
+	}
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	// Run from the module root so the coverage profile records repo-relative
+	// paths (catalog refs are repo-relative). The test binary's working
+	// directory is the package source directory, so chdir here and restore on
+	// cleanup. All arch-tagged tests are sequential, so the chdir cannot race
+	// a parallel test.
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoRoot))
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	// Mirror production wiring (manager.go newAnalysisManager): the real `go`
+	// executor feeds both the runner and Exec; the catalog is the default live
+	// catalog; SP is the test mock (unused on this path).
+	executor := &exec.RealExecutor{}
+	m := &healthManager{
+		SP:          &mockSecurityProvider{},
+		Exec:        executor,
+		Runner:      toolchain.NewGoRunner(executor),
+		clk:         clock.RealClock{},
+		catalogPath: defaultNonFixCatalogPath,
+	}
+
+	report, err := m.getDetailedCoverageReport(context.Background(), "./internal/tools/workspace", nil, nil)
+	require.NoError(t, err)
+	require.NotContains(t, report, "testdata")
+	require.NotContains(t, report, "proc_windows")
 }
 
 // TestVerifyCoveragePinsMatchLiveCatalog is the coverage-pin regression gate
@@ -155,6 +260,8 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"manager.go capBestBlock error branch", "internal/agent/session/context/manager.go", 571, 573},
 		{"failover.go ExtractDocument body", "internal/infrastructure/llm/failover.go", 131, 133},
 		{"resilient_client.go ExtractDocument body", "internal/infrastructure/llm/resilient_client.go", 106, 108},
+		{"clock.go FakeClock fake methods", "internal/pkg/clock/clock.go", 81, 108},
+		{"clock.go FakeTicker methods and realTicker.Stop", "internal/pkg/clock/clock.go", 116, 131},
 		{"mcp_factory.go resolveServerToken default case", "internal/infrastructure/di/mcp_factory.go", 246, 249},
 		{"mcp_factory.go gh auth token resolver", "internal/infrastructure/di/mcp_factory.go", 73, 75},
 		{"toolchain_factory.go registerSkillsShTools error", "internal/infrastructure/di/toolchain_factory.go", 127, 129},
@@ -189,6 +296,8 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"container.go GetMCPClient nil-guard", "internal/infrastructure/di/container.go", 284, 286},
 		{"imports.go format.Node error branch", "internal/tools/analysis/imports.go", 50, 52},
 		{"process_executor.go RunCommand Start error", "internal/tools/workspace/process_executor.go", 90, 92},
+		{"process_executor.go setupCommand empty-parts guard", "internal/tools/workspace/process_executor.go", 131, 133},
+		{"process_executor.go resolveAndValidateOutputPath windows branch", "internal/tools/workspace/process_executor.go", 368, 378},
 		{"analysistest MockSymbolIndex HarvestDeclarations stub", "internal/tools/analysis/analysistest/mock_index.go", 61, 63},
 		{"process_executor.go LookPath delegation", "internal/tools/workspace/process_executor.go", 496, 498},
 		{"darwin system_metrics GetCPUStats fallback", "internal/infrastructure/telemetry/system_metrics_darwin_cgo.go", 38, 41},
