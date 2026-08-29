@@ -284,6 +284,63 @@ func TestFormatResults_Truncation(t *testing.T) {
 	})
 }
 
+// TestGatherComplexities_ExcludesTestdata is the R1 (issue #1455) unit
+// regression: nested testdata/ directories are skipped by the complexity
+// walk (`go tool` never compiles them), while an explicit walk ROOT named
+// testdata is still honored (fixture workspaces are loaded by path).
+func TestGatherComplexities_ExcludesTestdata(t *testing.T) {
+	t.Parallel()
+
+	writeFile := func(t *testing.T, path, code string) {
+		t.Helper()
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0755))
+		require.NoError(t, os.WriteFile(path, []byte(code), 0644))
+	}
+
+	t.Run("nested testdata skipped", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		writeFile(t, filepath.Join(tmpDir, "a.go"), "package test\nfunc F() {}\n")
+		writeFile(t, filepath.Join(tmpDir, "testdata", "b.go"), "package test\nfunc G() {}\n")
+
+		analyzer := newComplexityAnalyzer(newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
+		complexities, _, err := analyzer.GatherComplexities(context.Background(), tmpDir, nil)
+		require.NoError(t, err)
+		require.Len(t, complexities, 1)
+		require.Equal(t, "F", complexities[0].Name)
+		for _, c := range complexities {
+			for _, seg := range strings.Split(filepath.ToSlash(c.FilePath), "/") {
+				require.NotEqual(t, "testdata", seg, "no returned FilePath may contain a testdata segment")
+			}
+		}
+	})
+
+	t.Run("explicit testdata root honored", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		writeFile(t, filepath.Join(tmpDir, "testdata", "b.go"), "package test\nfunc G() {}\n")
+
+		analyzer := newComplexityAnalyzer(newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
+		complexities, _, err := analyzer.GatherComplexities(context.Background(), filepath.Join(tmpDir, "testdata"), nil)
+		require.NoError(t, err)
+		require.Len(t, complexities, 1)
+		require.Equal(t, "G", complexities[0].Name)
+	})
+
+	t.Run("deeply nested testdata skipped", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		writeFile(t, filepath.Join(tmpDir, "x", "a.go"), "package test\nfunc F() {}\n")
+		writeFile(t, filepath.Join(tmpDir, "x", "testdata", "deep", "c.go"), "package test\nfunc G() {}\n")
+
+		analyzer := newComplexityAnalyzer(newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
+		complexities, _, err := analyzer.GatherComplexities(context.Background(), tmpDir, nil)
+		require.NoError(t, err)
+		require.Len(t, complexities, 1)
+		require.Equal(t, "F", complexities[0].Name)
+	})
+}
+
 func TestGatherComplexities_InvalidPath(t *testing.T) {
 	t.Parallel()
 	cache := newASTCache(".")

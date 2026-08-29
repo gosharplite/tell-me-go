@@ -67,6 +67,12 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		alerts = append(alerts, c.Name)
 	}
 
+	// R1 scope correction (issue #1455): testdata/ directories are excluded from
+	// the complexity walk, so the two tests/e2e/testdata/fakeplur/main.go
+	// functions left the measured population and are no longer gate-pinned.
+	// Their ACCEPTED catalog entries are retained (with drift notes) as the
+	// architectural acceptance record. The gate stays RED-first for every
+	// compiled over-threshold function it still measures.
 	expectedCataloged := map[string]funcComplexity{
 		"TestHistoryManager_SetPinned_WithFunctionCall":             {Line: 392, Complexity: 21, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestStartSpinnerLifecycle":                                 {Line: 176, Complexity: 17, FilePath: "internal/ui/renderer_spinner_test.go"},
@@ -112,8 +118,6 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"TestInjectorEnabledInsert":                                 {Line: 109, Complexity: 22, FilePath: "internal/agent/memory/injector_test.go"},
 		"TestLivePlurCapturePersists":                               {Line: 285, Complexity: 12, FilePath: "tests/e2e/memory_live_test.go"},
 		"TestNewChatter_MemoryClientLookup":                         {Line: 226, Complexity: 12, FilePath: "internal/app/chatter_test.go"},
-		"(*server).dispatchTool":                                    {Line: 419, Complexity: 14, FilePath: "tests/e2e/testdata/fakeplur/main.go"},
-		"newServer":                                                 {Line: 179, Complexity: 13, FilePath: "tests/e2e/testdata/fakeplur/main.go"},
 		"newestSourceMTime":                                         {Line: 79, Complexity: 13, FilePath: "tests/e2e/e2e_test.go"},
 		"TestToSDKContent_MixedUserTurn_OrdersInlineDataFirst":      {Line: 290, Complexity: 13, FilePath: "internal/infrastructure/llm/gemini/adapter_test.go"},
 		"TestToSDKContent_PoisonedPersistedShape_Normalizes":        {Line: 326, Complexity: 15, FilePath: "internal/infrastructure/llm/gemini/adapter_test.go"},
@@ -124,6 +128,26 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 
 	require.Equal(t, expectedCataloged, cataloged)
 	require.Empty(t, alerts)
+}
+
+// TestVerifyNonFixCatalog_NoTestdataInComplexityWalk is the R1 (issue #1455)
+// end-to-end regression: the live-repo complexity walk must never traverse a
+// testdata/ directory — `go tool` never compiles them, so they are outside
+// the analyzer's measured population.
+func TestVerifyNonFixCatalog_NoTestdataInComplexityWalk(t *testing.T) {
+	analyzer := newComplexityAnalyzer(newASTCache("."), &mockSecurityProvider{}, persistencetest.NewPlainOSFileSystem())
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	complexities, _, err := analyzer.GatherComplexities(context.Background(), repoRoot, nil)
+	require.NoError(t, err)
+
+	for _, c := range complexities {
+		for _, seg := range strings.Split(filepath.ToSlash(c.FilePath), "/") {
+			require.NotEqual(t, "testdata", seg,
+				"complexity walk must not traverse testdata/ (R1, issue #1455): got %s", c.FilePath)
+		}
+	}
 }
 
 // TestVerifyCoveragePinsMatchLiveCatalog is the coverage-pin regression gate

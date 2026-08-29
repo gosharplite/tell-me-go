@@ -96,7 +96,7 @@ func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root
 	var skippedMu sync.Mutex
 	count := 0
 
-	walkFn := a.makeWalkFunc(g, gCtx, sem, hb, &complexities, &mu, &skippedErrs, &skippedMu, &count)
+	walkFn := a.makeWalkFunc(root, g, gCtx, sem, hb, &complexities, &mu, &skippedErrs, &skippedMu, &count)
 	if err := a.fs.Walk(ctx, root, walkFn); err != nil {
 		return nil, nil, err
 	}
@@ -130,7 +130,7 @@ func (a *defaultComplexityAnalyzer) getConcurrencyLimit() int64 {
 	return limit
 }
 
-func (a *defaultComplexityAnalyzer) makeWalkFunc(g *errgroup.Group, ctx context.Context, sem *semaphore.Weighted, hb chan<- struct{}, complexities *[]funcComplexity, mu *sync.Mutex, skippedErrs *[]string, skippedMu *sync.Mutex, count *int) persistence.WalkFunc {
+func (a *defaultComplexityAnalyzer) makeWalkFunc(root string, g *errgroup.Group, ctx context.Context, sem *semaphore.Weighted, hb chan<- struct{}, complexities *[]funcComplexity, mu *sync.Mutex, skippedErrs *[]string, skippedMu *sync.Mutex, count *int) persistence.WalkFunc {
 	return func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -140,7 +140,17 @@ func (a *defaultComplexityAnalyzer) makeWalkFunc(g *errgroup.Group, ctx context.
 			return ctx.Err()
 		default:
 		}
-		if info.IsDir() || filepath.Ext(filePath) != ".go" {
+		if info.IsDir() {
+			// R1 (issue #1455): honor the Go convention — `go tool` never compiles
+			// testdata/ directories, so the reporting walk must not traverse them.
+			// An explicit walk ROOT named testdata is still honored (fixture
+			// workspaces are loaded by path); only nested testdata is skipped.
+			if info.Name() == "testdata" && filepath.Clean(filePath) != filepath.Clean(root) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(filePath) != ".go" {
 			return nil
 		}
 

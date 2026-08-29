@@ -1010,7 +1010,10 @@ catalog a new gap no one reviewed. Policy:
   it (T5 measurement); CC re-verified 13 (unchanged). Re-anchored 2026-09
   (#1412): line drifted 142→179 as the T1 delayFile/delayTool server fields
   and FAKE_PLUR_DELAY_* env wiring grew the file above it; CC re-verified
-  13 (unchanged).
+  13 (unchanged). Re-scoped 2026-09 (#1455): `testdata/` directories are
+  excluded from the complexity walk (R1); the mechanical gate no longer
+  measures these functions. Entry retained as the architectural acceptance
+  record; recorded CC values remain valid.
 - **See**: `tests/e2e/testdata/fakeplur/main.go:179`
 
 ### tests/e2e/testdata/fakeplur/main.go — (*server).dispatchTool (CC=14)
@@ -1029,7 +1032,10 @@ catalog a new gap no one reviewed. Policy:
   `plur_learn_batch` case were added (T5). Re-anchored 2026-09 (#1412):
   line drifted 381→419 as the T1 delayFile/delayTool plumbing grew the file
   above it; CC re-measured 13→14 — the delay guard adds one decision point,
-  still the same dispatch-structural class.
+  still the same dispatch-structural class. Re-scoped 2026-09 (#1455):
+  `testdata/` directories are excluded from the complexity walk (R1); the
+  mechanical gate no longer measures these functions. Entry retained as the
+  architectural acceptance record; recorded CC values remain valid.
 - **See**: `tests/e2e/testdata/fakeplur/main.go:419`
 
 ### tests/e2e/memory_live_test.go — TestLivePlurCapturePersists (CC=12)
