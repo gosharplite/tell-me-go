@@ -190,6 +190,47 @@ func TestVerifyNonFixCatalog_NoBuildTagExcludedFunctions(t *testing.T) {
 	require.True(t, found, "expected at least one shell_windows file reported as not compiled on host; got %v", skips.NotCompiled)
 }
 
+// TestDetailedCoverageReport_WorkspaceNoBuildTagOrTestdataRows is the R1/R2
+// coverage-side regression (issue #1455): the detailed-coverage report for
+// the workspace package must contain no testdata rows (parse-level filter)
+// and no build-tag-excluded rows (host compilation guarantee). The
+// proc_windows assertion is host-relative — skipped on Windows, where the
+// file compiles.
+func TestDetailedCoverageReport_WorkspaceNoBuildTagOrTestdataRows(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("proc_windows.go compiles on windows; guarantee is host-relative")
+	}
+	repoRoot, err := findModuleRoot()
+	require.NoError(t, err)
+
+	// Run from the module root so the coverage profile records repo-relative
+	// paths (catalog refs are repo-relative). The test binary's working
+	// directory is the package source directory, so chdir here and restore on
+	// cleanup. All arch-tagged tests are sequential, so the chdir cannot race
+	// a parallel test.
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoRoot))
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	// Mirror production wiring (manager.go newAnalysisManager): the real `go`
+	// executor feeds both the runner and Exec; the catalog is the default live
+	// catalog; SP is the test mock (unused on this path).
+	executor := &exec.RealExecutor{}
+	m := &healthManager{
+		SP:          &mockSecurityProvider{},
+		Exec:        executor,
+		Runner:      toolchain.NewGoRunner(executor),
+		clk:         clock.RealClock{},
+		catalogPath: defaultNonFixCatalogPath,
+	}
+
+	report, err := m.getDetailedCoverageReport(context.Background(), "./internal/tools/workspace", nil, nil)
+	require.NoError(t, err)
+	require.NotContains(t, report, "testdata")
+	require.NotContains(t, report, "proc_windows")
+}
+
 // TestVerifyCoveragePinsMatchLiveCatalog is the coverage-pin regression gate
 // for the catalog matcher: it asserts the four formerly-HIGH coverage gaps
 // (config.go:249-251, task_service.go:101-103, manager.go:574-576,
