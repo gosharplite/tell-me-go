@@ -28,6 +28,17 @@ func (h *fakeProcessHandle) Stdout() io.ReadCloser { return h.stdout }
 func (h *fakeProcessHandle) Stderr() io.ReadCloser { return h.stderr }
 func (h *fakeProcessHandle) Wait() error           { return h.waitErr }
 
+// fakeHandle builds a canned fakeProcessHandle: fixed stdout/stderr content
+// and a Wait result (nil waitErr → Wait returns nil). Shared by the wiring
+// probe and the fault-path suites.
+func fakeHandle(stdout, stderr string, waitErr error) *fakeProcessHandle {
+	return &fakeProcessHandle{
+		stdout:  io.NopCloser(strings.NewReader(stdout)),
+		stderr:  io.NopCloser(strings.NewReader(stderr)),
+		waitErr: waitErr,
+	}
+}
+
 // TestRunnerWiring_RunCommandReachesFakeRunner is the workspace behavioral
 // probe (issue #1460, ADR-074, ADR-060 §7 rationale): a dropped
 // `runner: runner` assignment in newshellTool or a dropped `e.runner.Start`
