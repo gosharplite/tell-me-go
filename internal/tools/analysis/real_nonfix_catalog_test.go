@@ -294,7 +294,6 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"manager.go RegisterReadOnlyPath Abs error", "internal/infrastructure/security/manager.go", 161, 164},
 		{"state.go SetInfo marshal error", "internal/infrastructure/persistence/state.go", 65, 68},
 		{"metrics.go appendSummaryToLog marshal", "internal/infrastructure/telemetry/metrics.go", 176, 178},
-		{"toolchain_factory.go execRunner closure", "internal/infrastructure/di/toolchain_factory.go", 154, 156},
 		{"sqlite_store.go Update RowsAffected", "internal/infrastructure/persistence/sqlite_store.go", 207, 209},
 		{"sqlite_store.go Delete RowsAffected", "internal/infrastructure/persistence/sqlite_store.go", 224, 226},
 		{"mcp_factory.go gh token resolver success", "internal/infrastructure/di/mcp_factory.go", 78, 78},
