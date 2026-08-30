@@ -6,6 +6,7 @@ package di
 import (
 	"context"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -176,5 +177,55 @@ func TestBuildRegistry_PopulatesMCPClients(t *testing.T) {
 	}
 	if dep.Serial {
 		t.Error("readonly endpoint should not be serial")
+	}
+}
+
+// TestBuildRegistry_InstallSkillExecutesRealRunnerClosure drives the real
+// execRunner closure (toolchain_factory.go:159-161, issue #1462 B3): the
+// composition root hands osexec.CommandContext(...).CombinedOutput() to
+// NewSkillManager, and the registered install_skill tool is the only path
+// that invokes it. A pre-cancelled context makes the closure fail
+// deterministically without meaningful network activity — the assertion
+// holds whether or not git is installed (missing git fails at LookPath
+// inside CombinedOutput). Only the InstallSkill wrap ("cloning repository")
+// is asserted, never the underlying git/LookPath error text.
+func TestBuildRegistry_InstallSkillExecutesRealRunnerClosure(t *testing.T) {
+	sm := new(mockConfigurableSecurityManager)
+	sm.RegisterPolicyToolsFunc = func(r tools.Registry, kv ports.KVStore) error { return nil }
+
+	factory := newToolchainFactory(t.TempDir(), nil, sm, nil, nil, nil, nil).(*defaultToolchainFactory)
+	factory.RegisterAllTools = func(params infra_tools.ToolRegistrationParams) error { return nil }
+	factory.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile, model, mode string, pricingOverrides map[string]pricing.ModelPricing) error {
+		return nil
+	}
+
+	mockSP := &testfixtures.MockSessionProvider{
+		GetSettingsFn: func() ports.KVStore { return &mockKVStore{} },
+	}
+	params := toolchainParams{
+		Paths:           &persistence.Paths{},
+		SessionProvider: mockSP,
+	}
+
+	reg, err := factory.BuildRegistry(params)
+	if err != nil {
+		t.Fatalf("BuildRegistry failed: %v", err)
+	}
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	defer cancel()
+
+	res, err := reg.Execute(canceled, "install_skill", map[string]interface{}{
+		"repo_url": "https://github.com/tmgo-test/tmgo-no-such-repo-b3",
+	}, nil)
+	if err != nil {
+		t.Fatalf("Execute(install_skill) returned a Go error; want the failure surfaced via ToolResult.Error: %v", err)
+	}
+	if res.Error == nil {
+		t.Fatal("ToolResult.Error = nil; want the InstallSkill failure surfaced via ToolResult.Error")
+	}
+	if !strings.Contains(res.Error.Error(), "cloning repository") {
+		t.Errorf("ToolResult.Error = %v; want the 'cloning repository' wrap from InstallSkill", res.Error)
 	}
 }

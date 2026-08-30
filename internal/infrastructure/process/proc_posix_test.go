@@ -160,3 +160,86 @@ func TestConfigureProcAttrs_CancelESRCHRetryDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// TestStart_RealGroupKillReapsChild pins the default killGroup closure body
+// (proc_posix.go:31, issue #1462 B4): a real child in its own process group
+// is reaped by context cancellation through the production Cancel path —
+// the default hooks stay untouched — and Wait surfaces the ADR-074 D3 −1
+// signal-killed convention. Parallel-safe: no package hook overrides.
+func TestStart_RealGroupKillReapsChild(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	r := NewRunner()
+	h, err := r.Start(ctx, tools.ProcessSpec{Name: helperPath, Args: []string{"sleep", "5"}})
+	if err != nil {
+		t.Fatalf("Start() returned error: %v", err)
+	}
+
+	time.AfterFunc(100*time.Millisecond, cancel)
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- h.Wait() }()
+	select {
+	case waitErr := <-errCh:
+		var exitErr *tools.ExitError
+		if !errors.As(waitErr, &exitErr) {
+			t.Fatalf("Wait() = %v; want *tools.ExitError", waitErr)
+		}
+		if exitErr.Code != -1 {
+			t.Errorf("ExitError.Code = %d; want -1 (SIGKILL via the real group kill)", exitErr.Code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Wait() did not return within 5s of cancellation (group-kill reap failed)")
+	}
+}
+
+// TestStart_CancelDeadlineFallsBackToDirectKill pins the deadline fallback
+// (proc_posix.go:67-71, issue #1462 B5): with the group kill always failing
+// ESRCH (injected) and the child alive (real checkAlive), the Cancel loop
+// retries on the real 2ms sleep until the 200ms groupKillRetryWindow
+// elapses, then the REAL killDirect (proc_posix.go:32) SIGKILLs the child so
+// it cannot outlive the deadline; Wait surfaces the −1 convention. The
+// deadline is the synchronization mechanism (ADR-036-clean): ~100 real 2ms
+// iterations ≈ 200ms wall clock, outcome-asserted, never timing-asserted.
+// Not parallel: it overrides package-level hooks (same rule as
+// TestConfigureProcAttrs_CancelESRCHRetryDeterministic).
+func TestStart_CancelDeadlineFallsBackToDirectKill(t *testing.T) {
+	origKillGroup, origKillDirect, origCheckAlive, origTimeNow, origRetrySleep :=
+		killGroup, killDirect, checkAlive, timeNow, retrySleep
+	defer func() {
+		killGroup, killDirect, checkAlive, timeNow, retrySleep =
+			origKillGroup, origKillDirect, origCheckAlive, origTimeNow, origRetrySleep
+	}()
+
+	killGroup = func(pid int) error { return syscall.ESRCH }
+	// killDirect, checkAlive, timeNow, retrySleep stay REAL: the fallback
+	// under test must run with real signaling so the child cannot outlive
+	// the deadline.
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	r := NewRunner()
+	h, err := r.Start(ctx, tools.ProcessSpec{Name: helperPath, Args: []string{"sleep", "5"}})
+	if err != nil {
+		t.Fatalf("Start() returned error: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- h.Wait() }()
+	select {
+	case waitErr := <-errCh:
+		var exitErr *tools.ExitError
+		if !errors.As(waitErr, &exitErr) {
+			t.Fatalf("Wait() = %v; want *tools.ExitError", waitErr)
+		}
+		if exitErr.Code != -1 {
+			t.Errorf("ExitError.Code = %d; want -1 (SIGKILL via the real killDirect fallback)", exitErr.Code)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Wait() did not return within 10s (deadline fallback failed to reap the child)")
+	}
+}
