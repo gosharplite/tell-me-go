@@ -358,3 +358,57 @@ func TestRunPipelineFaultCleanup(t *testing.T) {
 }
 
 func stageName(i int) string { return "stage" + strconv.Itoa(i) }
+
+// TestRunPipeline_PreCancelledContext pins RunPipeline's ctx.Err() branch
+// (process_executor.go:227-229, issue #1462 B6): with the context cancelled
+// before the call, the pipeline result reports the context error with exit
+// code 1. The fake runner ignores ctx, so start/capture/wait proceed and the
+// 227 branch is what fires (formatPipelineResult returns the ctx error and
+// exit code 1). Standalone function by design: TestRunPipelineFaultCleanup is
+// CC-pinned by the partition gate (Complexity 16 @ :280) and must not change.
+func TestRunPipeline_PreCancelledContext(t *testing.T) {
+	t.Parallel()
+
+	fake := &toolstest.FakeProcessRunner{
+		StartFunc: func(ctx context.Context, spec tools.ProcessSpec) (tools.ProcessHandle, error) {
+			return fakeHandle("", "", nil), nil
+		},
+	}
+	e := newFaultExecutor(fake)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	defer cancel()
+
+	res, err := e.RunPipeline(ctx, [][]string{{stageName(0)}, {stageName(1)}}, executionConfig{})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v; want context.Canceled", err)
+	}
+	if res.ExitCode != 1 {
+		t.Errorf("ExitCode = %d; want 1", res.ExitCode)
+	}
+}
+
+// TestCombinedOutput_StartErrorPassthrough pins CombinedOutput's error return
+// (process_executor.go:449-451, issue #1462 B7): a start failure propagates
+// the wrapped error with empty bytes. The Output twin case already exists in
+// TestOutputCombinedOutputFaultPaths; a standalone function avoids shifting
+// the CC-pinned functions above.
+func TestCombinedOutput_StartErrorPassthrough(t *testing.T) {
+	t.Parallel()
+
+	fake := &toolstest.FakeProcessRunner{
+		StartFunc: func(ctx context.Context, spec tools.ProcessSpec) (tools.ProcessHandle, error) {
+			return nil, errors.New("spawn fail")
+		},
+	}
+	e := newFaultExecutor(fake)
+
+	got, err := e.CombinedOutput(context.Background(), "any", "cmd")
+	if err == nil || !strings.Contains(err.Error(), "failed to start: spawn fail") {
+		t.Errorf("err = %v; want wrapped 'failed to start: spawn fail'", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("bytes = %q; want empty on start failure", got)
+	}
+}
