@@ -45,7 +45,7 @@ help:
 	@echo "  make verify-nonfix-catalog - Verify the complexity-pin catalog partition (issue #1297)"
 	@echo "  make verify-ports-registry - Verify the ports registry bijection, N<=12, stay-key liveness, and Supporting admission (issue #1343)"
 	@echo "  make verify-no-test-sleep - Verify no time.Sleep for synchronization in tests"
-	@echo "  make verify-tools-adapter-import - Verify tools adapter imports are confined to default_fs.go (ADR-055)"
+	@echo "  make verify-tools-adapter-import - Verify tools adapter imports are confined to the analysis default_fs.go (ADR-055)"
 	@echo "  make verify-tools-toolchain-import - Verify no infrastructure/toolchain imports in tools production files (issue #1325)"
 	@echo "  make verify-tools-infrastructure-import - Verify no internal/infrastructure imports in tools production files (ADR-062)"
 	@echo "  make verify-tools-process-import - Verify no raw process-lifecycle tokens in workspace production files (#1460, ADR-074)"
@@ -360,9 +360,10 @@ else
 endif
 
 # Verify ADR-055: the internal/infrastructure/persistence adapter import is
-# confined to the two sanctioned default_fs.go files in internal/tools/
-# (analysis, workspace). Every other tools-layer production file must use
-# the injected domain port (persistence.FileSystem).
+# confined to the single sanctioned default_fs.go file in internal/tools/
+# (analysis). The workspace fallback was retired by the ADR-055 amendment in
+# ADR-074 (issue #1460). Every other tools-layer production file must use the
+# injected domain port (persistence.FileSystem).
 verify-tools-adapter-import:
 ifeq ($(IS_POSIX),true)
 	@echo "Checking for infrastructure/persistence adapter imports in tools production files (ADR-055)..."
@@ -491,7 +492,9 @@ endif
 # exit_query.go:235-236) cannot false-positive.
 #
 # Predicate: "production files" = non-_test.go files under internal/tools/
-# OUTSIDE the two sanctioned default_fs.go paths (ADR-055) and
+# OUTSIDE the single sanctioned default_fs.go path (ADR-055 as amended by
+# ADR-074 — the analysis fallback only; the workspace default_fs.go was
+# retired with the tools.ProcessRunner injection) and
 # analysistest//toolstest/ (explicit path exclusions mirroring
 # verify-tools-toolchain-import). Test-layer files are deliberately exempt:
 # ~35 tools test files legitimately import infrastructure.
@@ -585,7 +588,6 @@ ifeq ($(IS_POSIX),true)
 	@VIOLATIONS="$$( grep -rn 'github.com/gosharplite/tell-me-go/internal/infrastructure/' internal/tools/ --include='*.go' \
 		| grep -v '_test\.go:' \
 		| grep -v '^internal/tools/analysis/default_fs\.go:' \
-		| grep -v '^internal/tools/workspace/default_fs\.go:' \
 		| grep -v '^internal/tools/analysis/analysistest/' \
 		| grep -v '^internal/tools/toolstest/' )"; \
 	if [ -n "$$VIOLATIONS" ]; then \
@@ -630,7 +632,6 @@ else
 		Get-ChildItem -Path internal/tools -Recurse -Filter '*.go' | Where-Object { \
 			$$_.Name -notlike '*_test.go' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/analysis/default_fs\.go$$' -and \
-			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/workspace/default_fs\.go$$' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/analysis/analysistest/' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/toolstest/' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch '.git/' -and \
