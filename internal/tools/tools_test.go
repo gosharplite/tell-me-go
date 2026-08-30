@@ -51,6 +51,7 @@ func newTestParams() tools.ToolRegistrationParams {
 		CommandValidator: &toolstest.MockCommandValidator{},
 		EventBus:         &eventstest.TestEventBus{},
 		ToolchainRunner:  &toolstest.FakeToolchainRunner{},
+		ProcessRunner:    &toolstest.FakeProcessRunner{},
 	}
 }
 

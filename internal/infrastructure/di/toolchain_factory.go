@@ -111,6 +111,11 @@ func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.R
 	// directly (CoverageSummary boundary).
 	regParams.ToolchainRunner = infra_toolchain.NewGoRunner(regParams.CommandExecutor)
 
+	// Single production construction of the process runner (issue #1460,
+	// ADR-074): the raw os/exec lifecycle in workspace is eliminated; only
+	// the di composition root constructs, via the process_factory.go seam.
+	regParams.ProcessRunner = newProcessRunner()
+
 	if err := f.RegisterAllTools(regParams); err != nil {
 		return nil, fmt.Errorf("%w: failed to register core tools: %w", errInfraInit, err)
 	}

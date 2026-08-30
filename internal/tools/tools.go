@@ -30,6 +30,7 @@ type ToolRegistrationParams struct {
 	CommandExecutor  tools.CommandExecutor
 	CommandValidator domain_security.CommandValidator
 	ToolchainRunner  tools.ToolchainRunner
+	ProcessRunner    tools.ProcessRunner
 	SessionProvider  ports.SessionProvider
 	LogFile          string
 	TraceFile        string
@@ -72,6 +73,9 @@ func validateRegistrationParams(params ToolRegistrationParams) error {
 	if params.ToolchainRunner == nil {
 		return fmt.Errorf("RegisterAll: ToolchainRunner is required and must not be nil")
 	}
+	if params.ProcessRunner == nil {
+		return fmt.Errorf("RegisterAll: ProcessRunner is required and must not be nil")
+	}
 	return nil
 }
 
@@ -80,7 +84,7 @@ func RegisterAll(params ToolRegistrationParams) error {
 	if err := validateRegistrationParams(params); err != nil {
 		return err
 	}
-	if err := workspace.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, params.WorkspacePolicy, params.HealthManager, params.EventBus); err != nil {
+	if err := workspace.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, params.WorkspacePolicy, params.HealthManager, params.EventBus, params.ProcessRunner); err != nil {
 		return fmt.Errorf("workspace.Register: %w", err)
 	}
 	if params.SessionProvider != nil {

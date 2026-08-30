@@ -367,15 +367,15 @@ ifeq ($(IS_POSIX),true)
 	@echo "Checking for infrastructure/persistence adapter imports in tools production files (ADR-055)..."
 	@VIOLATIONS="$$( grep -rn 'github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"' internal/tools/ --include='*.go' \
 		| grep -v '_test\.go:' \
-		| grep -v '^internal/tools/analysis/default_fs\.go:' \
-		| grep -v '^internal/tools/workspace/default_fs\.go:' )"; \
+		| grep -v '^internal/tools/analysis/default_fs\.go:' )"; \
 	if [ -n "$$VIOLATIONS" ]; then \
 		echo ""; \
-		echo "❌ ADR-055 violation: adapter import outside the sanctioned default_fs.go files."; \
+		echo "❌ ADR-055 violation: adapter import outside the sanctioned default_fs.go file."; \
 		echo "   internal/tools production files may import internal/infrastructure/persistence"; \
-		echo "   only in internal/tools/analysis/default_fs.go and"; \
-		echo "   internal/tools/workspace/default_fs.go (each holds its package's defaultFS fallback)."; \
-		echo "   Every live tool path must use the injected domain port (persistence.FileSystem)."; \
+		echo "   only in internal/tools/analysis/default_fs.go (the package's defaultFS fallback)."; \
+		echo "   The workspace fallback was retired by ADR-074 (issue #1460): the runner chain"; \
+		echo "   is fully injected and every live tool path must use the injected domain port"; \
+		echo "   (persistence.FileSystem)."; \
 		echo "   See: docs/adr/2026-08-tools-filesystem-injection.md"; \
 		echo ""; \
 		echo "Violating files:"; \
@@ -386,7 +386,7 @@ ifeq ($(IS_POSIX),true)
 		echo "only in the package's default_fs.go."; \
 		exit 1; \
 	fi
-	@echo "  ✓ Adapter imports confined to the two default_fs.go files."
+	@echo "  ✓ Adapter imports confined to the analysis default_fs.go."
 else
 	@echo "Checking for infrastructure/persistence adapter imports in tools production files (ADR-055)..."
 	@powershell -Command " \
@@ -395,7 +395,6 @@ else
 		Get-ChildItem -Path internal/tools -Recurse -Filter '*.go' | Where-Object { \
 			$$_.Name -notlike '*_test.go' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/analysis/default_fs\.go$$' -and \
-			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/workspace/default_fs\.go$$' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch '.git/' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch 'vendor/' \
 		} | ForEach-Object { \
@@ -404,7 +403,8 @@ else
 		}; \
 		if ($$violations.Count -gt 0) { \
 			Write-Host ''; \
-			Write-Host '❌ ADR-055 violation: adapter import outside the sanctioned default_fs.go files.'; \
+			Write-Host '❌ ADR-055 violation: adapter import outside the sanctioned default_fs.go file.'; \
+			Write-Host '   The workspace fallback was retired by ADR-074 (issue #1460).'; \
 			Write-Host '   See: docs/adr/2026-08-tools-filesystem-injection.md'; \
 			Write-Host ''; \
 			$$violations | Sort-Object -Unique | ForEach-Object { Write-Host $$_ }; \
@@ -414,7 +414,7 @@ else
 			exit 1 \
 		} \
 	"
-	@echo "  ✓ Adapter imports confined to the two default_fs.go files."
+	@echo "  ✓ Adapter imports confined to the analysis default_fs.go."
 endif
 
 # Verify issue #1325: no internal/tools production file imports the

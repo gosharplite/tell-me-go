@@ -160,31 +160,6 @@ catalog a new gap no one reviewed. Policy:
 - **See**: `internal/infrastructure/security/command_validator.go:119-121`,
   `internal/tools/workspace/shell.go:162,431,558`
 
-### tools/workspace/process_executor.go — StdoutPipe error
-
-- **Status**: ACCEPTED (2026-07)
-- **Rationale**: `os/exec.Cmd.StdoutPipe()` only returns an error when called after
-  `cmd.Start()` or when called more than once on the same command. In
-  `prepareCommand`, `StdoutPipe()` is called immediately after constructing
-  the `exec.Cmd` and before `Start()`, making this error path structurally
-  unreachable in correct code. Testing it would require deliberately
-  violating the `os/exec` contract (calling `StdoutPipe` after `Start`),
-  which is a programming error, not a recoverable runtime condition.
-  Re-anchored 2026-09 (#1431): lines drifted 143-145 → 151-153 as the
-  setupCommand Env-handling block grew above the StdoutPipe call.
-- **See**: `internal/tools/workspace/process_executor.go:152-154`
-
-### tools/workspace/process_executor.go — StderrPipe error
-
-- **Status**: ACCEPTED (2026-07)
-- **Rationale**: Same rationale as `StdoutPipe` above: `os/exec.Cmd.StderrPipe()`
-  only fails when called after `cmd.Start()` or called twice. In
-  `prepareCommand`, it is called before `Start()` and exactly once, making
-  this error path structurally unreachable.
-  Re-anchored 2026-09 (#1431): lines drifted 147-149 → 155-157 as the
-  setupCommand Env-handling block grew above the StderrPipe call.
-- **See**: `internal/tools/workspace/process_executor.go:156-158`
-
 ### tools/analysis/complexity.go — errgroup.Wait error
 
 - **Status**: ACCEPTED (2026-07)
@@ -1489,6 +1464,12 @@ to reason about.
 - **Rationale**: Table-driven test with 12 subtests (one per ToolchainRunner method) asserting exact zero-value defaults and call-log recording on an unset-Func fake. CC=38 comes from subtest enumeration and assertion boilerplate, not branching business logic. Same acceptance class as `TestFakeToolchainRunner_PresetValues` (CC=28) and `TestHistoryManager_SetPinned_WithFunctionCall` (CC=21).
 - **See**: `internal/tools/toolstest/fake_toolchain_runner_test.go:249`
 
+### internal/tools/toolstest/fake_process_runner_test.go — TestFakeProcessRunner_PresetFunc (CC=12)
+
+- **Status**: ACCEPTED (2026-09, issue #1460)
+- **Rationale**: Table-driven test with 2 subtests (preset handle passthrough, error passthrough) asserting StartFunc returns, call-log recording, and last-Call identity via the assertStartLog helper. CC=12 comes from subtest enumeration and assertion boilerplate, not branching business logic — same acceptance class as `TestFakeToolchainRunner_PresetValues` (CC=28). Grew over the CC=10 threshold at introduction (T2) because the handle subtest also pins the `tools.ExitError` round-trip (errors.As + the "exit status N" wording); flagged by the partition gate at T4.
+- **See**: `internal/tools/toolstest/fake_process_runner_test.go:52`
+
 ---
 
 ## Coverage Gaps (ACCEPTED — 2026-08 pricing-file removal follow-up)
@@ -1744,6 +1725,13 @@ to reason about.
   collection early returns, and config-scope fail-open fallbacks. Same
   acceptance class as the cataloged defensive nil/empty guards (2026-07 Batch
   Triage). Architect-acceptance comments at representative sites.
+  Re-anchored 2026-09 (#1460 T4): the executor's defensive empty-parts guard
+  moved from `setupCommand` into `RunCommand` (consolidated to 73-78, comment
+  + check + return — the setupErr-propagation pin folds into the same block);
+  the pipeline wirePipes/wirePipesFn defensive pins
+  (32-34, 34-36, 41-42, 42-42, 44-46) are **removed** — the seam was deleted
+  with the `tools.ProcessRunner` port swap (ADR-074), pipe creation dissolving
+  into the adapter.
 - **See**: `internal/infrastructure/di/container.go:284-286`,
   `internal/infrastructure/persistence/state.go:178-180`,
   `internal/infrastructure/security/paths.go:97-99,121-123,143-145,261-263,283-285,329-331,344-346`,
@@ -1754,8 +1742,7 @@ to reason about.
   `internal/tools/analysis/ports_registry.go:24-26,26-28,174-176,215-217,734-736`,
   `internal/tools/analysis/transitive_gate.go:529-531,533-535,552-554,555-557,577-579,632-634,659-661,661-663,664-665,665-667,669-671,673-675,685-687,687-689`,
   `internal/tools/analysis/types.go:426-428`,
-  `internal/tools/workspace/process_executor.go:82-84,131-133`,
-  `internal/tools/workspace/pipeline.go:32-34,34-36,41-42,42-42,44-46`,
+  `internal/tools/workspace/process_executor.go:73-78`,
   `internal/tools/workspace/reader.go:301-303,305-307,331-333,335-337`,
   `internal/tools/workspace/shell.go:236-238,305-307,310-312,318-320,394-396`
 
@@ -1779,6 +1766,23 @@ to reason about.
   subprocess/toolchain invocation failures, driver-level DB errors, fsync/disk
   faults. Same acceptance class as the 2026-07 fault-injection gaps.
   Architect-acceptance comments at representative sites.
+  Re-anchored/re-classified 2026-09 (#1460 T4): the workspace
+  process-execution cluster moved behind the injected `tools.ProcessRunner`
+  port (ADR-074). The executor Start/Wait/exit-extraction pins and the
+  pipeline start/wait/capture pins are **port-mediated** (interim re-anchored
+  to the live `RunCommand`/`RunPipeline`/`pipeline` lines; fake-drivable after
+  T6 — pins removed in the T6 commit). The RunPipeline arity guard, setup-error
+  propagation, and start-error cleanup survive unchanged and are re-anchored;
+  the Output/CombinedOutput error branches are re-anchored (the six
+  overlapping #1431 pins consolidate to the four live branch ranges). The five
+  `proc_posix.go` refs are **removed**: the file relocated verbatim to
+  `internal/infrastructure/process/proc_posix.go` (ADR-074 D4/T3, commit
+  `c421b24e`) with its Cancel-closure syscall/time touchpoints behind injected
+  hooks — deterministic coverage via adapter-internal tests plus the
+  real-process suites; pins closed (move disposition, architect's call at ADR
+  time). `reader.go` refs re-verified untouched (no criterion weight).
+  `shell.go` refs unchanged (the constructor grew a parameter on existing
+  lines; zero line drift).
 - **See**: `internal/infrastructure/mcp/stdio_client.go:123-125`,
   `internal/infrastructure/telemetry/metrics.go:190-192`,
   `internal/tools/analysis/dead_code.go:179-181`,
@@ -1786,9 +1790,8 @@ to reason about.
   `internal/tools/analysis/ports_registry.go:29-30,30-32`,
   `internal/tools/analysis/transitive_gate.go:690-691,691-693`,
   `internal/tools/analysis/types.go:423-425`,
-  `internal/tools/workspace/process_executor.go:90-92,98-100,107-109,241-243,246-248,256-260,265-267,269-269,472-474,474-476,477-479,484-486,486-488,489-491`,
-  `internal/tools/workspace/pipeline.go:122-124,161-164,174-175,175-177,185-185`,
-  `internal/tools/workspace/proc_posix.go:35-37,45-47,47-47,47-49,52-54`,
+  `internal/tools/workspace/process_executor.go:85-89,94-97,99-108,203-205,208-210,218-222,224-229,437-439,440-442,449-451,452-454`,
+  `internal/tools/workspace/pipeline.go:64-67,104-107,121-127,156-160`,
   `internal/tools/workspace/reader.go:310-312,344-345`,
   `internal/tools/workspace/shell.go:259-271,273-273,273-274,274-276,277-277,364-376,378-378,378-379,379-381,382-382,466-485,495-495,538-540,540-541`,
   `internal/ui/tui/browser.go:155-156`,
@@ -1813,7 +1816,10 @@ to reason about.
   implementation — the underlying method is covered directly. Same acceptance
   class as `AppendTask`, `domainFS.Chmod`, `FailoverGateway.ExtractDocument`
   (`delegation-wrapper`). Architect-acceptance comments at representative sites.
-- **See**: `internal/tools/workspace/process_executor.go:496-498`,
+  Re-anchored 2026-09 (#1460 T4): the executor LookPath delegation drifted
+  496-498 → 458-461 as the setupCommand/constructor deletions shrank the file
+  above it.
+- **See**: `internal/tools/workspace/process_executor.go:458-461`,
   `internal/ui/tui/history_editor.go:31-37`
 
 ### Platform-specific branches (9 sites)
@@ -1825,7 +1831,7 @@ to reason about.
   entries (`isPowerShellIndicator`, `NormalizeKey`). Architect-acceptance
   comments at representative sites.
 - **See**: `internal/infrastructure/telemetry/system_metrics_darwin_cgo.go:38-41,41-44,45-45,67-69,76-78,87-89`,
-  `internal/tools/workspace/process_executor.go:368-370,370-372,378-378`
+  `internal/tools/workspace/process_executor.go:331-333,335-337,341-341`
 
 ## Test Complexity (ACCEPTED — issue #1444 Gemini mixed-media ordering tests)
 
@@ -1859,4 +1865,4 @@ to reason about.
 - **Rationale**: Wire-validation helper for the round-trip matrix: per-key assertion blocks (2 contents/roles, model-turn untouched, 4 user parts in canonical order, base64 hydration, FR identity) plus canonical fingerprint construction. CC is assertion boilerplate across the wire-shape checks, not branching business logic. Same acceptance class as `assertMissingKeysResult` (CC=13) — assertion boilerplate across a coverage matrix.
 - **See**: `internal/infrastructure/llm/gemini/mixed_media_roundtrip_test.go:164`
 
-*Last Updated: 2026-09 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment); 2026-09 factory seams triage: coverage pin for llm/factory.go createAuthenticator default-case; 2026-09 catalog hygiene: coverage pins for llm/failover.go ExtractDocument delegation wrapper + llm/provider_health.go getPingEndpoint panic and buildRequest error branch (structurally unreachable); re-anchored NewID (222-224 → 234-236) and Task accessors (105,108,111 → 112,116); coverage test for BuildSuggestionService tracker fallback; 2026-09 #1378: four test-complexity catalog additions (TestToSDKSchema_EmptyType_OmitsTypeKey CC=19, TestToOpenAISchema_EmptyTypeOmitsKey CC=11, TestToOpenAITools_EmptyTypeNested_OmitsEmptyTypeKey CC=16, TestConvertSchema_NestedUnrepresentable_BecomesUntypedAny CC=12) — MCP empty-type schema tests; #1387: buildFileUploadBody multipart + propagation coverage-pin catalog entries (Entry A/B); redact hygiene: normalizeKeyToken dead-branch coverage entry (structurally-unreachable); 2026-09 triage completion: ten coverage entries (mcp marshalInputSchema/pipes/resolveCommand/Close-race, global_prompt_tracker prepare, policy confirmAction call-sites, manager Abs guards, state SetInfo marshal, telemetry summary marshal, toolchain execRunner); re-anchors (sqlite RowsAffected 200/218 → 207-209/224-226, state.go:56 dropped, gh token resolver 66-70 → 66-71); partition-test rows (17); complexity-drift repair: TestBasicAuthTransport 645→646, TestMCPFactory_ConcurrentBuild 683→684, ..._FailingServerSkips 743→744 (import-shift re-anchors), TestStdio_ChildDeathMidSession CC 11→13, TestResolveCommand 10→13 new entry (stdio_client_test.go:25); memory integration: hook.go BeforeTurn/OnPhaseTransition interface-stub entry + TestFirstNonNil/TestAcquireWriteLockUserHomeDirError coverage — partition-test row (1); memory integration round 2: truncateToBytes/AfterTurn-empty-text/acquireWriteLock call-site guard/metadataIDs/lastUserText/joinTextParts/FlushSession edge coverage (harness fix: newTestMemoryHome pre-creates ~/.plur) + flock_unix.go non-EWOULDBLOCK (fault-injection-required) and FlushSession engrams-empty (defensive-guard) catalog entries — partition-test rows (2); #1431: medium-gap triage batch (140 sites across six classes: defensive 53, structurally-unreachable 5, fault-injection 55, interface-stub 16, delegation 2, platform 9) + TurnTrace.AddWarnings / startWalker walk-error coverage fixes + six coverage-pin re-anchors (StdoutPipe 152-154, StderrPipe 156-158, renderMarkdownAsync 669-676, stdio_client ListTools 174-176, Close 251-253, resolveCommand 358) + partition-test rows (6), CC=10 boundary watch list)) ; #1444: five test-complexity catalog additions (Gemini mixed-media ordering tests — TestToSDKContent_MixedUserTurn_OrdersInlineDataFirst CC=13, TestToSDKContent_PoisonedPersistedShape_Normalizes CC=15, TestToSDKContent_OtherPartsMoveToEnd CC=15, TestSendChat_MixedMediaStoreRoundTrip CC=15, validateMixedMediaRoundTripReq CC=37) — partition-test rows (5)
+*Last Updated: 2026-09 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08; test-complexity catalog additions: TestFakeToolchainRunner_PresetValues (CC=28) and TestFakeToolchainRunner_ZeroDefaults (CC=38) — issue #1325 toolstest fake; #1327: middleware.go catalog pins re-anchored to :213/:311 (per-turn Turn lifecycle refactor); catalog re-anchor: di/container.go skills.sh error branch (203-206) covered — See narrowed to :197-200; catalog re-anchor: history_test.go pins +1 (T1 import shift); catalog re-anchor: middleware.go detectLoop + session_manager.go TUI entry (line drift from renderPostTUISummary feature); catalog re-anchor: factory_test.go + files_test.go complexity pins (issue #1350 item 4, llm→auth import shift); catalog re-anchor: files_test.go complexity pin 378→379 + auth.go Invalidate no-op stub lines (issue #1358 auth/contract realignment); 2026-09 factory seams triage: coverage pin for llm/factory.go createAuthenticator default-case; 2026-09 catalog hygiene: coverage pins for llm/failover.go ExtractDocument delegation wrapper + llm/provider_health.go getPingEndpoint panic and buildRequest error branch (structurally unreachable); re-anchored NewID (222-224 → 234-236) and Task accessors (105,108,111 → 112,116); coverage test for BuildSuggestionService tracker fallback; 2026-09 #1378: four test-complexity catalog additions (TestToSDKSchema_EmptyType_OmitsTypeKey CC=19, TestToOpenAISchema_EmptyTypeOmitsKey CC=11, TestToOpenAITools_EmptyTypeNested_OmitsEmptyTypeKey CC=16, TestConvertSchema_NestedUnrepresentable_BecomesUntypedAny CC=12) — MCP empty-type schema tests; #1387: buildFileUploadBody multipart + propagation coverage-pin catalog entries (Entry A/B); redact hygiene: normalizeKeyToken dead-branch coverage entry (structurally-unreachable); 2026-09 triage completion: ten coverage entries (mcp marshalInputSchema/pipes/resolveCommand/Close-race, global_prompt_tracker prepare, policy confirmAction call-sites, manager Abs guards, state SetInfo marshal, telemetry summary marshal, toolchain execRunner); re-anchors (sqlite RowsAffected 200/218 → 207-209/224-226, state.go:56 dropped, gh token resolver 66-70 → 66-71); partition-test rows (17); complexity-drift repair: TestBasicAuthTransport 645→646, TestMCPFactory_ConcurrentBuild 683→684, ..._FailingServerSkips 743→744 (import-shift re-anchors), TestStdio_ChildDeathMidSession CC 11→13, TestResolveCommand 10→13 new entry (stdio_client_test.go:25); memory integration: hook.go BeforeTurn/OnPhaseTransition interface-stub entry + TestFirstNonNil/TestAcquireWriteLockUserHomeDirError coverage — partition-test row (1); memory integration round 2: truncateToBytes/AfterTurn-empty-text/acquireWriteLock call-site guard/metadataIDs/lastUserText/joinTextParts/FlushSession edge coverage (harness fix: newTestMemoryHome pre-creates ~/.plur) + flock_unix.go non-EWOULDBLOCK (fault-injection-required) and FlushSession engrams-empty (defensive-guard) catalog entries — partition-test rows (2); #1431: medium-gap triage batch (140 sites across six classes: defensive 53, structurally-unreachable 5, fault-injection 55, interface-stub 16, delegation 2, platform 9) + TurnTrace.AddWarnings / startWalker walk-error coverage fixes + six coverage-pin re-anchors (StdoutPipe 152-154, StderrPipe 156-158, renderMarkdownAsync 669-676, stdio_client ListTools 174-176, Close 251-253, resolveCommand 358) + partition-test rows (6), CC=10 boundary watch list)) ; #1444: five test-complexity catalog additions (Gemini mixed-media ordering tests — TestToSDKContent_MixedUserTurn_OrdersInlineDataFirst CC=13, TestToSDKContent_PoisonedPersistedShape_Normalizes CC=15, TestToSDKContent_OtherPartsMoveToEnd CC=15, TestSendChat_MixedMediaStoreRoundTrip CC=15, validateMixedMediaRoundTripReq CC=37) — partition-test rows (5); #1460 T4: seam-swap catalog batch — #1431 fault-injection entry re-anchored/re-classified (workspace executor/pipeline pins port-mediated with interim re-anchors to the live RunCommand/RunPipeline/pipeline lines, proc_posix 5 pins removed as a file relocation to internal/infrastructure/process with injected-kill-function coverage (commit c421b24e), reader re-verified untouched, shell zero-drift); the two structurally-unreachable StdoutPipe/StderrPipe entries (process_executor.go:152-154/:156-158) **removed** — the property dissolves into internal/infrastructure/process/runner.go where pre-Start pipe creation preserves it (ADR-074 D2); defensive 53-site entry: executor guard re-anchored to RunCommand 73-78, pipeline wirePipes/wirePipesFn pins removed (seam deleted with the port swap); platform-specific entry re-anchored (windows branch 331-341); delegation-wrapper entry re-anchored (LookPath 458-461); TestRunCommand_NonExitErrorWaitPath pin re-verified unshifted (stream_test.go:817, CC=11 unchanged — rename-only edits); partition-test workspace rows updated in the same commit per the Drift Policy coordination rule

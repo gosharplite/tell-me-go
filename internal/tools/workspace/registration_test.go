@@ -66,7 +66,7 @@ func TestRegister(t *testing.T) {
 	validator := &toolstest.MockCommandValidator{}
 	fs := persistencetest.NewPlainOSFileSystem()
 
-	if err := Register(registry, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), nil, nil); err != nil {
+	if err := Register(registry, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), nil, nil, &toolstest.FakeProcessRunner{}); err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
 
@@ -110,7 +110,7 @@ func TestRegister(t *testing.T) {
 	t.Run("check_system_health", func(t *testing.T) {
 		reg := &mockToolRegistry{}
 		mockHealth := &mockHealthCheckManager{}
-		if err := Register(reg, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), mockHealth, nil); err != nil {
+		if err := Register(reg, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), mockHealth, nil, &toolstest.FakeProcessRunner{}); err != nil {
 			t.Fatalf("Register failed: %v", err)
 		}
 		found := false
@@ -239,7 +239,7 @@ func TestRegisterSystem_PartialFailure(t *testing.T) {
 			mockToolRegistry: &mockToolRegistry{},
 			failOnTool:       "execute_command",
 		}
-		err := registerSystem(registry, sm, validator, nil, nil, persistencetest.NewPlainOSFileSystem())
+		err := registerSystem(registry, sm, validator, nil, nil, persistencetest.NewPlainOSFileSystem(), &toolstest.FakeProcessRunner{})
 		if err == nil {
 			t.Fatal("expected error from registerSystem")
 		}
@@ -253,7 +253,7 @@ func TestRegisterSystem_PartialFailure(t *testing.T) {
 			mockToolRegistry: &mockToolRegistry{},
 			failOnTool:       "pipe_commands",
 		}
-		err := registerSystem(registry, sm, validator, nil, nil, persistencetest.NewPlainOSFileSystem())
+		err := registerSystem(registry, sm, validator, nil, nil, persistencetest.NewPlainOSFileSystem(), &toolstest.FakeProcessRunner{})
 		if err == nil {
 			t.Fatal("expected error from registerSystem")
 		}
@@ -268,7 +268,7 @@ func TestRegisterSystem_PartialFailure(t *testing.T) {
 			failOnTool:       "check_system_health",
 		}
 		mockHealth := &mockHealthCheckManager{}
-		err := registerSystem(registry, sm, validator, mockHealth, nil, persistencetest.NewPlainOSFileSystem())
+		err := registerSystem(registry, sm, validator, mockHealth, nil, persistencetest.NewPlainOSFileSystem(), &toolstest.FakeProcessRunner{})
 		if err == nil {
 			t.Fatal("expected error from registerSystem")
 		}
@@ -402,7 +402,7 @@ func TestRegister_PartialFailure(t *testing.T) {
 			mockToolRegistry: &mockToolRegistry{},
 			failOnTool:       "execute_command",
 		}
-		err := Register(registry, sm, exec, validator, fs, wp, nil, nil)
+		err := Register(registry, sm, exec, validator, fs, wp, nil, nil, &toolstest.FakeProcessRunner{})
 		if err == nil {
 			t.Fatal("expected error from Register when registerSystem fails")
 		}
@@ -416,7 +416,7 @@ func TestRegister_PartialFailure(t *testing.T) {
 			mockToolRegistry: &mockToolRegistry{},
 			failOnTool:       "get_git_status",
 		}
-		err := Register(registry, sm, exec, validator, fs, wp, nil, nil)
+		err := Register(registry, sm, exec, validator, fs, wp, nil, nil, &toolstest.FakeProcessRunner{})
 		if err == nil {
 			t.Fatal("expected error from Register when registerGit fails")
 		}
@@ -430,7 +430,7 @@ func TestRegister_SystemToolsOnly(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	reg := registry.New()
 	// Register only system tools (skip git/files)
-	err := registerSystem(reg, sm, security.NewCommandValidator(sm, nil), nil, nil, persistencetest.NewPlainOSFileSystem())
+	err := registerSystem(reg, sm, security.NewCommandValidator(sm, nil), nil, nil, persistencetest.NewPlainOSFileSystem(), &toolstest.FakeProcessRunner{})
 	if err != nil {
 		t.Fatalf("registerSystem failed: %v", err)
 	}
@@ -457,7 +457,7 @@ func TestRegister_WithHealth(t *testing.T) {
 		Components:    map[ports.Component]ports.ComponentReport{},
 		Timestamp:     time.Now(),
 	}}
-	err := registerSystem(reg, sm, security.NewCommandValidator(sm, nil), mockHealth, nil, persistencetest.NewPlainOSFileSystem())
+	err := registerSystem(reg, sm, security.NewCommandValidator(sm, nil), mockHealth, nil, persistencetest.NewPlainOSFileSystem(), &toolstest.FakeProcessRunner{})
 	if err != nil {
 		t.Fatalf("registerSystem failed: %v", err)
 	}
@@ -479,7 +479,7 @@ func TestRegisterSystem_HealthNil(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	validator := &toolstest.MockCommandValidator{}
 
-	err := registerSystem(reg, sm, validator, nil, nil, persistencetest.NewPlainOSFileSystem())
+	err := registerSystem(reg, sm, validator, nil, nil, persistencetest.NewPlainOSFileSystem(), &toolstest.FakeProcessRunner{})
 	if err != nil {
 		t.Fatalf("registerSystem with nil health failed: %v", err)
 	}
@@ -516,7 +516,7 @@ func TestRegister_RegisterFilesFails(t *testing.T) {
 		mockToolRegistry: &mockToolRegistry{},
 		failOnTool:       "list_files",
 	}
-	err := Register(registry, sm, exec, validator, fs, wp, nil, nil)
+	err := Register(registry, sm, exec, validator, fs, wp, nil, nil, &toolstest.FakeProcessRunner{})
 	if err == nil {
 		t.Fatal("expected error from Register when registerFiles fails")
 	}
@@ -534,7 +534,7 @@ func TestRegisterFiles_MidSequenceFailure(t *testing.T) {
 	fs := persistencetest.NewPlainOSFileSystem()
 	wp := infra_persistence.NewWorkspacePolicy()
 	// Use real processExecutor to cover the type-assertion success path (internalExec = pe).
-	exec := newprocessExecutor()
+	exec := newTestProcessExecutor()
 
 	t.Run("append_text fails", func(t *testing.T) {
 		registry := &failingRegistry{

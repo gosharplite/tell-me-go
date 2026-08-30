@@ -204,12 +204,12 @@ type shellTool struct {
 	heartbeatInterval time.Duration // zero means default (2s)
 }
 
-func newshellTool(sm shellSecurity, eventBus events.EventBus, validator domain_security.CommandValidator, translator commandTranslator, wrapper shellWrapper, fs persistence.FileSystem) *shellTool {
+func newshellTool(sm shellSecurity, eventBus events.EventBus, validator domain_security.CommandValidator, translator commandTranslator, wrapper shellWrapper, fs persistence.FileSystem, runner tools.ProcessRunner) *shellTool {
 	return &shellTool{
 		sm:         sm,
 		eventBus:   eventBus,
 		validator:  validator,
-		executor:   newprocessExecutorWithFS(fs),
+		executor:   newprocessExecutorWithFS(fs, runner),
 		translator: translator,
 		wrapper:    wrapper,
 		maxOutput:  50000,
