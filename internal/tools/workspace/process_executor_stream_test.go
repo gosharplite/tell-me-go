@@ -595,8 +595,9 @@ func TestRunPipeline_TooFewCommands(t *testing.T) {
 }
 
 // TestRunPipeline_NewPipelineError verifies that RunPipeline propagates
-// the error from newPipelineCmd when a sub-command is empty, including
-// the specific index in the error message and producing exit code 1.
+// the error from newPipeline's spec-assembly guard when a sub-command is
+// empty, including the specific index in the error message and producing
+// exit code 1.
 func TestRunPipeline_NewPipelineError(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping process-spawning test in short mode")
@@ -605,7 +606,7 @@ func TestRunPipeline_NewPipelineError(t *testing.T) {
 	ctx := context.Background()
 	res, err := executor.RunPipeline(ctx, [][]string{{helperPath, "echo", "hello"}, {}}, executionConfig{})
 	if err == nil {
-		t.Fatal("expected error from newPipelineCmd with empty command")
+		t.Fatal("expected error from newPipeline with empty command")
 	}
 	if !strings.Contains(err.Error(), "empty command at index 1") {
 		t.Errorf("expected 'empty command at index 1' in error, got: %v", err)

@@ -231,12 +231,12 @@ func TestRunPipeline_EnvPropagation(t *testing.T) {
 	}
 }
 
-// TestNewPipeline_LoopErrorOnThirdCommand verifies that when newPipelineCmd
-// fails for the third command in a multi-command pipeline (after the first
-// two succeeded), the error propagates with the correct index. Although the
-// loop error path at pipeline.go:35-37 is already exercised by
-// TestRunPipeline_NewPipelineError (2nd command fails), this test confirms
-// correct index reporting for deeper pipelines.
+// TestNewPipeline_LoopErrorOnThirdCommand verifies that the newPipeline
+// spec-assembly guard fails for the third command in a multi-command
+// pipeline (after the first two succeeded), the error propagates with the
+// correct index. Although the guard error path at pipeline.go:44-46 is
+// already exercised by TestRunPipeline_NewPipelineError (2nd command
+// fails), this test confirms correct index reporting for deeper pipelines.
 func TestNewPipeline_LoopErrorOnThirdCommand(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping process-spawning test in short mode")
@@ -247,7 +247,7 @@ func TestNewPipeline_LoopErrorOnThirdCommand(t *testing.T) {
 	pipedParts := [][]string{
 		{helperPath, "echo", "hello"},
 		{helperPath, "echo", "world"},
-		{}, // empty parts → newPipelineCmd returns error at index 2
+		{}, // empty parts → newPipeline returns error at index 2
 	}
 
 	_, err := e.newPipeline(ctx, pipedParts, executionConfig{})

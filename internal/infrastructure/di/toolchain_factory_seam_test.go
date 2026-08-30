@@ -5,6 +5,7 @@ package di
 
 import (
 	"context"
+	"io"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -65,6 +66,68 @@ func TestBuildRegistry_PopulatesToolchainRunner(t *testing.T) {
 			}
 		}()
 		_ = captured.ToolchainRunner.CheckGovulncheck(context.Background())
+	}()
+}
+
+// TestBuildRegistry_PopulatesProcessRunner is the wiring verification for
+// the di composition root's process-runner field (issue #1460, ADR-074 seam
+// capture, mirroring the ToolchainRunner probe): BuildRegistry must populate
+// ProcessRunner on the ToolRegistrationParams handed to RegisterAllTools.
+func TestBuildRegistry_PopulatesProcessRunner(t *testing.T) {
+	sm := new(mockConfigurableSecurityManager)
+	sm.RegisterPolicyToolsFunc = func(r tools.Registry, kv ports.KVStore) error { return nil }
+
+	factory := newToolchainFactory(t.TempDir(), nil, sm, nil, nil, nil, nil).(*defaultToolchainFactory)
+
+	var captured infra_tools.ToolRegistrationParams
+	factory.RegisterAllTools = func(params infra_tools.ToolRegistrationParams) error {
+		captured = params
+		return nil
+	}
+	factory.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile, model, mode string, pricingOverrides map[string]pricing.ModelPricing) error {
+		return nil
+	}
+
+	mockSP := &testfixtures.MockSessionProvider{
+		GetSettingsFn: func() ports.KVStore { return &mockKVStore{} },
+	}
+	params := toolchainParams{
+		Paths:           &persistence.Paths{},
+		SessionProvider: mockSP,
+	}
+
+	if _, err := factory.BuildRegistry(params); err != nil {
+		t.Fatalf("BuildRegistry failed: %v", err)
+	}
+
+	if captured.ProcessRunner == nil {
+		t.Fatal("ProcessRunner was not populated on ToolRegistrationParams")
+	}
+
+	// Direct port call — never through the registry handler: a dropped
+	// `regParams.ProcessRunner = newProcessRunner()` compiles (nil satisfies
+	// the interface), so the behavioral call is the enforcement. Starts the
+	// real `true` process — safe, deterministic, environment-independent —
+	// and drains Stdout to EOF before Wait (the runner's handle contract).
+	// The assertion is NO-PANIC on Start plus a clean Wait.
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("Start panicked (ProcessRunner not populated with a functioning adapter?): %v", r)
+			}
+		}()
+		h, err := captured.ProcessRunner.Start(context.Background(), tools.ProcessSpec{Name: "true", Args: nil})
+		if err != nil {
+			t.Fatalf("Start(%q) returned error: %v", "true", err)
+		}
+		if h == nil {
+			t.Fatal("Start returned nil handle with nil error")
+		}
+		_, _ = io.Copy(io.Discard, h.Stdout())
+		_, _ = io.Copy(io.Discard, h.Stderr())
+		if err := h.Wait(); err != nil {
+			t.Fatalf("Wait() returned error for the `true` process: %v", err)
+		}
 	}()
 }
 

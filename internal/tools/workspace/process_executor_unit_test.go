@@ -424,7 +424,7 @@ func TestProcessExecutor_handleCaptureError_Truncation(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// formatPipelineResult / setupCommand / newPipelineCmd guard
+// formatPipelineResult / RunCommand guard
 // ---------------------------------------------------------------------------
 
 func TestFormatPipelineResult_ExitCodeNormalization(t *testing.T) {
@@ -570,8 +570,8 @@ func TestPrepareCommand_CancelBeforeStart(t *testing.T) {
 	t.Parallel()
 
 	cmd := exec.Command("echo", "hello")
-	// Simulate what setupCommand/newPipelineCmd do: assign the Cancel closure
-	// with the nil-Process guard.
+	// Simulate what the process adapter's configureProcAttrs does: assign the
+	// Cancel closure with the nil-Process guard.
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
 			return nil
@@ -759,9 +759,10 @@ func TestValidateAndResolveRelPath_GetwdError(t *testing.T) {
 
 // TestStdoutPipe_FailsOnSecondCall verifies the os/exec contract that
 // cmd.StdoutPipe() returns an error when called a second time on the
-// same *exec.Cmd. This proves the defensive error path at
-// process_executor.go:137-139 is correctly formulated, even though
-// setupCommand always calls StdoutPipe() exactly once on a fresh cmd.
+// same *exec.Cmd. The process adapter (internal/infrastructure/process/
+// runner.go) calls StdoutPipe() exactly once per Start and always before
+// cmd.Start, so this defensive path stays structurally unreachable there;
+// this test pins the os/exec contract the adapter's pipe handling relies on.
 // See Issue #1130.
 func TestStdoutPipe_FailsOnSecondCall(t *testing.T) {
 	cmd := exec.Command("echo", "hello")
@@ -780,9 +781,10 @@ func TestStdoutPipe_FailsOnSecondCall(t *testing.T) {
 
 // TestStderrPipe_FailsOnSecondCall verifies the os/exec contract that
 // cmd.StderrPipe() returns an error when called a second time on the
-// same *exec.Cmd. This proves the defensive error path at
-// process_executor.go:141-143 is correctly formulated, even though
-// setupCommand always calls StderrPipe() exactly once on a fresh cmd.
+// same *exec.Cmd. The process adapter (internal/infrastructure/process/
+// runner.go) calls StderrPipe() exactly once per Start and always before
+// cmd.Start, so this defensive path stays structurally unreachable there;
+// this test pins the os/exec contract the adapter's pipe handling relies on.
 // See Issue #1130.
 func TestStderrPipe_FailsOnSecondCall(t *testing.T) {
 	cmd := exec.Command("echo", "hello")
