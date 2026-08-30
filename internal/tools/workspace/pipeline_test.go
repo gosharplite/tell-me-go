@@ -5,9 +5,7 @@ package workspace
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,67 +14,8 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// pipeline unit tests — wirePipes cleanup, start failure, captureStderrAsync
+// pipeline unit tests — start failure, captureStderrAsync, env propagation
 // ---------------------------------------------------------------------------
-
-func TestPipeline_WirePipesCleanupOnFailure_StderrPipe(t *testing.T) {
-	cmd1 := exec.Command("echo", "hello")
-	cmd2 := exec.Command("echo", "world")
-	cmd3 := exec.Command("echo", "third")
-	if _, err := cmd3.StderrPipe(); err != nil {
-		t.Fatalf("failed to pre-consume StderrPipe: %v", err)
-	}
-	p := &pipeline{cmds: []*exec.Cmd{cmd1, cmd2, cmd3}}
-	err := p.wirePipes()
-	if err == nil {
-		t.Fatal("expected wirePipes to fail on pre-consumed StderrPipe")
-	}
-	if !strings.Contains(err.Error(), "failed to get stderr pipe for command 2") {
-		t.Errorf("expected stderr pipe error for command 2, got: %v", err)
-	}
-	p.closePipes()
-}
-
-func TestPipeline_WirePipesCleanupOnFailure_StdoutPipe(t *testing.T) {
-	cmd1 := exec.Command("echo", "hello")
-	cmd2 := exec.Command("echo", "world")
-	cmd3 := exec.Command("echo", "third")
-	if _, err := cmd1.StdoutPipe(); err != nil {
-		t.Fatalf("failed to pre-consume StdoutPipe: %v", err)
-	}
-	p := &pipeline{cmds: []*exec.Cmd{cmd1, cmd2, cmd3}}
-	err := p.wirePipes()
-	if err == nil {
-		t.Fatal("expected wirePipes to fail on pre-consumed StdoutPipe")
-	}
-	if !strings.Contains(err.Error(), "failed to get stdout pipe for command 0") {
-		t.Errorf("expected stdout pipe error for command 0, got: %v", err)
-	}
-	if len(p.pipes) != 1 {
-		t.Errorf("expected 1 pipe (cmd1 stderr) before cleanup, got %d", len(p.pipes))
-	}
-	p.closePipes()
-}
-
-func TestPipeline_WirePipesCleanupOnFailure_LastStdoutPipe(t *testing.T) {
-	cmd1 := exec.Command("echo", "hello")
-	cmd2 := exec.Command("echo", "world")
-	if _, err := cmd2.StdoutPipe(); err != nil {
-		t.Fatalf("failed to pre-consume StdoutPipe: %v", err)
-	}
-	p := &pipeline{cmds: []*exec.Cmd{cmd1, cmd2}}
-	err := p.wirePipes()
-	if err == nil {
-		t.Fatal("expected wirePipes to fail on pre-consumed last StdoutPipe")
-	}
-	if !strings.Contains(err.Error(), "failed to get stdout pipe for last command") {
-		t.Errorf("expected last stdout pipe error, got: %v", err)
-	}
-	if len(p.pipes) != 3 {
-		t.Errorf("expected 3 pipes before cleanup, got %d", len(p.pipes))
-	}
-	p.closePipes()
-}
 
 // TestPipeline_StartFailure verifies that when a pipeline's Start() fails
 // on a subsequent command, previously-started processes are properly
@@ -86,7 +25,7 @@ func TestPipeline_StartFailure(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping process-spawning test in short mode")
 	}
-	e := newprocessExecutor()
+	e := newTestProcessExecutor()
 	ctx := context.Background()
 
 	tests := []struct {
@@ -209,7 +148,7 @@ func TestPipeline_StartFailureDeadlock(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping process-spawning test in short mode")
 	}
-	e := newprocessExecutor()
+	e := newTestProcessExecutor()
 
 	pipedParts := [][]string{
 		{helperPath, "pipe-fill"},                 // writes 200KB to stdout, blocks when pipe buffer full
@@ -252,7 +191,7 @@ func TestRunPipeline_EnvPropagation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping process-spawning test in short mode")
 	}
-	e := newprocessExecutor()
+	e := newTestProcessExecutor()
 	ctx := context.Background()
 
 	tests := []struct {
@@ -292,88 +231,23 @@ func TestRunPipeline_EnvPropagation(t *testing.T) {
 	}
 }
 
-// TestNewPipeline_WirePipesError_Propagation verifies that newPipeline
-// correctly propagates an error from wirePipesFn back to the caller.
-// This covers the defensive error path at pipeline.go:41-43 which is
-// structurally unreachable through the normal code path (fresh exec.Cmd
-// objects never fail on the first StderrPipe/StdoutPipe call) but must
-// be exercised via dependency injection.
-func TestNewPipeline_WirePipesError_Propagation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping process-spawning test in short mode")
-	}
-	e := &processExecutor{
-		wirePipesFn: func(p *pipeline) error {
-			return fmt.Errorf("failed to get stderr pipe for command 0: injected failure")
-		},
-	}
-	ctx := context.Background()
-	pipedParts := [][]string{
-		{helperPath, "echo", "hello"},
-		{helperPath, "cat"},
-	}
-
-	_, err := e.newPipeline(ctx, pipedParts, executionConfig{})
-	if err == nil {
-		t.Fatal("expected error from wirePipes failure, got nil")
-	}
-	if !strings.Contains(err.Error(), "failed to get stderr pipe for command 0") {
-		t.Errorf("expected error containing 'failed to get stderr pipe for command 0', got: %v", err)
-	}
-}
-
-// TestNewPipeline_WirePipesError exercises the wirePipes error return path
-// in newPipeline (pipeline.go:41-43) indirectly through direct wirePipes calls.
-//
-// GAP ACCEPTED (pipeline.go:41-43): The wirePipes error return inside
-// newPipeline is structurally unreachable because newPipelineCmd creates
-// fresh exec.Cmd objects with un-consumed pipes. StdoutPipe/StderrPipe
-// only fail on the second call to the same *exec.Cmd. This defensive
-// error path exists to protect against future refactors. wirePipes
-// itself is fully covered (100%) by the WirePipesCleanupOnFailure tests.
-// See issue #836.
-func TestNewPipeline_WirePipesError(t *testing.T) {
-	// Construct a pipeline where cmd2 has a pre-consumed stderr pipe.
-	// This triggers the wirePipes error path that corresponds to the
-	// defensive `if err := p.wirePipes(); err != nil` check in newPipeline
-	// (pipeline.go:41-43), which is structurally unreachable through
-	// the public API but must still behave correctly.
-	cmd1 := exec.Command("echo", "hello")
-	cmd2 := exec.Command("echo", "world")
-	if _, err := cmd2.StderrPipe(); err != nil {
-		t.Fatalf("failed to pre-consume stderr: %v", err)
-	}
-
-	p := &pipeline{cmds: []*exec.Cmd{cmd1, cmd2}}
-	err := p.wirePipes()
-	if err == nil {
-		t.Fatal("expected wirePipes to fail on pre-consumed stderr")
-	}
-	if !strings.Contains(err.Error(), "failed to get stderr pipe for command 1") {
-		t.Errorf("expected stderr pipe error for command 1, got: %v", err)
-	}
-
-	// Verify pipes were cleaned up on failure (deferred in wirePipes).
-	p.closePipes()
-}
-
-// TestNewPipeline_LoopErrorOnThirdCommand verifies that when newPipelineCmd
-// fails for the third command in a multi-command pipeline (after the first
-// two succeeded), the error propagates with the correct index. Although the
-// loop error path at pipeline.go:35-37 is already exercised by
-// TestRunPipeline_NewPipelineError (2nd command fails), this test confirms
-// correct index reporting for deeper pipelines.
+// TestNewPipeline_LoopErrorOnThirdCommand verifies that the newPipeline
+// spec-assembly guard fails for the third command in a multi-command
+// pipeline (after the first two succeeded), the error propagates with the
+// correct index. Although the guard error path at pipeline.go:44-46 is
+// already exercised by TestRunPipeline_NewPipelineError (2nd command
+// fails), this test confirms correct index reporting for deeper pipelines.
 func TestNewPipeline_LoopErrorOnThirdCommand(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping process-spawning test in short mode")
 	}
-	e := newprocessExecutor()
+	e := newTestProcessExecutor()
 	ctx := context.Background()
 
 	pipedParts := [][]string{
 		{helperPath, "echo", "hello"},
 		{helperPath, "echo", "world"},
-		{}, // empty parts → newPipelineCmd returns error at index 2
+		{}, // empty parts → newPipeline returns error at index 2
 	}
 
 	_, err := e.newPipeline(ctx, pipedParts, executionConfig{})
@@ -383,108 +257,4 @@ func TestNewPipeline_LoopErrorOnThirdCommand(t *testing.T) {
 	if !strings.Contains(err.Error(), "empty command at index 2") {
 		t.Errorf("expected 'empty command at index 2', got: %v", err)
 	}
-}
-
-// TestNewPipelineCmd exercises error and success branches of newPipelineCmd.
-//
-// GAP ACCEPTED (pipeline.go:57-59): The Windows Cancel branch (taskkill
-// proc kill) is platform-gated via runtime.GOOS and untestable on Linux.
-// Covered by TestNewPipelineCmd_CancelGuard on Windows. See issue #836.
-func TestNewPipelineCmd(t *testing.T) {
-	e := newprocessExecutor()
-	ctx := context.Background()
-
-	tests := []struct {
-		name    string
-		parts   []string
-		index   int
-		config  executionConfig
-		wantErr string
-		wantCmd bool
-		wantEnv string
-	}{
-		{
-			name:    "empty parts at index 0",
-			parts:   []string{},
-			index:   0,
-			config:  executionConfig{},
-			wantErr: "empty command at index 0",
-		},
-		{
-			name:    "empty parts at non-zero index",
-			parts:   []string{},
-			index:   3,
-			config:  executionConfig{},
-			wantErr: "empty command at index 3",
-		},
-		{
-			name:    "valid command returns cmd",
-			parts:   []string{"echo", "hello"},
-			index:   0,
-			config:  executionConfig{},
-			wantCmd: true,
-		},
-		{
-			name:    "custom env vars are propagated",
-			parts:   []string{"echo", "hello"},
-			index:   0,
-			config:  executionConfig{Env: map[string]string{"PIPELINE_TEST_665": "task3"}},
-			wantCmd: true,
-			wantEnv: "PIPELINE_TEST_665=task3",
-		},
-	}
-
-	for _, tt := range tests {
-		tt := tt // capture
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			cmd, err := e.newPipelineCmd(ctx, tt.parts, tt.index, tt.config)
-
-			if tt.wantErr != "" {
-				assertPipelineCmdError(t, err, tt.wantErr)
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if tt.wantCmd {
-				assertCmdNotNil(t, cmd)
-			}
-			if tt.wantEnv != "" {
-				assertEnvVarPresent(t, cmd.Env, tt.wantEnv)
-			}
-		})
-	}
-}
-
-// assertPipelineCmdError checks that err is non-nil and contains wantSubstr.
-func assertPipelineCmdError(t *testing.T, err error, wantSubstr string) {
-	t.Helper()
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), wantSubstr) {
-		t.Errorf("expected error containing %q, got %q", wantSubstr, err.Error())
-	}
-}
-
-// assertCmdNotNil checks that cmd is non-nil.
-func assertCmdNotNil(t *testing.T, cmd *exec.Cmd) {
-	t.Helper()
-	if cmd == nil {
-		t.Fatal("expected non-nil *exec.Cmd")
-	}
-}
-
-// assertEnvVarPresent checks that the env slice contains the exact "KEY=VALUE" entry.
-func assertEnvVarPresent(t *testing.T, env []string, want string) {
-	t.Helper()
-	for _, e := range env {
-		if e == want {
-			return
-		}
-	}
-	t.Errorf("expected cmd.Env to contain %q", want)
 }

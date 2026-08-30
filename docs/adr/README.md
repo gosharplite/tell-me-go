@@ -79,6 +79,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-071** | GLM-5.3-Flash Vision Capability via OpenAI-Compatible image_url Blocks | 2026-09 | Accepted | [2026-09-glm-53-flash-vision-capability.md](2026-09-glm-53-flash-vision-capability.md) |
 | **ADR-072** | Native reasoning_content Round-Trip for Z.AI GLM Models (SupportsReasoningContent) | 2026-09 | Accepted | [2026-09-glm-reasoning-content-capability.md](2026-09-glm-reasoning-content-capability.md) |
 | **ADR-073** | GPT-5.x Vision via the Responses API — Full-History Image Routing, gpt-5+ Vision, Dimension Guard | 2026-09 | Accepted | [2026-09-gpt5x-responses-vision.md](2026-09-gpt5x-responses-vision.md) |
+| **ADR-074** | Inject the Process Runner into the Tools Layer (ProcessRunner Domain Port) | 2026-09 | Accepted | [2026-09-process-runner-injection.md](2026-09-process-runner-injection.md) |
 
 ## How to Create a New ADR
 

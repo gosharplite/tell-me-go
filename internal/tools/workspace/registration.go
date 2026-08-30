@@ -21,11 +21,11 @@ type fileSystemManager struct {
 }
 
 // Register adds all workspace-related tools (file, git, system) to the registry.
-func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandExecutor, validator domain_security.CommandValidator, fs persistence.FileSystem, wp services.WorkspacePolicy, health ports.HealthCheckManager, eventBus events.EventBus) error {
+func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandExecutor, validator domain_security.CommandValidator, fs persistence.FileSystem, wp services.WorkspacePolicy, health ports.HealthCheckManager, eventBus events.EventBus, runner tools.ProcessRunner) error {
 	if err := registerFiles(r, sm, fs, exec, wp); err != nil {
 		return err
 	}
-	if err := registerSystem(r, sm, validator, health, eventBus, fs); err != nil {
+	if err := registerSystem(r, sm, validator, health, eventBus, fs, runner); err != nil {
 		return err
 	}
 	if err := registerGit(r, sm, exec); err != nil {
@@ -295,7 +295,7 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 	return nil
 }
 
-func registerSystem(r tools.Registry, sm domain_security.Manager, validator domain_security.CommandValidator, health ports.HealthCheckManager, eventBus events.EventBus, fs persistence.FileSystem) error {
+func registerSystem(r tools.Registry, sm domain_security.Manager, validator domain_security.CommandValidator, health ports.HealthCheckManager, eventBus events.EventBus, fs persistence.FileSystem, runner tools.ProcessRunner) error {
 	var translator commandTranslator
 	var wrapper shellWrapper
 	if runtime.GOOS == "windows" {
@@ -306,7 +306,7 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 		wrapper = &posixShellWrapper{}
 	}
 
-	shell := newshellTool(sm, eventBus, validator, translator, wrapper, fs)
+	shell := newshellTool(sm, eventBus, validator, translator, wrapper, fs, runner)
 	diagnostic := newDiagnosticTool(health)
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{

@@ -8,7 +8,11 @@ A high-performance CLI assistant that unifies reasoning engines (Gemini, OpenAI,
 
 - **`Chatter`** — The conversation interface between the `Orchestrator` and the `Provider` gateway. Defines how prompts are sent, responses are streamed, and chat sessions are configured. Not an entity — it is a behavioral role with no persisted state, analogous to `Orchestrator` and `SecurityManager`.
 - **`CoverageSummary`** — The tools-layer view of a coverage run, returned by the Go toolchain runner: the passed-test count, whether the package has no Go files, the coverage percentage, and the summary output. It is the consumer-facing projection of the infrastructure-internal coverage report, which stays infrastructure-internal by design (ADR-060). Not an entity — a value type with no relationships or lifecycle.
+- **`ExitError`** — The domain-typed exit-status failure carried by `ProcessHandle`'s Wait: a process exit code, with -1 meaning signal-killed (ADR-074 — the -1 convention is today's observable behavior, made fake-constructible). Not an entity — a value type like `CoverageSummary`.
 - **`Orchestrator`** — The top-level loop that drives a `Session`: receives a user prompt, delegates to the active `Provider`, dispatches `Tool` calls, and manages the `Turn` lifecycle.
+- **`ProcessHandle`** — The running-process view returned by `ProcessRunner`: stdout and stderr readers valid only after the owning start returns, and the Wait method, which surfaces process failures as `ExitError`. Not an entity — a behavioral handle with no persisted state.
+- **`ProcessRunner`** — The domain port that starts external processes: its Start method assembles and starts a child process from a `ProcessSpec` and returns a `ProcessHandle`. Implemented by the infrastructure process adapter and consumed by the workspace tools (ADR-074). Not an entity — a behavioral port with no persisted state, analogous to `Chatter`.
+- **`ProcessSpec`** — The `ProcessRunner` start request: the executable name, its arguments, an optional stdin reader (nil = no stdin), and an optional environment overlay map (nil = inherit the parent environment untouched). Not an entity — a value type with no relationships or lifecycle.
 - **`SecurityManager`** — The component that validates `Tool` requests against the `SafePath` registry and delegates to the `UserInteractor` when user confirmation is required.
 - **`TellMeHome`** — The filesystem root directory for all tell-me-go state — `Config`s, local `Skill`s, `History`, `SafePath`s, and `Task`s. A `Session`'s `History` can be archived (`--new`) without affecting `SafePath`s or `Task`s because they are stored under `TellMeHome`, not inside the `Session`-scoped `History` file. The environment tools (Niffler, Dobby, etc.) manage this directory; tell-me-go treats it as the stable namespace for everything it persists.
 - **`Thought`** — A provider-agnostic reasoning block emitted by an LLM — may be a text response, a tool-call request, or (for reasoning models) a chain-of-thought segment. Normalised from provider-specific wire formats.
@@ -327,7 +331,7 @@ A unit of work tracked by the system for the user. `Task`s form a simple to-do l
 
 ### `Tool`
 
-A capability exposed to the LLM for agentic execution. `Tool`s are registered at startup and carry a JSON Schema describing their parameters. Categories include workspace (files, git), analysis (AST, architecture), integrations (Jira, ADO, Teams), and system (shell, testing). Analysis tools return a `CoverageSummary` of a coverage run.
+A capability exposed to the LLM for agentic execution. `Tool`s are registered at startup and carry a JSON Schema describing their parameters. Categories include workspace (files, git), analysis (AST, architecture), integrations (Jira, ADO, Teams), and system (shell, testing). Analysis tools return a `CoverageSummary` of a coverage run. Workspace shell tools execute external processes through the `ProcessRunner` port via a `ProcessSpec` and `ProcessHandle`, and surface process failures as `ExitError`.
 
 **Attributes**
 

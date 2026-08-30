@@ -47,6 +47,31 @@ glossary:
     report, which stays infrastructure-internal by design (ADR-060).
     Not an entity — a value type with no relationships or lifecycle.
 
+  ProcessRunner: >
+    The domain port that starts external processes: its Start method
+    assembles and starts a child process from a `ProcessSpec` and returns a
+    `ProcessHandle`. Implemented by the infrastructure process adapter and
+    consumed by the workspace tools (ADR-074). Not an entity — a behavioral
+    port with no persisted state, analogous to `Chatter`.
+
+  ProcessSpec: >
+    The `ProcessRunner` start request: the executable name, its arguments,
+    an optional stdin reader (nil = no stdin), and an optional environment
+    overlay map (nil = inherit the parent environment untouched). Not an
+    entity — a value type with no relationships or lifecycle.
+
+  ProcessHandle: >
+    The running-process view returned by `ProcessRunner`: stdout and stderr
+    readers valid only after the owning start returns, and the Wait method,
+    which surfaces process failures as `ExitError`. Not an entity — a
+    behavioral handle with no persisted state.
+
+  ExitError: >
+    The domain-typed exit-status failure carried by `ProcessHandle`'s Wait:
+    a process exit code, with -1 meaning signal-killed (ADR-074 — the -1
+    convention is today's observable behavior, made fake-constructible).
+    Not an entity — a value type like `CoverageSummary`.
+
 enums:
   APIFamily:
     description: >
@@ -476,7 +501,9 @@ entities:
       parameters. Categories include workspace (files, git), analysis
       (AST, architecture), integrations (Jira, ADO, Teams), and system
       (shell, testing). Analysis tools return a `CoverageSummary` of a
-      coverage run.
+      coverage run. Workspace shell tools execute external processes
+      through the `ProcessRunner` port via a `ProcessSpec` and
+      `ProcessHandle`, and surface process failures as `ExitError`.
     attributes:
       - name: name
         type: string

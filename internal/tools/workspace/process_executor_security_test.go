@@ -31,7 +31,7 @@ func TestProcessExecutor_AtomicWrites(t *testing.T) {
 		t.Skip("skipping process-spawning test in short mode")
 	}
 	tmpFile := filepath.Join(t.TempDir(), "atomic_test.txt")
-	executor := newprocessExecutor()
+	executor := newTestProcessExecutor()
 
 	lineCount := 100
 	config := executionConfig{
@@ -67,7 +67,7 @@ func TestProcessExecutor_AtomicWrites(t *testing.T) {
 }
 
 func TestOpenOutputFile_Security(t *testing.T) {
-	executor := newprocessExecutor()
+	executor := newTestProcessExecutor()
 	tmpDir := setupSecurityTest(t)
 
 	type testCase struct {
@@ -247,7 +247,7 @@ func TestResolveAndValidateOutputPath_Escape(t *testing.T) {
 }
 
 func TestOpenOutputFile_Sanitization(t *testing.T) {
-	executor := newprocessExecutor()
+	executor := newTestProcessExecutor()
 
 	tests := []struct {
 		name     string
@@ -301,7 +301,7 @@ func TestOpenOutputFile_Sanitization(t *testing.T) {
 func TestOpenOutputFile_MkdirAllError(t *testing.T) {
 	t.Parallel()
 
-	executor := newprocessExecutor()
+	executor := newTestProcessExecutor()
 	executor.fs = &mkdirErrorFS{FileSystem: persistence.NewMockFileSystem()}
 
 	config := executionConfig{

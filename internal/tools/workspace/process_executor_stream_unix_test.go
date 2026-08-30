@@ -113,7 +113,7 @@ func assertNonExitErrorResult(t *testing.T, res executionResult, err error) {
 func runNonExitErrorWaitPathTest(t *testing.T) error {
 	t.Helper()
 
-	e := newprocessExecutor()
+	e := newTestProcessExecutor()
 	ctx := context.Background()
 
 	pidFile := filepath.Join(t.TempDir(), "pid")

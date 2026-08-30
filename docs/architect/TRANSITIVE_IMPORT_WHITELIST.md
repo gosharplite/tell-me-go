@@ -162,8 +162,8 @@ allowed: config, events, llm, persistence, pricing, security, services, skills, 
 # TD-1 (issue #1364): app construction seam (chatter/chat-service/suggestions); full hub surface
 
 ## infra-root: di
-allowed: config, exec, factory, history, llm, logging, mcp, persistence, registry, security, skills, telemetry, toolchain
-# infra-lateral composition: di composes infra adapters (config added for P1 config watcher injection — issue #1369; mcp added for the MCP client factory — issue #1373); no application-layer imports (ADR-066)
+allowed: config, exec, factory, history, llm, logging, mcp, persistence, process, registry, security, skills, telemetry, toolchain
+# infra-lateral composition: di composes infra adapters (config added for P1 config watcher injection — issue #1369; mcp added for the MCP client factory — issue #1373; process added for the process runner factory — issue #1460, ADR-074); no application-layer imports (ADR-066)
 
 ## infra-sanctioned: llm → auth
 # llm/factory.go constructs auth (issue #1350 item 4, ADR-055 confinement)

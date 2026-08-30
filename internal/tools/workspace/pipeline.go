@@ -6,123 +6,69 @@ package workspace
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/encoding"
 )
 
-// pipeline manages a sequence of piped commands.
+// pipeline manages a sequence of piped commands. Pipe creation and wiring
+// dissolve into the tools.ProcessRunner adapter (issue #1460, ADR-074):
+// the executor builds ProcessSpecs, starts the stages in order wiring each
+// stage's Stdin from the previous handle's Stdout, and reaps via Wait.
 type pipeline struct {
-	cmds        []*exec.Cmd
+	runner      tools.ProcessRunner
+	specs       []tools.ProcessSpec
+	handles     []tools.ProcessHandle // nil for stages not yet started
 	stderrPipes []io.Reader
 	stdoutPipe  io.ReadCloser
-	pipes       []io.Closer
 }
 
 func (e *processExecutor) newPipeline(ctx context.Context, pipedParts [][]string, config executionConfig) (*pipeline, error) {
-	p := &pipeline{cmds: make([]*exec.Cmd, len(pipedParts))}
+	p := &pipeline{
+		runner:  e.runner,
+		specs:   make([]tools.ProcessSpec, len(pipedParts)),
+		handles: make([]tools.ProcessHandle, len(pipedParts)),
+	}
 
 	for i, parts := range pipedParts {
-		cmd, err := e.newPipelineCmd(ctx, parts, i, config)
-		if err != nil {
-			return nil, err
+		// Coverage gap accepted by architect — len(parts)==0 is a defensive
+		// guard on already-validated input (pipeline commands are parsed from
+		// shell input and never empty at this call site).
+		if len(parts) == 0 {
+			return nil, fmt.Errorf("empty command at index %d", i)
 		}
-		p.cmds[i] = cmd
-	}
-
-	wp := p.wirePipes
-	if e.wirePipesFn != nil {
-		wp = func() error { return e.wirePipesFn(p) }
-	}
-	if err := wp(); err != nil {
-		return nil, err
+		p.specs[i] = tools.ProcessSpec{Name: parts[0], Args: parts[1:], Env: config.Env}
 	}
 
 	return p, nil
 }
 
-// newPipelineCmd creates and configures a single exec.Cmd for use in a pipeline.
-func (e *processExecutor) newPipelineCmd(ctx context.Context, parts []string, index int, config executionConfig) (*exec.Cmd, error) {
-	// Coverage gap accepted by architect — len(parts)==0 is a defensive
-	// guard on already-validated input (pipeline commands are parsed from
-	// shell input and never empty at this call site).
-	if len(parts) == 0 {
-		return nil, fmt.Errorf("empty command at index %d", index)
-	}
-	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
-
-	// Apply platform-specific process group and cancellation (tree killing)
-	configureProcAttrs(cmd)
-
-	// Ensure pipes are forcefully closed if processes fail to exit gracefully after cancellation
-	cmd.WaitDelay = 2 * time.Second
-
-	if len(config.Env) > 0 {
-		env := os.Environ()
-		for k, v := range config.Env {
-			env = append(env, fmt.Sprintf("%s=%s", k, v))
-		}
-		cmd.Env = env
-	}
-
-	return cmd, nil
-}
-
-// wirePipes connects stderr, stdin, and stdout pipes across all commands in the pipeline.
-func (p *pipeline) wirePipes() error {
-	var piped bool
-	defer func() {
-		if !piped {
-			p.closePipes()
-		}
-	}()
-
-	for i, cmd := range p.cmds {
-		stderr, err := cmd.StderrPipe()
-		if err != nil {
-			return fmt.Errorf("failed to get stderr pipe for command %d: %w", i, err)
-		}
-		p.stderrPipes = append(p.stderrPipes, stderr)
-		p.pipes = append(p.pipes, stderr)
-
+// start starts the stages in order, wiring each stage's Stdin from the
+// previous handle's Stdout before starting it (ADR-074 D4 contract 1: start
+// order 0..n−1, the read-end exists from Start(spec[0])'s return, and
+// capture begins only after all starts — RunPipeline captures after start
+// returns).
+func (p *pipeline) start(ctx context.Context) error {
+	for i := range p.specs {
 		if i > 0 {
-			// Connect previous command's stdout to this command's stdin.
-			p.cmds[i].Stdin = p.pipes[len(p.pipes)-2].(io.Reader)
+			// Connect the previous command's stdout to this command's stdin.
+			p.specs[i].Stdin = p.handles[i-1].Stdout()
 		}
-
-		if i < len(p.cmds)-1 {
-			stdout, err := cmd.StdoutPipe()
-			if err != nil {
-				return fmt.Errorf("failed to get stdout pipe for command %d: %w", i, err)
-			}
-			p.pipes = append(p.pipes, stdout)
-		}
-	}
-
-	var err error
-	p.stdoutPipe, err = p.cmds[len(p.cmds)-1].StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("failed to get stdout pipe for last command: %w", err)
-	}
-	p.pipes = append(p.pipes, p.stdoutPipe)
-
-	piped = true // success — caller is now responsible for closePipes()
-	return nil
-}
-
-func (p *pipeline) start() error {
-	for i, cmd := range p.cmds {
-		if err := cmd.Start(); err != nil {
+		h, err := p.runner.Start(ctx, p.specs[i])
+		if err != nil {
 			return fmt.Errorf("command %d failed to start: %w", i, err)
 		}
+		p.handles[i] = h
+		p.stderrPipes = append(p.stderrPipes, h.Stderr())
 	}
+	p.stdoutPipe = p.handles[len(p.handles)-1].Stdout()
 	return nil
 }
 
@@ -167,27 +113,38 @@ func (p *pipeline) capture(config executionConfig, file *os.File) (string, strin
 func (p *pipeline) wait() (int, error) {
 	var lastErr error
 	exitCode := 0
-	for i := len(p.cmds) - 1; i >= 0; i-- {
-		if p.cmds[i].Process == nil {
+	for i := len(p.handles) - 1; i >= 0; i-- {
+		if p.handles[i] == nil {
 			continue
 		}
-		err := p.cmds[i].Wait()
+		err := p.handles[i].Wait()
 		if err != nil && exitCode == 0 {
 			exitCode = 1
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				exitCode = exitErr.ExitCode()
+			var exitErr *tools.ExitError
+			if errors.As(err, &exitErr) {
+				exitCode = exitErr.Code
 			}
 		}
-		if i == len(p.cmds)-1 {
+		if i == len(p.handles)-1 {
 			lastErr = err
 		}
 	}
 	return exitCode, lastErr
 }
 
-func (p *pipeline) closePipes() {
-	for _, c := range p.pipes {
-		_ = c.Close()
+// closeHandles closes every started handle's handed-out readers. This
+// covers the read-ends the old closePipes list held: all stderr read-ends,
+// the intermediate stdout read-ends (wired as later stages' Stdin — the
+// same objects, closed via the owning handle's Stdout()), and the final
+// stdout read-end. Post-Wait double-closes are tolerated and their errors
+// ignored (ADR-074 D4 contract 3 — cmd.Wait already closes the pipes).
+func (p *pipeline) closeHandles() {
+	for _, h := range p.handles {
+		if h == nil {
+			continue
+		}
+		_ = h.Stdout().Close()
+		_ = h.Stderr().Close()
 	}
 }
 

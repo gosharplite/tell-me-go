@@ -196,7 +196,7 @@ func TestGetFileDiff(t *testing.T) {
 		sm:       sm,
 		fs:       persistencetest.NewPlainOSFileSystem(),
 		policy:   infra_persistence.NewWorkspacePolicy(),
-		executor: &mockDiffExecutor{processExecutor: newprocessExecutor()},
+		executor: &mockDiffExecutor{processExecutor: newTestProcessExecutor()},
 	}
 	ctx := context.Background()
 
@@ -282,7 +282,7 @@ func TestGetFileDiff_Errors(t *testing.T) {
 		sm:       sm,
 		fs:       persistencetest.NewPlainOSFileSystem(),
 		policy:   infra_persistence.NewWorkspacePolicy(),
-		executor: &mockDiffExecutor{processExecutor: newprocessExecutor()},
+		executor: &mockDiffExecutor{processExecutor: newTestProcessExecutor()},
 	}
 	ctx := context.Background()
 
@@ -324,7 +324,7 @@ func TestGetFileDiff_RunCommandError(t *testing.T) {
 		fs:     persistencetest.NewPlainOSFileSystem(),
 		policy: infra_persistence.NewWorkspacePolicy(),
 		executor: &mockDiffRunErrorExecutor{
-			processExecutor: newprocessExecutor(),
+			processExecutor: newTestProcessExecutor(),
 			runErr:          runErr,
 		},
 	}
@@ -601,7 +601,7 @@ func TestValidateDiffPrerequisites(t *testing.T) {
 			sm:       sm,
 			fs:       persistencetest.NewPlainOSFileSystem(),
 			policy:   infra_persistence.NewWorkspacePolicy(),
-			executor: &mockDiffExecutor{processExecutor: newprocessExecutor()},
+			executor: &mockDiffExecutor{processExecutor: newTestProcessExecutor()},
 		}
 		err := r.validateDiffPrerequisites(ctx, "nonexistent_file1_xyz.txt", validFile)
 		if err == nil {
@@ -636,7 +636,7 @@ func TestValidateDiffPrerequisites(t *testing.T) {
 			sm:       sm,
 			fs:       persistencetest.NewPlainOSFileSystem(),
 			policy:   infra_persistence.NewWorkspacePolicy(),
-			executor: &noDiffExecutor{processExecutor: newprocessExecutor()},
+			executor: &noDiffExecutor{processExecutor: newTestProcessExecutor()},
 		}
 		err := r.validateDiffPrerequisites(ctx, validFile, validFile)
 		if err == nil {
@@ -1031,7 +1031,7 @@ func TestGetFileDiff_SecurityErrorFile2(t *testing.T) {
 		sm:       sm,
 		fs:       persistencetest.NewPlainOSFileSystem(),
 		policy:   infra_persistence.NewWorkspacePolicy(),
-		executor: &mockDiffExecutor{processExecutor: newprocessExecutor()},
+		executor: &mockDiffExecutor{processExecutor: newTestProcessExecutor()},
 	}
 	ctx := context.Background()
 
@@ -1298,7 +1298,7 @@ func TestGetFileDiff_SecurityErrorFile1(t *testing.T) {
 		sm:       sm,
 		fs:       persistencetest.NewPlainOSFileSystem(),
 		policy:   infra_persistence.NewWorkspacePolicy(),
-		executor: &mockDiffExecutor{processExecutor: newprocessExecutor()},
+		executor: &mockDiffExecutor{processExecutor: newTestProcessExecutor()},
 	}
 	ctx := context.Background()
 

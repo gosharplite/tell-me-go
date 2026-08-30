@@ -58,3 +58,4 @@ Every live tool path uses the injected domain port (`persistence.FileSystem`). D
 
 - `docs/sop/technical/architecture_and_packages.md` — tools-layer boundary rule (see Step 3)
 - [ADR-034](2026-05-cosmetic-lint-fix-pr-separation.md) — sequencing reference only
+- **Amended 2026-09 (ADR-074):** the workspace `defaultFS` fallback is retired with the zero-arg `newprocessExecutor()`; `verify-tools-adapter-import`'s sanctioned list shrinks to `internal/tools/analysis/default_fs.go` only — the defaultFS rationale (dozens of consumers) does not transfer to a one-consumer runner chain. See [ADR-074](2026-09-process-runner-injection.md).
