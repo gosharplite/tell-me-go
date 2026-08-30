@@ -5,9 +5,6 @@ package workspace
 
 import (
 	"context"
-	"io"
-	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
@@ -123,7 +120,7 @@ type expectedResult struct {
 }
 
 func setupPipelineTest(t *testing.T) *processExecutor {
-	return newprocessExecutor()
+	return newTestProcessExecutor()
 }
 
 func setupPipelineContext(timeout time.Duration) (context.Context, context.CancelFunc) {
@@ -209,7 +206,7 @@ func TestRunPipeline_FeedbackRace(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping process-spawning test in short mode")
 	}
-	executor := newprocessExecutor()
+	executor := newTestProcessExecutor()
 	feedback := testfixtures.NewSafeBuffer()
 	config := executionConfig{
 		Feedback: feedback,
@@ -224,102 +221,6 @@ func TestRunPipeline_FeedbackRace(t *testing.T) {
 			t.Logf("Feedback race run %d error: %v", i, err)
 		}
 	}
-}
-
-// TestSetupCommand covers the error and env-propagation branches of setupCommand.
-//
-// Three structurally unreachable branches are documented as accepted exclusions:
-//
-//	GAP ACCEPTED (process_executor.go:137-139): cmd.StdoutPipe() failure —
-//	  setupCommand creates a fresh exec.Cmd and calls StdoutPipe() exactly once.
-//	  StdoutPipe() only fails on a second call (verified by TestStdoutPipe_FailsOnSecondCall
-//	  in process_executor_unit_test.go). See Issue #1130.
-//	GAP ACCEPTED (process_executor.go:141-143): cmd.StderrPipe() failure —
-//	  same reasoning as StdoutPipe; verified by TestStderrPipe_FailsOnSecondCall.
-//	  See Issue #1130.
-//	GAP ACCEPTED (process_executor.go:107-109): Windows cmd.Cancel —
-//	  platform-gated taskkill logic cannot be unit-tested cross-platform.
-//	  Covered by TestSetupCommand_CancelGuard on Windows. See issue #836.
-func TestSetupCommand(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping process-spawning test in short mode")
-	}
-	executor := &processExecutor{}
-	ctx := context.Background()
-
-	tests := []struct {
-		name            string
-		parts           []string
-		config          executionConfig
-		wantErr         string
-		expectNilCmd    bool
-		expectNilStdout bool
-		expectNilStderr bool
-		expectNilFile   bool
-		wantEnv         string
-	}{
-		{
-			name:            "empty parts returns error",
-			parts:           []string{},
-			config:          executionConfig{},
-			wantErr:         "empty command",
-			expectNilCmd:    true,
-			expectNilStdout: true,
-			expectNilStderr: true,
-			expectNilFile:   true,
-		},
-		{
-			name:          "valid command returns cmd with pipes",
-			parts:         []string{"echo", "hello"},
-			expectNilFile: true,
-		},
-		{
-			name:          "custom env vars are propagated",
-			parts:         []string{"echo", "hello"},
-			config:        executionConfig{Env: map[string]string{"TELL_ME_TEST_665": "task2_value"}},
-			wantEnv:       "TELL_ME_TEST_665=task2_value",
-			expectNilFile: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			cmd, stdout, stderr, file, err := executor.setupCommand(ctx, tt.parts, tt.config)
-
-			if tt.wantErr != "" {
-				assertPipelineCmdError(t, err, tt.wantErr)
-			} else if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			assertSetupCommandNils(t, cmd, stdout, stderr, file,
-				tt.expectNilCmd, tt.expectNilStdout, tt.expectNilStderr, tt.expectNilFile)
-
-			if tt.wantEnv != "" {
-				assertEnvVarPresent(t, cmd.Env, tt.wantEnv)
-			}
-		})
-	}
-}
-
-// assertSetupCommandNils checks nil/non-nil expectations for all four return values.
-func assertSetupCommandNils(t *testing.T, cmd *exec.Cmd, stdout, stderr io.ReadCloser, file *os.File, expectNilCmd, expectNilStdout, expectNilStderr, expectNilFile bool) {
-	t.Helper()
-	checkNil := func(name string, isNil, expectNil bool) {
-		t.Helper()
-		if expectNil && !isNil {
-			t.Errorf("expected nil %s", name)
-		}
-		if !expectNil && isNil {
-			t.Errorf("expected non-nil %s", name)
-		}
-	}
-	checkNil("cmd", cmd == nil, expectNilCmd)
-	checkNil("stdout", stdout == nil, expectNilStdout)
-	checkNil("stderr", stderr == nil, expectNilStderr)
-	checkNil("file", file == nil, expectNilFile)
 }
 
 // TestWithinParent covers withinParent(parent, target string) bool.

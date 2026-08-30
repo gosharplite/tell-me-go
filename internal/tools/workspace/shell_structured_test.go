@@ -10,6 +10,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
+	infra_process "github.com/gosharplite/tell-me-go/internal/infrastructure/process"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
@@ -20,7 +21,7 @@ func TestShellTool_ExecuteCommand_Structured(t *testing.T) {
 	}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, &events.NoOpEventBus{}, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{}, persistencetest.NewPlainOSFileSystem())
+	tool := newshellTool(sm, &events.NoOpEventBus{}, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{}, persistencetest.NewPlainOSFileSystem(), infra_process.NewRunner())
 	ctx := context.Background()
 
 	t.Run("Structured args (no shell)", func(t *testing.T) {

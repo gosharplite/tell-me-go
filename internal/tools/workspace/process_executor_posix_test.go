@@ -15,7 +15,7 @@ func TestTimeoutKillsProcessTree(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping process-spawning test in short mode")
 	}
-	e := newprocessExecutor()
+	e := newTestProcessExecutor()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 

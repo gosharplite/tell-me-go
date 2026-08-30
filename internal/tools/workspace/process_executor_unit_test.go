@@ -13,11 +13,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // ---------------------------------------------------------------------------
@@ -28,7 +29,7 @@ func TestStderrPrefixConsistency(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping process-spawning test in short mode")
 	}
-	executor := newprocessExecutor()
+	executor := newTestProcessExecutor()
 
 	// Test RunCommand prefix
 	resCmd, _ := executor.RunCommand(context.Background(), []string{helperPath, "stderr", "err"}, executionConfig{})
@@ -88,7 +89,7 @@ func TestProcessExecutor_Output_Success(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping process-spawning test in short mode")
 	}
-	executor := newprocessExecutor()
+	executor := newTestProcessExecutor()
 	ctx := context.Background()
 	out, err := executor.Output(ctx, helperPath, "echo", "hello")
 	if err != nil {
@@ -105,7 +106,7 @@ func TestProcessExecutor_Output_ExitError(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping process-spawning test in short mode")
 	}
-	executor := newprocessExecutor()
+	executor := newTestProcessExecutor()
 	ctx := context.Background()
 	out, err := executor.Output(ctx, helperPath, "exit", "1")
 	if err == nil {
@@ -125,7 +126,7 @@ func TestProcessExecutor_CombinedOutput_Success(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping process-spawning test in short mode")
 	}
-	executor := newprocessExecutor()
+	executor := newTestProcessExecutor()
 	ctx := context.Background()
 	out, err := executor.CombinedOutput(ctx, helperPath, "echo", "hello")
 	if err != nil {
@@ -142,7 +143,7 @@ func TestProcessExecutor_CombinedOutput_ExitError(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping process-spawning test in short mode")
 	}
-	executor := newprocessExecutor()
+	executor := newTestProcessExecutor()
 	ctx := context.Background()
 	out, err := executor.CombinedOutput(ctx, helperPath, "exit", "2")
 	if err == nil {
@@ -160,7 +161,7 @@ func TestProcessExecutor_Output_RunError(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping process-spawning test in short mode")
 	}
-	executor := newprocessExecutor()
+	executor := newTestProcessExecutor()
 	ctx := context.Background()
 
 	t.Run("Output with start failure", func(t *testing.T) {
@@ -195,7 +196,7 @@ func (e *errorReader) Read(p []byte) (n int, err error) {
 }
 
 func TestProcessExecutor_CaptureError(t *testing.T) {
-	executor := newprocessExecutor()
+	executor := newTestProcessExecutor()
 	var sb strings.Builder
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -220,7 +221,7 @@ func TestProcessExecutor_LookPath(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping process-spawning test in short mode")
 	}
-	e := newprocessExecutor()
+	e := newTestProcessExecutor()
 
 	t.Run("existing command", func(t *testing.T) {
 		path, err := e.LookPath("go")
@@ -335,98 +336,12 @@ func TestWriteTracker_Write_NilInterface(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// newPipelineCmd tests
-// ---------------------------------------------------------------------------
-
-func TestProcessExecutor_newPipelineCmd_EmptyPartsIndex0(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping process-spawning test in short mode")
-	}
-	e := newprocessExecutor()
-	ctx := context.Background()
-	_, err := e.newPipelineCmd(ctx, []string{}, 0, executionConfig{})
-	if err == nil {
-		t.Fatal("expected error for empty parts")
-	}
-	if !strings.Contains(err.Error(), "empty command at index 0") {
-		t.Errorf("expected 'empty command at index 0', got %q", err.Error())
-	}
-}
-
-func TestProcessExecutor_newPipelineCmd_EmptyPartsIndex2(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping process-spawning test in short mode")
-	}
-	e := newprocessExecutor()
-	ctx := context.Background()
-	_, err := e.newPipelineCmd(ctx, []string{}, 2, executionConfig{})
-	if err == nil {
-		t.Fatal("expected error for empty parts")
-	}
-	if !strings.Contains(err.Error(), "empty command at index 2") {
-		t.Errorf("expected 'empty command at index 2', got %q", err.Error())
-	}
-}
-
-func TestProcessExecutor_newPipelineCmd_ValidParts(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping process-spawning test in short mode")
-	}
-	e := newprocessExecutor()
-	ctx := context.Background()
-	cmd, err := e.newPipelineCmd(ctx, []string{"echo", "hello"}, 0, executionConfig{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cmd == nil {
-		t.Fatal("expected non-nil *exec.Cmd")
-	}
-	if cmd.Args[0] != "echo" {
-		t.Errorf("expected cmd.Args[0] == 'echo', got %q", cmd.Args[0])
-	}
-}
-
-func TestProcessExecutor_newPipelineCmd_WithEnv(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping process-spawning test in short mode")
-	}
-	e := newprocessExecutor()
-	ctx := context.Background()
-	config := executionConfig{Env: map[string]string{"GOOS": "linux", "CUSTOM_VAR": "testval"}}
-	cmd, err := e.newPipelineCmd(ctx, []string{"go", "version"}, 0, config)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cmd == nil {
-		t.Fatal("expected non-nil *exec.Cmd")
-	}
-	if len(cmd.Env) == 0 {
-		t.Fatal("expected cmd.Env to be non-empty")
-	}
-	foundGOOS, foundCustom := false, false
-	for _, e := range cmd.Env {
-		if e == "GOOS=linux" {
-			foundGOOS = true
-		}
-		if e == "CUSTOM_VAR=testval" {
-			foundCustom = true
-		}
-	}
-	if !foundGOOS {
-		t.Error("cmd.Env missing GOOS=linux")
-	}
-	if !foundCustom {
-		t.Error("cmd.Env missing CUSTOM_VAR=testval")
-	}
-}
-
-// ---------------------------------------------------------------------------
 // handleCaptureError tests
 // ---------------------------------------------------------------------------
 
 func TestProcessExecutor_handleCaptureError_NilError(t *testing.T) {
 	t.Parallel()
-	e := newprocessExecutor()
+	e := newTestProcessExecutor()
 	var sb strings.Builder
 	var mu sync.Mutex
 	truncated := &atomic.Bool{}
@@ -441,7 +356,7 @@ func TestProcessExecutor_handleCaptureError_NilError(t *testing.T) {
 
 func TestProcessExecutor_handleCaptureError_ErrTooLongWithCapacity(t *testing.T) {
 	t.Parallel()
-	e := newprocessExecutor()
+	e := newTestProcessExecutor()
 	var sb strings.Builder
 	var mu sync.Mutex
 	truncated := &atomic.Bool{}
@@ -457,7 +372,7 @@ func TestProcessExecutor_handleCaptureError_ErrTooLongWithCapacity(t *testing.T)
 
 func TestProcessExecutor_handleCaptureError_ErrTooLongNoCapacity(t *testing.T) {
 	t.Parallel()
-	e := newprocessExecutor()
+	e := newTestProcessExecutor()
 	var sb strings.Builder
 	sb.WriteString("12345")
 	var mu sync.Mutex
@@ -473,7 +388,7 @@ func TestProcessExecutor_handleCaptureError_ErrTooLongNoCapacity(t *testing.T) {
 
 func TestProcessExecutor_handleCaptureError_WithFeedback(t *testing.T) {
 	t.Parallel()
-	e := newprocessExecutor()
+	e := newTestProcessExecutor()
 	var sb strings.Builder
 	var mu sync.Mutex
 	truncated := &atomic.Bool{}
@@ -491,7 +406,7 @@ func TestProcessExecutor_handleCaptureError_WithFeedback(t *testing.T) {
 
 func TestProcessExecutor_handleCaptureError_Truncation(t *testing.T) {
 	t.Parallel()
-	e := newprocessExecutor()
+	e := newTestProcessExecutor()
 	var sb strings.Builder
 	sb.WriteString("abcde")
 	var mu sync.Mutex
@@ -509,12 +424,12 @@ func TestProcessExecutor_handleCaptureError_Truncation(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// formatPipelineResult / setupCommand / newPipelineCmd guard
+// formatPipelineResult / RunCommand guard
 // ---------------------------------------------------------------------------
 
 func TestFormatPipelineResult_ExitCodeNormalization(t *testing.T) {
 	t.Parallel()
-	executor := newprocessExecutor()
+	executor := newTestProcessExecutor()
 
 	tests := []struct {
 		name         string
@@ -544,7 +459,7 @@ func TestFormatPipelineResult_ExitCodeNormalization(t *testing.T) {
 			stderr:       "",
 			truncated:    false,
 			exitCode:     2,
-			waitErr:      &exec.ExitError{},
+			waitErr:      &tools.ExitError{Code: 2},
 			wantExitCode: 2,
 			wantErr:      false,
 			wantOutput:   "error output",
@@ -555,7 +470,7 @@ func TestFormatPipelineResult_ExitCodeNormalization(t *testing.T) {
 			stderr:       "stderr msg",
 			truncated:    false,
 			exitCode:     1,
-			waitErr:      &exec.ExitError{},
+			waitErr:      &tools.ExitError{Code: 1},
 			wantExitCode: 1,
 			wantErr:      false,
 			wantOutput:   "Errors:\nstderr msg",
@@ -648,34 +563,6 @@ func TestCloseFile(t *testing.T) {
 	})
 }
 
-// TestNewPipelineCmd_CancelGuard verifies that newPipelineCmd sets the
-// cmd.Cancel function on Windows to enable forceful process tree
-// termination via taskkill.
-//
-// GAP ACCEPTED (pipeline.go:57-59): The nil-Process guard inside
-// cmd.Cancel is platform-gated (runtime.GOOS == "windows"). On Linux/macOS,
-// cmd.Cancel is never set. On Windows, the guard is tested below and
-// cmd.Cancel() with nil Process returns nil. See issue #836.
-func TestNewPipelineCmd_CancelGuard(t *testing.T) {
-	e := newprocessExecutor()
-	ctx := context.Background()
-	cmd, err := e.newPipelineCmd(ctx, []string{"echo", "hello"}, 0, executionConfig{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if runtime.GOOS == "windows" && cmd.Cancel == nil {
-		t.Error("expected cmd.Cancel to be set on Windows")
-	}
-
-	// Verify Cancel returns nil when Process is nil (before Start)
-	if runtime.GOOS == "windows" {
-		cancelErr := cmd.Cancel()
-		if cancelErr != nil {
-			t.Errorf("cmd.Cancel() with nil Process should return nil, got: %v", cancelErr)
-		}
-	}
-}
-
 // TestPrepareCommand_CancelBeforeStart verifies that calling Cancel
 // on a prepared command before it is started (cmd.Process == nil)
 // returns nil — the process-nil guard prevents a nil-pointer dereference.
@@ -683,8 +570,8 @@ func TestPrepareCommand_CancelBeforeStart(t *testing.T) {
 	t.Parallel()
 
 	cmd := exec.Command("echo", "hello")
-	// Simulate what setupCommand/newPipelineCmd do: assign the Cancel closure
-	// with the nil-Process guard.
+	// Simulate what the process adapter's configureProcAttrs does: assign the
+	// Cancel closure with the nil-Process guard.
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
 			return nil
@@ -699,33 +586,6 @@ func TestPrepareCommand_CancelBeforeStart(t *testing.T) {
 	}
 	if cmd.Process != nil {
 		t.Error("Process should still be nil after Cancel-before-Start")
-	}
-}
-
-// TestSetupCommand_CancelGuard verifies that setupCommand sets the
-// cmd.Cancel function on Windows to enable forceful process tree
-// termination via taskkill.
-//
-// GAP ACCEPTED (process_executor.go:107-109): The nil-Process guard
-// inside cmd.Cancel is platform-gated (runtime.GOOS == "windows").
-// On Linux/macOS, cmd.Cancel is never set. On Windows, the guard is
-// tested below. See issue #836.
-func TestSetupCommand_CancelGuard(t *testing.T) {
-	e := &processExecutor{}
-	ctx := context.Background()
-	cmd, _, _, _, err := e.setupCommand(ctx, []string{"echo", "hello"}, executionConfig{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if runtime.GOOS == "windows" && cmd.Cancel == nil {
-		t.Error("expected cmd.Cancel to be set on Windows")
-	}
-	// Verify Cancel returns nil when Process is nil (before cmd.Start)
-	if runtime.GOOS == "windows" {
-		cancelErr := cmd.Cancel()
-		if cancelErr != nil {
-			t.Errorf("cmd.Cancel() with nil Process should return nil, got: %v", cancelErr)
-		}
 	}
 }
 
@@ -899,9 +759,10 @@ func TestValidateAndResolveRelPath_GetwdError(t *testing.T) {
 
 // TestStdoutPipe_FailsOnSecondCall verifies the os/exec contract that
 // cmd.StdoutPipe() returns an error when called a second time on the
-// same *exec.Cmd. This proves the defensive error path at
-// process_executor.go:137-139 is correctly formulated, even though
-// setupCommand always calls StdoutPipe() exactly once on a fresh cmd.
+// same *exec.Cmd. The process adapter (internal/infrastructure/process/
+// runner.go) calls StdoutPipe() exactly once per Start and always before
+// cmd.Start, so this defensive path stays structurally unreachable there;
+// this test pins the os/exec contract the adapter's pipe handling relies on.
 // See Issue #1130.
 func TestStdoutPipe_FailsOnSecondCall(t *testing.T) {
 	cmd := exec.Command("echo", "hello")
@@ -920,9 +781,10 @@ func TestStdoutPipe_FailsOnSecondCall(t *testing.T) {
 
 // TestStderrPipe_FailsOnSecondCall verifies the os/exec contract that
 // cmd.StderrPipe() returns an error when called a second time on the
-// same *exec.Cmd. This proves the defensive error path at
-// process_executor.go:141-143 is correctly formulated, even though
-// setupCommand always calls StderrPipe() exactly once on a fresh cmd.
+// same *exec.Cmd. The process adapter (internal/infrastructure/process/
+// runner.go) calls StderrPipe() exactly once per Start and always before
+// cmd.Start, so this defensive path stays structurally unreachable there;
+// this test pins the os/exec contract the adapter's pipe handling relies on.
 // See Issue #1130.
 func TestStderrPipe_FailsOnSecondCall(t *testing.T) {
 	cmd := exec.Command("echo", "hello")

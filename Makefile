@@ -32,7 +32,7 @@ ifeq ($(OS),Windows_NT)
     endif
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-tools-toolchain-import verify-tools-infrastructure-import verify-mcp-sdk-confinement verify-no-test-sleep verify-architecture verify-exit-query verify-transitive-gate verify-nonfix-catalog verify-ports-registry verify-adr-index verify-no-context-window-cache lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-tools-toolchain-import verify-tools-infrastructure-import verify-tools-process-import verify-mcp-sdk-confinement verify-no-test-sleep verify-architecture verify-exit-query verify-transitive-gate verify-nonfix-catalog verify-ports-registry verify-adr-index verify-no-context-window-cache lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -45,9 +45,10 @@ help:
 	@echo "  make verify-nonfix-catalog - Verify the complexity-pin catalog partition (issue #1297)"
 	@echo "  make verify-ports-registry - Verify the ports registry bijection, N<=12, stay-key liveness, and Supporting admission (issue #1343)"
 	@echo "  make verify-no-test-sleep - Verify no time.Sleep for synchronization in tests"
-	@echo "  make verify-tools-adapter-import - Verify tools adapter imports are confined to default_fs.go (ADR-055)"
+	@echo "  make verify-tools-adapter-import - Verify tools adapter imports are confined to the analysis default_fs.go (ADR-055)"
 	@echo "  make verify-tools-toolchain-import - Verify no infrastructure/toolchain imports in tools production files (issue #1325)"
 	@echo "  make verify-tools-infrastructure-import - Verify no internal/infrastructure imports in tools production files (ADR-062)"
+	@echo "  make verify-tools-process-import - Verify no raw process-lifecycle tokens in workspace production files (#1460, ADR-074)"
 	@echo "  make verify-mcp-sdk-confinement - Verify MCP Go SDK imports are confined to internal/infrastructure/mcp/ (ADR-067)"
 	@echo "  make verify-no-context-window-cache - Verify no context window cache references (ADR-057; part of make check/check-full)"
 	@echo "  make test-coverage - Run tests with coverage (excludes mocks/generated)"
@@ -71,7 +72,7 @@ help:
 build:
 	go build -ldflags="-X 'main.version=$(VERSION)'" -o tell-me-go ./cmd/tell-me-go
 
-test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-tools-toolchain-import verify-tools-infrastructure-import verify-mcp-sdk-confinement
+test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-tools-toolchain-import verify-tools-infrastructure-import verify-tools-process-import verify-mcp-sdk-confinement
 	go test ./...
 
 # Verify ADR-021: no testutil packages (centralized test-double dump).
@@ -359,23 +360,24 @@ else
 endif
 
 # Verify ADR-055: the internal/infrastructure/persistence adapter import is
-# confined to the two sanctioned default_fs.go files in internal/tools/
-# (analysis, workspace). Every other tools-layer production file must use
-# the injected domain port (persistence.FileSystem).
+# confined to the single sanctioned default_fs.go file in internal/tools/
+# (analysis). The workspace fallback was retired by the ADR-055 amendment in
+# ADR-074 (issue #1460). Every other tools-layer production file must use the
+# injected domain port (persistence.FileSystem).
 verify-tools-adapter-import:
 ifeq ($(IS_POSIX),true)
 	@echo "Checking for infrastructure/persistence adapter imports in tools production files (ADR-055)..."
 	@VIOLATIONS="$$( grep -rn 'github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"' internal/tools/ --include='*.go' \
 		| grep -v '_test\.go:' \
-		| grep -v '^internal/tools/analysis/default_fs\.go:' \
-		| grep -v '^internal/tools/workspace/default_fs\.go:' )"; \
+		| grep -v '^internal/tools/analysis/default_fs\.go:' )"; \
 	if [ -n "$$VIOLATIONS" ]; then \
 		echo ""; \
-		echo "❌ ADR-055 violation: adapter import outside the sanctioned default_fs.go files."; \
+		echo "❌ ADR-055 violation: adapter import outside the sanctioned default_fs.go file."; \
 		echo "   internal/tools production files may import internal/infrastructure/persistence"; \
-		echo "   only in internal/tools/analysis/default_fs.go and"; \
-		echo "   internal/tools/workspace/default_fs.go (each holds its package's defaultFS fallback)."; \
-		echo "   Every live tool path must use the injected domain port (persistence.FileSystem)."; \
+		echo "   only in internal/tools/analysis/default_fs.go (the package's defaultFS fallback)."; \
+		echo "   The workspace fallback was retired by ADR-074 (issue #1460): the runner chain"; \
+		echo "   is fully injected and every live tool path must use the injected domain port"; \
+		echo "   (persistence.FileSystem)."; \
 		echo "   See: docs/adr/2026-08-tools-filesystem-injection.md"; \
 		echo ""; \
 		echo "Violating files:"; \
@@ -386,7 +388,7 @@ ifeq ($(IS_POSIX),true)
 		echo "only in the package's default_fs.go."; \
 		exit 1; \
 	fi
-	@echo "  ✓ Adapter imports confined to the two default_fs.go files."
+	@echo "  ✓ Adapter imports confined to the analysis default_fs.go."
 else
 	@echo "Checking for infrastructure/persistence adapter imports in tools production files (ADR-055)..."
 	@powershell -Command " \
@@ -395,7 +397,6 @@ else
 		Get-ChildItem -Path internal/tools -Recurse -Filter '*.go' | Where-Object { \
 			$$_.Name -notlike '*_test.go' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/analysis/default_fs\.go$$' -and \
-			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/workspace/default_fs\.go$$' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch '.git/' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch 'vendor/' \
 		} | ForEach-Object { \
@@ -404,7 +405,8 @@ else
 		}; \
 		if ($$violations.Count -gt 0) { \
 			Write-Host ''; \
-			Write-Host '❌ ADR-055 violation: adapter import outside the sanctioned default_fs.go files.'; \
+			Write-Host '❌ ADR-055 violation: adapter import outside the sanctioned default_fs.go file.'; \
+			Write-Host '   The workspace fallback was retired by ADR-074 (issue #1460).'; \
 			Write-Host '   See: docs/adr/2026-08-tools-filesystem-injection.md'; \
 			Write-Host ''; \
 			$$violations | Sort-Object -Unique | ForEach-Object { Write-Host $$_ }; \
@@ -414,7 +416,7 @@ else
 			exit 1 \
 		} \
 	"
-	@echo "  ✓ Adapter imports confined to the two default_fs.go files."
+	@echo "  ✓ Adapter imports confined to the analysis default_fs.go."
 endif
 
 # Verify issue #1325: no internal/tools production file imports the
@@ -490,17 +492,102 @@ endif
 # exit_query.go:235-236) cannot false-positive.
 #
 # Predicate: "production files" = non-_test.go files under internal/tools/
-# OUTSIDE the two sanctioned default_fs.go paths (ADR-055) and
+# OUTSIDE the single sanctioned default_fs.go path (ADR-055 as amended by
+# ADR-074 — the analysis fallback only; the workspace default_fs.go was
+# retired with the tools.ProcessRunner injection) and
 # analysistest//toolstest/ (explicit path exclusions mirroring
 # verify-tools-toolchain-import). Test-layer files are deliberately exempt:
 # ~35 tools test files legitimately import infrastructure.
+#
+# Verify ADR-074 (issue #1460): no raw os/exec process-lifecycle tokens in
+# internal/tools/workspace production files. The workspace class of raw
+# os/exec process-lifecycle code was eliminated by the tools.ProcessRunner
+# domain port (internal/domain/tools/process.go); the adapter lives in
+# internal/infrastructure/process (proc_posix.go/proc_windows.go relocated
+# verbatim); single construction in internal/infrastructure/di/process_factory.go.
+#
+# Predicate rationale — lifecycle tokens, NOT an import ban: workspace
+# production legitimately keeps the os/exec import for exec.LookPath (the
+# processExecutor.LookPath delegation wrapper at process_executor.go:458-461
+# and the Windows pwsh probe at shell.go:136). Both are ADR-074 D5
+# predicate-scope exclusions BY SCOPE DECISION (neither matches a token —
+# exec.LookPath is not in the token set), recorded so a future predicate
+# widening re-adjudicates them by name. Generalization argument: an import
+# ban would also trip legitimate os/exec type references (e.g.
+# analysis/health.go's *exec.ExitError discrimination) — tokens match only
+# process-spawning lifecycle, never type references.
+#
+# ANTI-EXTENSION RULING (ADR-074 D6): this gate must never be extended to
+# _test.go files — the in-package real-adapter test helper (testexecutor_test.go)
+# and the 69-site verification surface depend on direct adapter construction,
+# exactly as ADR-060 §9 ruled for the toolchain gate.
+#
+# Scope growth: the scoped-path list supports extension (e.g. a future
+# follow-up adding internal/tools/developer for the documented dev.go:58
+# residue — ADR-074 D5 inventory) in one PR without predicate changes.
+# Gate exceptions, if ever needed, follow ADR-062 Decision 5's contract
+# (architect-sanctioned, ADR-cited, same-change whitelist edit +
+# adjudicating record).
+verify-tools-process-import:
+ifeq ($(IS_POSIX),true)
+	@echo "verify-tools-process-import: checking for raw process-lifecycle tokens in workspace production files (issue #1460, ADR-074)..."
+	@VIOLATIONS="$$( grep -rnE 'exec\.Command|exec\.Cmd\b|SysProcAttr|configureProcAttrs' internal/tools/workspace/ --include='*.go' \
+		| grep -v '_test\.go:' )"; \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ ADR-074 violation: raw os/exec process-lifecycle token in a workspace production file."; \
+		echo "   Route the lifecycle through tools.ProcessRunner (internal/domain/tools/process.go);"; \
+		echo "   the adapter lives in internal/infrastructure/process; construct once in"; \
+		echo "   internal/infrastructure/di/process_factory.go — see"; \
+		echo "   docs/adr/2026-09-process-runner-injection.md (ADR-074)."; \
+		echo ""; \
+		echo "   Predicate-scope exclusions (by scope decision, not allowances): exec.LookPath"; \
+		echo "   is NOT in the token set — the processExecutor.LookPath delegation wrapper"; \
+		echo "   (process_executor.go:458-461) and the Windows pwsh probe (shell.go:136) legitimately"; \
+		echo "   keep the os/exec import; a future predicate widening must re-adjudicate them by name."; \
+		echo "   Gate exceptions follow ADR-062 Decision 5's contract."; \
+		echo ""; \
+		echo "   Violating files:"; \
+		echo "$$VIOLATIONS"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@echo "  ✓ No raw process-lifecycle tokens in workspace production files."
+else
+	@echo "verify-tools-process-import: checking for raw process-lifecycle tokens in workspace production files (issue #1460, ADR-074)..."
+	@powershell -Command " \
+		$$ErrorActionPreference = 'Stop'; \
+		$$violations = @(); \
+		Get-ChildItem -Path internal/tools/workspace -Recurse -Filter '*.go' | Where-Object { \
+			$$_.Name -notlike '*_test.go' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch '.git/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'vendor/' \
+		} | ForEach-Object { \
+			$$matches = Select-String -Path $$_.FullName -Pattern 'exec\.Command|exec\.Cmd\b|SysProcAttr|configureProcAttrs'; \
+			if ($$matches) { foreach ($$m in $$matches) { $$violations += ('{0}:{1}' -f $$m.Path, $$m.LineNumber) } } \
+		}; \
+		if ($$violations.Count -gt 0) { \
+			Write-Host ''; \
+			Write-Host '❌ ADR-074 violation: raw os/exec process-lifecycle token in a workspace production file.'; \
+			Write-Host '   Route the lifecycle through tools.ProcessRunner (internal/domain/tools/process.go);'; \
+			Write-Host '   the adapter lives in internal/infrastructure/process; construct once in'; \
+			Write-Host '   internal/infrastructure/di/process_factory.go — see'; \
+			Write-Host '   docs/adr/2026-09-process-runner-injection.md (ADR-074).'; \
+			Write-Host '   Predicate-scope exclusions (by scope decision): exec.LookPath is not in the'; \
+			Write-Host '   token set (LookPath delegation + pwsh probe); exceptions follow ADR-062 D5.'; \
+			$$violations | ForEach-Object { Write-Host $$_ }; \
+			exit 1 \
+		}; \
+		Write-Host '  ✓ No raw process-lifecycle tokens in workspace production files.' \
+	"
+endif
+
 verify-tools-infrastructure-import:
 ifeq ($(IS_POSIX),true)
 	@echo "Checking for infrastructure imports in tools production files (ADR-062)..."
 	@VIOLATIONS="$$( grep -rn 'github.com/gosharplite/tell-me-go/internal/infrastructure/' internal/tools/ --include='*.go' \
 		| grep -v '_test\.go:' \
 		| grep -v '^internal/tools/analysis/default_fs\.go:' \
-		| grep -v '^internal/tools/workspace/default_fs\.go:' \
 		| grep -v '^internal/tools/analysis/analysistest/' \
 		| grep -v '^internal/tools/toolstest/' )"; \
 	if [ -n "$$VIOLATIONS" ]; then \
@@ -545,7 +632,6 @@ else
 		Get-ChildItem -Path internal/tools -Recurse -Filter '*.go' | Where-Object { \
 			$$_.Name -notlike '*_test.go' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/analysis/default_fs\.go$$' -and \
-			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/workspace/default_fs\.go$$' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/analysis/analysistest/' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/toolstest/' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch '.git/' -and \
@@ -945,6 +1031,8 @@ check: fmt tidy build
 	@$(MAKE) verify-tools-toolchain-import
 	@echo "=== verify-tools-infrastructure-import ==="
 	@$(MAKE) verify-tools-infrastructure-import
+	@echo "=== verify-tools-process-import ==="
+	@$(MAKE) verify-tools-process-import
 	@echo "=== verify-mcp-sdk-confinement ==="
 	@$(MAKE) verify-mcp-sdk-confinement
 	@echo "=== verify-no-test-sleep ==="
@@ -993,6 +1081,8 @@ check-full: fmt tidy build
 	@$(MAKE) verify-tools-toolchain-import
 	@echo "=== verify-tools-infrastructure-import ==="
 	@$(MAKE) verify-tools-infrastructure-import
+	@echo "=== verify-tools-process-import ==="
+	@$(MAKE) verify-tools-process-import
 	@echo "=== verify-mcp-sdk-confinement ==="
 	@$(MAKE) verify-mcp-sdk-confinement
 	@echo "=== verify-no-test-sleep ==="

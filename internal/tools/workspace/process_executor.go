@@ -6,6 +6,7 @@ package workspace
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,10 +16,10 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 	"unicode/utf8"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/encoding"
 	"github.com/gosharplite/tell-me-go/internal/pkg/filepathutil"
 )
@@ -45,56 +46,52 @@ type executionResult struct {
 	Truncated bool
 }
 
-// processExecutor handles running external commands and pipelines.
+// processExecutor handles running external commands and pipelines. The
+// os/exec process lifecycle lives behind the injected tools.ProcessRunner
+// port (issue #1460, ADR-074); this type owns command assembly, output
+// capture, and result interpretation.
 type processExecutor struct {
-	// wirePipesFn is an optional override for pipeline.wirePipes used by newPipeline.
-	// When nil (zero value), newPipeline calls p.wirePipes() as before.
-	// When set, newPipeline delegates to this function instead.
-	// This exists solely to enable testing the defensive error path at pipeline.go:41-43.
-	wirePipesFn func(p *pipeline) error
-	fs          persistence.FileSystem
+	fs     persistence.FileSystem
+	runner tools.ProcessRunner
 }
 
 const maxScannerCapacity = 10 * 1024 * 1024
 
-// newprocessExecutor creates a new processExecutor backed by the default
-// OS filesystem (defaultFS in default_fs.go — the package's single
-// sanctioned adapter construction site, ADR-055).
-func newprocessExecutor() *processExecutor {
-	return newprocessExecutorWithFS(defaultFS)
-}
-
 // newprocessExecutorWithFS creates a processExecutor with an explicit
-// filesystem. A nil fs is a contract violation on a test-reachable seam:
-// in production the hub (validateRegistrationParams) guarantees non-nil.
-// Use the zero-arg newprocessExecutor() for the default OS filesystem
-// instead of passing nil here.
-func newprocessExecutorWithFS(fs persistence.FileSystem) *processExecutor {
-	if fs == nil {
-		panic("newprocessExecutorWithFS: nil fs — use newprocessExecutor() for the default OS filesystem")
+// filesystem and process runner. A nil fs or nil runner is a contract
+// violation on a test-reachable seam: in production the hub
+// (validateRegistrationParams) guarantees non-nil for both.
+func newprocessExecutorWithFS(fs persistence.FileSystem, runner tools.ProcessRunner) *processExecutor {
+	if fs == nil || runner == nil {
+		panic("newprocessExecutorWithFS: nil fs/nil runner — inject the filesystem and process runner via ToolRegistrationParams (ADR-074)")
 	}
-	return &processExecutor{fs: fs}
+	return &processExecutor{fs: fs, runner: runner}
 }
 
 // RunCommand executes a single command.
 func (e *processExecutor) RunCommand(ctx context.Context, parts []string, config executionConfig) (res executionResult, err error) {
-	cmd, stdout, stderr, file, setupErr := e.setupCommand(ctx, parts, config)
-	if setupErr != nil {
-		return executionResult{ExitCode: 1}, setupErr
+	// Coverage gap accepted by architect — len(parts)==0 is a defensive
+	// guard on already-validated input; callers always provide non-empty
+	// slices constructed from parsed shell arguments.
+	if len(parts) == 0 {
+		return executionResult{ExitCode: 1}, fmt.Errorf("empty command")
 	}
+
+	file := e.prepareOutputFile(ctx, config)
 	if file != nil {
 		defer closeFile(file, &err)
 	}
 
 	// architect-acceptance: subprocess invocation fault injection — see the fault-injection-required acceptance class (INTENTIONAL_NON_FIXES.md)
-	if err = cmd.Start(); err != nil {
-		return executionResult{ExitCode: 1}, fmt.Errorf("failed to start: %w", err)
+	h, serr := e.runner.Start(ctx, tools.ProcessSpec{Name: parts[0], Args: parts[1:], Stdin: nil, Env: config.Env})
+	if serr != nil {
+		return executionResult{ExitCode: 1}, fmt.Errorf("failed to start: %w", serr)
 	}
 
 	var sb strings.Builder
-	truncated := e.captureOutput(&sb, stdout, stderr, config, file)
+	truncated := e.captureOutput(&sb, h.Stdout(), h.Stderr(), config, file)
 
-	waitErr := cmd.Wait()
+	waitErr := h.Wait()
 	if ctx.Err() != nil {
 		return executionResult{Output: sb.String(), ExitCode: 1}, ctx.Err()
 	}
@@ -102,8 +99,9 @@ func (e *processExecutor) RunCommand(ctx context.Context, parts []string, config
 	exitCode := 0
 	if waitErr != nil {
 		exitCode = 1
-		if exitErr, ok := waitErr.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
+		var exitErr *tools.ExitError
+		if errors.As(waitErr, &exitErr) {
+			exitCode = exitErr.Code
 		} else {
 			return executionResult{Output: sb.String(), ExitCode: exitCode}, waitErr
 		}
@@ -122,42 +120,6 @@ func (e *processExecutor) prepareOutputFile(ctx context.Context, config executio
 		_, _ = fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file %q: %v\n", config.OutputFile, ferr)
 	}
 	return file
-}
-
-func (e *processExecutor) setupCommand(ctx context.Context, parts []string, config executionConfig) (*exec.Cmd, io.ReadCloser, io.ReadCloser, *os.File, error) {
-	// Coverage gap accepted by architect — len(parts)==0 is a defensive
-	// guard on already-validated input; callers always provide non-empty
-	// slices constructed from parsed shell arguments.
-	if len(parts) == 0 {
-		return nil, nil, nil, nil, fmt.Errorf("empty command")
-	}
-
-	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
-
-	// Apply platform-specific process group and cancellation (tree killing)
-	configureProcAttrs(cmd)
-
-	// Ensure pipes are forcefully closed if processes fail to exit gracefully after cancellation
-	cmd.WaitDelay = 2 * time.Second
-
-	if len(config.Env) > 0 {
-		env := os.Environ()
-		for k, v := range config.Env {
-			env = append(env, fmt.Sprintf("%s=%s", k, v))
-		}
-		cmd.Env = env
-	}
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to get stdout pipe: %w", err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to get stderr pipe: %w", err)
-	}
-
-	return cmd, stdout, stderr, e.prepareOutputFile(ctx, config), nil
 }
 
 func (e *processExecutor) captureOutput(sb *strings.Builder, stdout, stderr io.Reader, config executionConfig, file *os.File) *atomic.Bool {
@@ -246,16 +208,16 @@ func (e *processExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 	if setupErr != nil {
 		return executionResult{ExitCode: 1}, setupErr
 	}
-	defer p.closePipes()
+	defer p.closeHandles()
 
 	file := e.prepareOutputFile(ctx, config)
 	if file != nil {
 		defer closeFile(file, &err)
 	}
 
-	if err = p.start(); err != nil {
-		p.closePipes()  // Close pipes to unblock running commands
-		_, _ = p.wait() // Ensure started processes are cleaned up
+	if err = p.start(ctx); err != nil {
+		p.closeHandles() // Close handed-out readers to unblock running commands
+		_, _ = p.wait()  // Ensure started processes are cleaned up
 		return executionResult{ExitCode: 1}, fmt.Errorf("pipeline failed to start: %w", err)
 	}
 
@@ -281,7 +243,8 @@ func (e *processExecutor) formatPipelineResult(stdoutStr, stderrStr string, trun
 	}
 
 	if waitErr != nil {
-		if _, ok := waitErr.(*exec.ExitError); !ok {
+		var exitErr *tools.ExitError
+		if !errors.As(waitErr, &exitErr) {
 			return executionResult{
 				Output:    output,
 				ExitCode:  exitCode,

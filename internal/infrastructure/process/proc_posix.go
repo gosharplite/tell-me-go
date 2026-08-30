@@ -3,7 +3,7 @@
 
 //go:build !windows
 
-package workspace
+package process
 
 import (
 	"errors"
@@ -23,6 +23,18 @@ import (
 // normally microseconds; 200ms covers even heavily preempted children.
 const groupKillRetryWindow = 200 * time.Millisecond
 
+// Kill/sleep/time hooks behind which the Cancel closure's syscall and time
+// touchpoints sit (issue #1460, ADR-074; ADR-036 determinism — tests inject
+// deterministic outcomes instead of real sleeps). The defaults preserve
+// today's workspace proc_posix.go semantics byte-for-byte.
+var (
+	killGroup  = func(pid int) error { return syscall.Kill(-pid, syscall.SIGKILL) }
+	killDirect = func(pid int) error { return syscall.Kill(pid, syscall.SIGKILL) }
+	checkAlive = func(pid int) error { return syscall.Kill(pid, 0) }
+	timeNow    = time.Now
+	retrySleep = time.Sleep
+)
+
 // configureProcAttrs sets up platform-specific process attributes and
 // cancellation behavior for exec.Cmd to ensure the entire process tree
 // is terminated on timeout or cancellation, rather than just the direct child.
@@ -40,24 +52,24 @@ func configureProcAttrs(cmd *exec.Cmd) {
 		// landing in that window fails with ESRCH; retry briefly until the
 		// group exists or the process is gone, then kill the direct child.
 		pid := cmd.Process.Pid
-		deadline := time.Now().Add(groupKillRetryWindow)
+		deadline := timeNow().Add(groupKillRetryWindow)
 		for {
-			if err := syscall.Kill(-pid, syscall.SIGKILL); err == nil {
+			if err := killGroup(pid); err == nil {
 				return nil
 			} else if !errors.Is(err, syscall.ESRCH) {
 				return err
 			}
 			// ESRCH: group does not exist yet. If the process itself is
 			// gone, it already exited — don't inject a spurious error.
-			if err := syscall.Kill(pid, 0); err != nil {
+			if err := checkAlive(pid); err != nil {
 				return os.ErrProcessDone
 			}
-			if time.Now().After(deadline) {
+			if timeNow().After(deadline) {
 				// Give up waiting for the group; kill the direct child so
 				// the command cannot outlive the deadline.
-				return syscall.Kill(pid, syscall.SIGKILL)
+				return killDirect(pid)
 			}
-			time.Sleep(2 * time.Millisecond)
+			retrySleep(2 * time.Millisecond)
 		}
 	}
 }

@@ -20,7 +20,7 @@ const (
 )
 
 func TestProcessExecutor_Stress(t *testing.T) {
-	executor := newprocessExecutor()
+	executor := newTestProcessExecutor()
 	// Use multiple workers to truly stress concurrent execution and output handling
 	numWorkers := 3
 
@@ -155,7 +155,7 @@ func verifyStressResults(t *testing.T, errs []error) {
 }
 
 func TestProcessExecutor_UTF8Boundary(t *testing.T) {
-	executor := newprocessExecutor()
+	executor := newTestProcessExecutor()
 
 	// "世界" is 6 bytes (3+3)
 	config := executionConfig{

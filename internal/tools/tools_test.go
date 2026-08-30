@@ -51,6 +51,7 @@ func newTestParams() tools.ToolRegistrationParams {
 		CommandValidator: &toolstest.MockCommandValidator{},
 		EventBus:         &eventstest.TestEventBus{},
 		ToolchainRunner:  &toolstest.FakeToolchainRunner{},
+		ProcessRunner:    &toolstest.FakeProcessRunner{},
 	}
 }
 
@@ -236,6 +237,15 @@ func TestRegisterAll_Errors(t *testing.T) {
 		err := tools.RegisterAll(params)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "ToolchainRunner is required")
+	})
+
+	t.Run("nil ProcessRunner returns error", func(t *testing.T) {
+		t.Parallel()
+		params := newTestParams()
+		params.ProcessRunner = nil
+		err := tools.RegisterAll(params)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "ProcessRunner is required")
 	})
 
 	tests := []struct {
