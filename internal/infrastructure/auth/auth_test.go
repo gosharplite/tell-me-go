@@ -23,6 +23,7 @@ import (
 	"time"
 
 	authcontract "github.com/gosharplite/tell-me-go/internal/infrastructure/auth/contract"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"golang.org/x/oauth2"
 )
 
@@ -132,7 +133,7 @@ func TestVertexAuth_GetToken(t *testing.T) {
 		ctx := context.Background()
 		auth := &VertexAuth{
 			CacheDir: t.TempDir(),
-			fs:       defaultFS,
+			fs:       persistencetest.NewPlainOSFileSystem(),
 			tokenCmdFunc: func() ([]byte, error) {
 				return []byte("gcloud-token"), nil
 			},
@@ -200,7 +201,7 @@ func TestVertexAuth_Concurrency(t *testing.T) {
 
 	auth := &VertexAuth{
 		CacheDir: t.TempDir(),
-		fs:       defaultFS,
+		fs:       persistencetest.NewPlainOSFileSystem(),
 		tokenCmdFunc: func() ([]byte, error) {
 			atomic.AddInt32(&calls, 1)
 			inFunc <- struct{}{}
@@ -631,7 +632,7 @@ func TestVertexAuth_GetToken_ExpiredCache(t *testing.T) {
 	tmpDir := t.TempDir()
 	auth := &VertexAuth{
 		CacheDir: tmpDir,
-		fs:       defaultFS,
+		fs:       persistencetest.NewPlainOSFileSystem(),
 		tokenCmdFunc: func() ([]byte, error) {
 			return []byte("new-token"), nil
 		},
@@ -714,7 +715,7 @@ func TestVertexAuth_GetToken_AtomicWriteFailure(t *testing.T) {
 	// cache miss → gcloud → MkdirAll(succeeds) → AtomicWrite(fails)
 	auth2 := &VertexAuth{
 		CacheDir: tmpDir,
-		fs:       defaultFS,
+		fs:       persistencetest.NewPlainOSFileSystem(),
 		tokenCmdFunc: func() ([]byte, error) {
 			return []byte("resilient-token"), nil
 		},
@@ -730,7 +731,7 @@ func TestVertexAuth_GetToken_AtomicWriteFailure(t *testing.T) {
 }
 
 func TestNewVertexAuth_DefaultTokenCmdFunc(t *testing.T) {
-	a := NewVertexAuth()
+	a := NewVertexAuth(persistencetest.NewPlainOSFileSystem())
 	if a.tokenCmdFunc == nil {
 		t.Fatal("NewVertexAuth must wire a default tokenCmdFunc")
 	}
@@ -814,7 +815,7 @@ func TestVertexAuth_GetToken_CorruptCache(t *testing.T) {
 
 	auth := &VertexAuth{
 		CacheDir: tmpDir,
-		fs:       defaultFS,
+		fs:       persistencetest.NewPlainOSFileSystem(),
 		tokenCmdFunc: func() ([]byte, error) {
 			return []byte("fresh-gcloud-token"), nil
 		},
@@ -903,7 +904,7 @@ func TestNewVertexAuth_DefaultTokenCmdFunc_ExecError(t *testing.T) {
 		return exec.Command("false")
 	}
 
-	a := NewVertexAuth()
+	a := NewVertexAuth(persistencetest.NewPlainOSFileSystem())
 	if a.tokenCmdFunc == nil {
 		t.Fatal("NewVertexAuth must wire a non-nil tokenCmdFunc")
 	}
@@ -1006,7 +1007,7 @@ func TestVertexAuth_ReadCacheFile_Unreadable(t *testing.T) {
 func TestVertexAuth_WriteCacheFile(t *testing.T) {
 	t.Run("successful write", func(t *testing.T) {
 		dir := t.TempDir()
-		auth := &VertexAuth{CacheDir: dir, fs: defaultFS}
+		auth := &VertexAuth{CacheDir: dir, fs: persistencetest.NewPlainOSFileSystem()}
 		auth.writeCacheFile(context.Background(), "my-token")
 
 		cachePath := auth.getCachePath()
@@ -1040,7 +1041,7 @@ func TestVertexAuth_WriteCacheFile(t *testing.T) {
 			t.Skip("Chmod 0555 not reliable on Windows")
 		}
 		dir := t.TempDir()
-		auth := &VertexAuth{CacheDir: dir, fs: defaultFS}
+		auth := &VertexAuth{CacheDir: dir, fs: persistencetest.NewPlainOSFileSystem()}
 		cachePath := auth.getCachePath()
 		cacheDir := filepath.Dir(cachePath)
 		if err := os.MkdirAll(cacheDir, 0700); err != nil {

@@ -24,6 +24,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/require"
@@ -36,7 +37,8 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	}
 	// Setup
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	fs := infrapersistence.NewOSFileSystem()
+	hManager := history.NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -200,7 +202,8 @@ func TestContextManager_Race(t *testing.T) {
 		t.Skip("skipping slow stress test in short mode")
 	}
 	tmpDir := t.TempDir()
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs0 := infrapersistence.NewOSFileSystem()
+	h := history.NewManagerWithAssetStore(mfs0, persistencetest.NewAssetStore(mfs0, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(nil))
@@ -290,7 +293,8 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 		},
 	}
 
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
+	mfs1 := infrapersistence.NewOSFileSystem()
+	h := history.NewManagerWithAssetStore(mfs1, persistencetest.NewAssetStore(mfs1, filepath.Join(filepath.Dir(""), "assets")), "", "")
 	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	cm := sessctx.NewManager(strategy, h, bus, nil)
 	cm.SetPipeline(sessctx.NewContextPipeline())

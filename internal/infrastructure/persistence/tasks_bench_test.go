@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 )
 
 // generateTasks creates n realistic Task fixtures for benchmarking.
@@ -100,7 +99,7 @@ func BenchmarkTaskRepositoryReadAll(b *testing.B) {
 				b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
 					ctx := context.Background()
 					tmpDir := b.TempDir()
-					fs := persistencetest.NewPlainOSFileSystem()
+					fs := NewOSFileSystem()
 					filePath := filepath.Join(tmpDir, "tasks.json")
 
 					tasks := generateTasks(size)

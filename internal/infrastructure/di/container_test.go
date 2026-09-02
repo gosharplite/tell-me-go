@@ -28,6 +28,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	infra_skills "github.com/gosharplite/tell-me-go/internal/infrastructure/skills"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
@@ -559,7 +560,7 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 	client := new(mockLLMClient)
-	hManager := history.NewManager(nil, "history.jsonl", "archive.jsonl")
+	hManager := history.NewManagerWithAssetStore(nil, persistencetest.NewAssetStore(nil, "assets"), "history.jsonl", "archive.jsonl")
 	reg := registry.New()
 
 	mockDeps := &mockSessionDeps{

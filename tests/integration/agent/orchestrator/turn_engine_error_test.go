@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -53,7 +54,8 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec orchestrator.Too
 
 	tmpDir := t.TempDir()
 	historyPath := fmt.Sprintf("%s/history.json", tmpDir)
-	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+	fs := persistencetest.NewPlainOSFileSystem()
+	hManager := history.NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
 	factory := &sessctx.Factory{
 		History:   hManager,

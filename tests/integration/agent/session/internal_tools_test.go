@@ -23,7 +23,8 @@ import (
 func TestAgent_ManageHistory(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+	fs := persistencetest.NewPlainOSFileSystem()
+	hManager := history.NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Fill history with 2 turns (4 messages)

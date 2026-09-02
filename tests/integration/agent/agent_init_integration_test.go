@@ -6,6 +6,7 @@ package agent_test
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
@@ -28,7 +29,8 @@ import (
 func TestAgent_InitConfigFailure_Warning(t *testing.T) {
 	t.Parallel()
 	client := &agenttest.MockLLMClient{}
-	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), "", "")
+	fs := persistencetest.NewPlainOSFileSystem()
+	h := history.NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(""), "assets")), "", "")
 	reg := registry.New()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))

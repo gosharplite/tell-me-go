@@ -25,16 +25,6 @@ type Manager struct {
 	Contents []*llm.Content
 }
 
-// NewManager creates a new history manager for the given file path.
-func NewManager(fs persistence.FileSystem, filePath string, archivePath string) *Manager {
-	return &Manager{
-		store:    newJSONLStore(fs, filePath, archivePath),
-		logger:   &ports.NoOpLogger{},
-		FilePath: filePath,
-		Contents: []*llm.Content{},
-	}
-}
-
 // NewManagerWithAssetStore creates a new history manager with an injected
 // asset store (the domain persistence.AssetStore port). The DI root uses this
 // to inject the concrete infrastructure AssetStore built against the resolved
@@ -61,16 +51,6 @@ func (m *Manager) setStore(s store) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.store = s
-}
-
-// withFileSystem sets the filesystem implementation for the default store.
-func (m *Manager) withFileSystem(fs persistence.FileSystem) *Manager {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if s, ok := m.store.(*jsonlStore); ok {
-		s.withFileSystem(fs)
-	}
-	return m
 }
 
 // Load reads the history from the file system.

@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domainpersistence "github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
@@ -115,11 +116,13 @@ func buildBaseClient(p config.LLMProvider, authenticator authcontract.Authentica
 //     May be nil, in which case metrics are not published.
 //   - logger: if nil, a NoOpLogger is used. The logger receives
 //     provider configuration diagnostics and soft warnings.
+//   - fs: the domain filesystem port threaded into authenticator
+//     construction (VertexAuth token-cache persistence).
 //
 // Returns an llm.ExtendedClient ready for concurrent use, or an error
 // if no provider is configured or authentication setup fails. Unknown
 // provider types fall back to Gemini for backward compatibility.
-func newClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+func newClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger, fs domainpersistence.FileSystem) (llm.ExtendedClient, error) {
 	p := cfg.GetActiveProvider()
 
 	if logger == nil {
@@ -138,7 +141,7 @@ func newClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 			"note", "exceeds typical model ceilings; the API will reject if too large")
 	}
 
-	authenticator, err := createAuthenticator(&p)
+	authenticator, err := createAuthenticator(&p, fs)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +167,7 @@ func newClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 // Each client in the chain is independently constructed via the same
 // per-provider logic as newClient (authenticator, timeout, thinking budget,
 // headers), but wrapped in a resilientClient instead of returned directly.
-func newFailoverChain(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (*failoverGateway, error) {
+func newFailoverChain(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger, fs domainpersistence.FileSystem) (*failoverGateway, error) {
 	providers := cfg.GetFailoverProviders()
 	if len(providers) == 0 {
 		return nil, nil
@@ -180,7 +183,7 @@ func newFailoverChain(cfg *config.Config, pData pricing.PricingData, bus events.
 	for _, provider := range providers {
 		p := provider // capture range variable
 
-		authenticator, err := createAuthenticator(&p)
+		authenticator, err := createAuthenticator(&p, fs)
 		if err != nil {
 			return nil, fmt.Errorf("failover chain: provider %q: %w", p.Type, err)
 		}
@@ -201,7 +204,7 @@ func newFailoverChain(cfg *config.Config, pData pricing.PricingData, bus events.
 	return newFailoverGateway(clients), nil
 }
 
-func createAuthenticator(p *config.LLMProvider) (authcontract.Authenticator, error) {
+func createAuthenticator(p *config.LLMProvider, fs domainpersistence.FileSystem) (authcontract.Authenticator, error) {
 	// Preserve the existing logic for Service Account JSON
 	if p.APIKey != "" && strings.HasSuffix(strings.ToLower(p.APIKey), ".json") {
 		if _, err := os.Stat(p.APIKey); err == nil {
@@ -212,11 +215,11 @@ func createAuthenticator(p *config.LLMProvider) (authcontract.Authenticator, err
 	//exhaustive:enforce
 	switch p.Family() {
 	case config.APIOpenAI:
-		return openAIFamilyAuth(p)
+		return openAIFamilyAuth(p, fs)
 	case config.APIAnthropic:
 		return anthropicFamilyAuth(p)
 	case config.APIGemini:
-		return resolveGoogleAuth(p)
+		return resolveGoogleAuth(p, fs)
 	default:
 		// Defensive: unreachable given Family()'s totality, but
 		// guarded as a safety net to fail loudly on programmer error.
@@ -228,13 +231,13 @@ func createAuthenticator(p *config.LLMProvider) (authcontract.Authenticator, err
 // (openai, deepseek, kimi). For kimi, there is no Vertex fallback and an
 // API key is always required — this label-specific override must be checked
 // before the VertexAuth path.
-func openAIFamilyAuth(p *config.LLMProvider) (authcontract.Authenticator, error) {
+func openAIFamilyAuth(p *config.LLMProvider, fs domainpersistence.FileSystem) (authcontract.Authenticator, error) {
 	if p.APIKey == "" {
 		if p.Type == "kimi" {
 			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
 		}
 		if strings.Contains(p.URL, "aiplatform.googleapis.com") {
-			return auth.NewVertexAuth(), nil
+			return auth.NewVertexAuth(fs), nil
 		}
 		return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
 	}
@@ -249,11 +252,11 @@ func anthropicFamilyAuth(p *config.LLMProvider) (authcontract.Authenticator, err
 	return &auth.AnthropicAuth{APIKey: p.APIKey}, nil
 }
 
-func resolveGoogleAuth(p *config.LLMProvider) (authcontract.Authenticator, error) {
+func resolveGoogleAuth(p *config.LLMProvider, fs domainpersistence.FileSystem) (authcontract.Authenticator, error) {
 	if p.APIKey != "" {
 		return &auth.APIKeyAuth{APIKey: p.APIKey}, nil
 	}
-	return auth.NewVertexAuth(), nil
+	return auth.NewVertexAuth(fs), nil
 }
 
 func resolveTimeout(cfg *config.Config) time.Duration {
@@ -279,19 +282,25 @@ func resolveTimeout(cfg *config.Config) time.Duration {
 //
 // Returns an error if no credentials are available and the provider
 // does not support credential-less authentication.
-func CreateAuthenticator(p *config.LLMProvider) (authcontract.Authenticator, error) {
-	return createAuthenticator(p)
+func CreateAuthenticator(p *config.LLMProvider, fs domainpersistence.FileSystem) (authcontract.Authenticator, error) {
+	return createAuthenticator(p, fs)
 }
 
 // DefaultClientFactory implements ports.ClientFactory by delegating to
 // the canonical package-level constructor functions (newClient and
 // newFailoverChain). It is the production implementation wired by
 // DefaultBootstrapperConfig.
-type DefaultClientFactory struct{}
+type DefaultClientFactory struct {
+	// FileSystem is the domain filesystem port threaded into authenticator
+	// construction (VertexAuth token-cache persistence). It is supplied by
+	// the DI composition root; nil is safe only for authenticators that
+	// never persist (Bearer/APIKey/Anthropic/ServiceAccount).
+	FileSystem domainpersistence.FileSystem
+}
 
 // NewClient delegates to the package-level newClient constructor.
 func (f *DefaultClientFactory) NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
-	return newClient(cfg, pData, bus, logger)
+	return newClient(cfg, pData, bus, logger, f.FileSystem)
 }
 
 // NewFailoverChain delegates to the package-level newFailoverChain constructor.
@@ -299,7 +308,7 @@ func (f *DefaultClientFactory) NewClient(cfg *config.Config, pData pricing.Prici
 // configured, the underlying newFailoverChain returns (nil, nil), and this
 // method propagates that through the llm.ExtendedClient interface.
 func (f *DefaultClientFactory) NewFailoverChain(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
-	gw, err := newFailoverChain(cfg, pData, bus, logger)
+	gw, err := newFailoverChain(cfg, pData, bus, logger, f.FileSystem)
 	if err != nil {
 		return nil, err
 	}

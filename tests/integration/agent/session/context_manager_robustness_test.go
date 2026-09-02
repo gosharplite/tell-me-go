@@ -26,7 +26,8 @@ import (
 func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+	fs := persistencetest.NewPlainOSFileSystem()
+	hManager := history.NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Setup history ending in FunctionResponse
@@ -127,7 +128,8 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+	mfs0 := persistencetest.NewPlainOSFileSystem()
+	hManager := history.NewManagerWithAssetStore(mfs0, persistencetest.NewAssetStore(mfs0, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// 1. Fill history with 10 messages (5 turns)
@@ -190,7 +192,8 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+	mfs1 := persistencetest.NewPlainOSFileSystem()
+	hManager := history.NewManagerWithAssetStore(mfs1, persistencetest.NewAssetStore(mfs1, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	counter := &agenttest.MockTokenCounter{}
@@ -220,7 +223,8 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 	// Test case: Above threshold
 	// Use a fresh manager to ensure we have exactly 2 turns and no interference from previous call
 	historyPath2 := filepath.Join(tmpDir, "history2.json")
-	hManager2 := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath2, historyPath2+".archive")
+	mfs2 := persistencetest.NewPlainOSFileSystem()
+	hManager2 := history.NewManagerWithAssetStore(mfs2, persistencetest.NewAssetStore(mfs2, filepath.Join(filepath.Dir(historyPath2), "assets")), historyPath2, historyPath2+".archive")
 	for i := 0; i < 2; i++ {
 		_ = hManager2.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "msg"}}})
 		_ = hManager2.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "msg"}}})
@@ -241,7 +245,8 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+	mfs3 := persistencetest.NewPlainOSFileSystem()
+	hManager := history.NewManagerWithAssetStore(mfs3, persistencetest.NewAssetStore(mfs3, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Initial history: 1 turn
@@ -294,7 +299,8 @@ func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+	mfs4 := persistencetest.NewPlainOSFileSystem()
+	hManager := history.NewManagerWithAssetStore(mfs4, persistencetest.NewAssetStore(mfs4, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Initial history: 4 turns (8 messages)
@@ -385,7 +391,8 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 func setupSummarizationTest(t *testing.T) (*sessctx.Manager, *[]*domain_llm.Content) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+	mfs5 := persistencetest.NewPlainOSFileSystem()
+	hManager := history.NewManagerWithAssetStore(mfs5, persistencetest.NewAssetStore(mfs5, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	capturedInput := new([]*domain_llm.Content)
 	g := &agenttest.MockGateway{}
 	g.GenerateFunc = func(ctx context.Context, input []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
@@ -487,7 +494,8 @@ func verifyBinaryDataMapping(t *testing.T, capturedInput *[]*domain_llm.Content)
 func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.jsonl")
-	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+	mfs6 := persistencetest.NewPlainOSFileSystem()
+	hManager := history.NewManagerWithAssetStore(mfs6, persistencetest.NewAssetStore(mfs6, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Initial message
