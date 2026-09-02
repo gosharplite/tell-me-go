@@ -371,7 +371,7 @@ func TestClassifyExitLayer(t *testing.T) {
 		{module + "/internal/cli", layerApplication},
 		{module + "/internal/ui", layerApplication},
 		{module + "/internal/service", layerApplication},
-		{module + "/internal/application/suggestions", layerApplication},
+		{module + "/internal/app/suggestions", layerApplication},
 		{module + "/internal/app", layerApplication},
 		{module + "/internal/tools/analysis", layerTools},
 		{module + "/internal/pkg/clock", layerShared},
