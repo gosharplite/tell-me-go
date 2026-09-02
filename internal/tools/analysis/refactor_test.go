@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -47,7 +48,7 @@ func TestTransaction_Commit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tx := newTransaction()
+	tx := newTransactionWithFS(infra_persistence.NewOSFileSystem())
 	_, err := tx.LoadFile(context.Background(), path)
 	if err != nil {
 		t.Fatalf("LoadFile failed: %v", err)
@@ -81,7 +82,7 @@ func TestTransaction_Commit(t *testing.T) {
 
 func TestTransaction_LoadFile_Error(t *testing.T) {
 	t.Parallel()
-	tx := newTransaction()
+	tx := newTransactionWithFS(infra_persistence.NewOSFileSystem())
 	_, err := tx.LoadFile(context.Background(), "non_existent.go")
 	if err == nil {
 		t.Error("expected error loading non-existent file")
@@ -90,7 +91,7 @@ func TestTransaction_LoadFile_Error(t *testing.T) {
 
 func TestTransaction_LoadFile_CachedReturn(t *testing.T) {
 	t.Parallel()
-	tx := newTransaction()
+	tx := newTransactionWithFS(infra_persistence.NewOSFileSystem())
 
 	// First call: parses the file
 	f1, err := tx.LoadFile(context.Background(), "testdata/valid.go")
@@ -130,7 +131,7 @@ func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 		path := filepath.Join(tmpDir, "test.go")
 		require.NoError(t, os.WriteFile(path, []byte("package p\n\nfunc F() {}\n"), 0644))
 
-		tx := newTransaction()
+		tx := newTransactionWithFS(infra_persistence.NewOSFileSystem())
 		_, err := tx.LoadFile(context.Background(), path)
 		require.NoError(t, err)
 
@@ -166,7 +167,7 @@ func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 		path := filepath.Join(tmpDir, "test.go")
 		require.NoError(t, os.WriteFile(path, []byte("package p\n\nfunc F() {}\n"), 0644))
 
-		tx := newTransaction()
+		tx := newTransactionWithFS(infra_persistence.NewOSFileSystem())
 		_, err := tx.LoadFile(context.Background(), path)
 		require.NoError(t, err)
 
@@ -200,7 +201,7 @@ func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 		path := filepath.Join(tmpDir, "test.go")
 		require.NoError(t, os.WriteFile(path, []byte("package p\n\nfunc F() {}\n"), 0644))
 
-		tx := newTransaction()
+		tx := newTransactionWithFS(infra_persistence.NewOSFileSystem())
 		_, err := tx.LoadFile(context.Background(), path)
 		require.NoError(t, err)
 
@@ -227,8 +228,7 @@ func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 		mfs := persistence.NewMockFileSystem()
 		require.NoError(t, mfs.WriteFile(ctx, path, content, 0644))
 
-		tx := newTransaction()
-		tx.fs = &atomicWriteErrorFS{FileSystem: mfs}
+		tx := newTransactionWithFS(&atomicWriteErrorFS{FileSystem: mfs})
 		_, err := tx.LoadFile(ctx, path)
 		require.NoError(t, err)
 
@@ -249,7 +249,7 @@ func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 		path := filepath.Join(tmpDir, "broken.go")
 		require.NoError(t, os.WriteFile(path, []byte("not valid go {{{"), 0644))
 
-		tx := newTransaction()
+		tx := newTransactionWithFS(infra_persistence.NewOSFileSystem())
 		_, err := tx.LoadFile(context.Background(), path)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "parse")
