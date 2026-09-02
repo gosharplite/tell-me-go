@@ -57,11 +57,12 @@ func TestTransaction_MemoryFS_LoadTransformCommit(t *testing.T) {
 }
 
 // TestNewTransactionWithFS_NilPanics pins the contract-violation guard on
-// the injection seam (ADR-055: use newTransaction() for the default).
+// the injection seam (ADR-055 as amended by #1465: no package default —
+// construction is explicit).
 func TestNewTransactionWithFS_NilPanics(t *testing.T) {
 	t.Parallel()
 	require.PanicsWithValue(t,
-		"nil FileSystem to newTransactionWithFS: use newTransaction() for the default",
+		"nil FileSystem to newTransactionWithFS: inject a non-nil persistence.FileSystem (no package default exists)",
 		func() { newTransactionWithFS(nil) },
 	)
 }

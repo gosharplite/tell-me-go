@@ -25,18 +25,15 @@ type transaction struct {
 	fs         persistence.FileSystem
 }
 
-func newTransaction() *transaction {
-	return newTransactionWithFS(defaultFS)
-}
-
 // newTransactionWithFS constructs a transaction bound to an explicitly
-// injected filesystem. nil is a contract violation: use newTransaction()
-// for the package default (defaultFS). In production the DI hub always
-// provides a non-nil persistence.FileSystem; the panic guards test-reachable
-// seams and misuse.
+// injected filesystem. nil is a contract violation: the package has no
+// default fallback — the ADR-055 defaultFS shim was retired (#1465), so
+// every caller (the DI hub in production, tests elsewhere) must provide a
+// non-nil persistence.FileSystem. The panic guards test-reachable seams
+// and misuse.
 func newTransactionWithFS(fs persistence.FileSystem) *transaction {
 	if fs == nil {
-		panic("nil FileSystem to newTransactionWithFS: use newTransaction() for the default")
+		panic("nil FileSystem to newTransactionWithFS: inject a non-nil persistence.FileSystem (no package default exists)")
 	}
 	return &transaction{
 		fset:  token.NewFileSet(),
