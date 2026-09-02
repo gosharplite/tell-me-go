@@ -154,12 +154,29 @@ allowed: config, events, llm, persistence, pricing, security, services, telemetr
 allowed: events, llm, telemetry, tools
 # events=prod-direct; llm=test-direct (P4, white-box test builds llm.Metrics); telemetry=P1 (events→telemetry); tools=P2 (events→llm→tools)
 
+## consumer: internal/pkg/concurrentsearch
+allowed: persistence, security, services
+# DOCUMENTARY-ONLY ratification (supersedes #1464): the gate classifies this
+# consumer as self-justifying (dom ⊆ direct domain imports) and its verdict is
+# identical with or without this entry. Recorded per ADR-056 Decision 2's
+# "every closure edge is a recorded decision" contract. The package is a
+# domain-parameterized engine — ports in, primitive channels out, no domain
+# logic owned. Ratified over inversion; adjudication rationale in the
+# superseding issue.
+
 ## consumer: internal/domain/ports
 allowed: <derived>
 
 ## consumer: internal/app
 allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
 # TD-1 (issue #1364): app construction seam (chatter/chat-service/suggestions); full hub surface
+
+## decision: internal/pkg/testfixtures → ports (fixture exemption)
+`testfixtures` is the canonical test-double home (MockSessionProvider per the
+verify-session-provider-mock gate; spy logger). Its sole domain import is the
+ports hub, which the gate excludes from attribution, so it is trivially
+self-justifying. Fixture packages under internal/pkg/ are exempt from
+consumer-entry requirements by this recorded decision.
 
 ## infra-root: di
 allowed: config, exec, factory, history, llm, logging, mcp, persistence, process, registry, security, skills, telemetry, toolchain
