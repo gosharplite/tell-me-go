@@ -80,6 +80,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-072** | Native reasoning_content Round-Trip for Z.AI GLM Models (SupportsReasoningContent) | 2026-09 | Accepted | [2026-09-glm-reasoning-content-capability.md](2026-09-glm-reasoning-content-capability.md) |
 | **ADR-073** | GPT-5.x Vision via the Responses API — Full-History Image Routing, gpt-5+ Vision, Dimension Guard | 2026-09 | Accepted | [2026-09-gpt5x-responses-vision.md](2026-09-gpt5x-responses-vision.md) |
 | **ADR-074** | Inject the Process Runner into the Tools Layer (ProcessRunner Domain Port) | 2026-09 | Accepted | [2026-09-process-runner-injection.md](2026-09-process-runner-injection.md) |
+| **ADR-075** | Scalability Boundary Conditions — CLI-First State Store, Ports-Registry Headroom, Anti-Extension Restatement | 2026-09 | Accepted | [2026-09-scalability-boundary-conditions.md](2026-09-scalability-boundary-conditions.md) |
 
 ## How to Create a New ADR
 
