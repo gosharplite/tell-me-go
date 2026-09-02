@@ -31,7 +31,8 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	// to prevent API errors.
 
 	tmpFile := filepath.Join(t.TempDir(), "history.json")
-	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), tmpFile, tmpFile+".archive")
+	fs := persistencetest.NewPlainOSFileSystem()
+	h := history.NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(tmpFile), "assets")), tmpFile, tmpFile+".archive")
 	ctx := context.Background()
 
 	// Manually add a content with no parts
@@ -71,7 +72,8 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	// via the orchestration pipeline.
 
 	historyPath := filepath.Join(t.TempDir(), "history.json")
-	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+	mfs0 := persistencetest.NewPlainOSFileSystem()
+	h := history.NewManagerWithAssetStore(mfs0, persistencetest.NewAssetStore(mfs0, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	registry := internaltools.New()
 	ctx := context.Background()
 
@@ -123,7 +125,8 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	require.NoError(t, regErr)
 
 	historyPath := filepath.Join(t.TempDir(), "history.json")
-	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+	mfs1 := persistencetest.NewPlainOSFileSystem()
+	h := history.NewManagerWithAssetStore(mfs1, persistencetest.NewAssetStore(mfs1, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	// Mock client that triggers the tool

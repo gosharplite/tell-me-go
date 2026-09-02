@@ -23,6 +23,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	authcontract "github.com/gosharplite/tell-me-go/internal/infrastructure/auth/contract"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,7 +31,7 @@ import (
 func TestCreateAuthenticator(t *testing.T) {
 	t.Run("API key", func(t *testing.T) {
 		p := &config.LLMProvider{APIKey: "test-key", Type: "openai"}
-		a, err := createAuthenticator(p)
+		a, err := createAuthenticator(p, persistencetest.NewPlainOSFileSystem())
 		if err != nil {
 			t.Fatalf("failed to create authenticator: %v", err)
 		}
@@ -48,7 +49,7 @@ func TestCreateAuthenticator(t *testing.T) {
 		}
 
 		p := &config.LLMProvider{APIKey: jsonPath, Type: "google"}
-		a, err := createAuthenticator(p)
+		a, err := createAuthenticator(p, persistencetest.NewPlainOSFileSystem())
 		if err != nil {
 			t.Fatalf("failed to create authenticator: %v", err)
 		}
@@ -63,7 +64,7 @@ func TestCreateAuthenticator(t *testing.T) {
 
 	t.Run("Vertex fallback", func(t *testing.T) {
 		p := &config.LLMProvider{Type: "google"}
-		a, err := createAuthenticator(p)
+		a, err := createAuthenticator(p, persistencetest.NewPlainOSFileSystem())
 		if err != nil {
 			t.Fatalf("failed to create authenticator: %v", err)
 		}
@@ -93,7 +94,7 @@ func TestCreateAuthenticator_Strategies(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			auth, err := createAuthenticator(&tt.provider)
+			auth, err := createAuthenticator(&tt.provider, persistencetest.NewPlainOSFileSystem())
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("createAuthenticator() error = %v, wantErr %v", err, tt.wantErr)
@@ -134,7 +135,7 @@ func TestCreateAuthenticator_MissingKeysAndFallbacks(t *testing.T) {
 				APIKey: tt.apiKey,
 				URL:    tt.url,
 			}
-			a, err := createAuthenticator(p)
+			a, err := createAuthenticator(p, persistencetest.NewPlainOSFileSystem())
 			assertMissingKeysResult(t, a, err, tt.wantErr, tt.provider, tt.apiKey, tt.url)
 		})
 	}
@@ -174,7 +175,7 @@ func TestCreateAuthenticator_Public(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			a, err := CreateAuthenticator(&tt.provider)
+			a, err := CreateAuthenticator(&tt.provider, persistencetest.NewPlainOSFileSystem())
 			assertCreateAuthenticatorResult(t, a, err, tt.wantErr, tt.wantAuthNil, tt.wantType)
 		})
 	}
@@ -258,7 +259,7 @@ func TestNewClient_FallbackToGemini(t *testing.T) {
 	pData := pricing.PricingData{}
 
 	// This should hit the default: case in the switch statement
-	client, err := newClient(cfg, pData, bus, nil)
+	client, err := newClient(cfg, pData, bus, nil, persistencetest.NewPlainOSFileSystem())
 	if err != nil {
 		t.Fatalf("NewClient() unexpected error: %v", err)
 	}
@@ -322,7 +323,7 @@ func runFactorySendChatAndCapture(
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 
-	c, err := newClient(cfg, pData, bus, nil)
+	c, err := newClient(cfg, pData, bus, nil, persistencetest.NewPlainOSFileSystem())
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}
@@ -699,7 +700,7 @@ func TestFactory_MaxTokensAboveSoftCeiling_EmitsWarning(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 
-	_, err := newClient(cfg, pricing.PricingData{}, bus, logger)
+	_, err := newClient(cfg, pricing.PricingData{}, bus, logger, persistencetest.NewPlainOSFileSystem())
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}
@@ -845,7 +846,7 @@ func TestDefaultClientFactory(t *testing.T) {
 			},
 		}
 		bus := newTestBus(t)
-		factory := &DefaultClientFactory{}
+		factory := &DefaultClientFactory{FileSystem: persistencetest.NewPlainOSFileSystem()}
 		client, err := factory.NewClient(cfg, pricing.PricingData{}, bus, nil)
 		if err != nil {
 			t.Fatalf("NewClient() unexpected error: %v", err)
@@ -870,7 +871,7 @@ func TestDefaultClientFactory(t *testing.T) {
 			},
 		}
 		bus := newTestBus(t)
-		factory := &DefaultClientFactory{}
+		factory := &DefaultClientFactory{FileSystem: persistencetest.NewPlainOSFileSystem()}
 		client, err := factory.NewClient(cfg, pricing.PricingData{}, bus, nil)
 		assertNewClientError(t, client, err)
 	})
@@ -889,7 +890,7 @@ func TestDefaultClientFactory(t *testing.T) {
 			},
 		}
 		bus := newTestBus(t)
-		factory := &DefaultClientFactory{}
+		factory := &DefaultClientFactory{FileSystem: persistencetest.NewPlainOSFileSystem()}
 		gw, err := factory.NewFailoverChain(cfg, pricing.PricingData{}, bus, nil)
 		if err != nil {
 			t.Fatalf("NewFailoverChain() unexpected error: %v", err)
@@ -905,7 +906,7 @@ func TestDefaultClientFactory(t *testing.T) {
 
 	t.Run("NewFailoverChain returns nil,nil for empty order", func(t *testing.T) {
 		bus := newTestBus(t)
-		factory := &DefaultClientFactory{}
+		factory := &DefaultClientFactory{FileSystem: persistencetest.NewPlainOSFileSystem()}
 		cfg := &config.Config{FailoverOrder: nil}
 		gw, err := factory.NewFailoverChain(cfg, pricing.PricingData{}, bus, nil)
 		assertFailoverChainEmptyOrder(t, gw, err)
@@ -930,7 +931,7 @@ func TestDefaultClientFactory(t *testing.T) {
 			},
 		}
 		bus := newTestBus(t)
-		factory := &DefaultClientFactory{}
+		factory := &DefaultClientFactory{FileSystem: persistencetest.NewPlainOSFileSystem()}
 		gw, err := factory.NewFailoverChain(cfg, pricing.PricingData{}, bus, nil)
 		assertFailoverChainAuthError(t, gw, err)
 	})
@@ -989,7 +990,7 @@ func TestNewFailoverChain(t *testing.T) {
 			FailoverOrder: nil,
 		}
 		bus := newTestBus(t)
-		gw, err := newFailoverChain(cfg, pricing.PricingData{}, bus, nil)
+		gw, err := newFailoverChain(cfg, pricing.PricingData{}, bus, nil, persistencetest.NewPlainOSFileSystem())
 		assertNewFailoverChainEmpty(t, gw, err)
 	})
 
@@ -1007,7 +1008,7 @@ func TestNewFailoverChain(t *testing.T) {
 			},
 		}
 		bus := newTestBus(t)
-		gw, err := newFailoverChain(cfg, pricing.PricingData{}, bus, nil)
+		gw, err := newFailoverChain(cfg, pricing.PricingData{}, bus, nil, persistencetest.NewPlainOSFileSystem())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1039,7 +1040,7 @@ func TestNewFailoverChain(t *testing.T) {
 			},
 		}
 		bus := newTestBus(t)
-		gw, err := newFailoverChain(cfg, pricing.PricingData{}, bus, nil)
+		gw, err := newFailoverChain(cfg, pricing.PricingData{}, bus, nil, persistencetest.NewPlainOSFileSystem())
 		assertNewFailoverChainAuthError(t, gw, err)
 	})
 
@@ -1063,7 +1064,7 @@ func TestNewFailoverChain(t *testing.T) {
 			},
 		}
 		bus := newTestBus(t)
-		gw, err := newFailoverChain(cfg, pricing.PricingData{}, bus, nil)
+		gw, err := newFailoverChain(cfg, pricing.PricingData{}, bus, nil, persistencetest.NewPlainOSFileSystem())
 		assertNewFailoverChainGeminiResult(t, gw, err)
 	})
 
@@ -1097,7 +1098,7 @@ func TestNewFailoverChain(t *testing.T) {
 			},
 		}
 		bus := newTestBus(t)
-		gw, err := newFailoverChain(cfg, pricing.PricingData{}, bus, nil)
+		gw, err := newFailoverChain(cfg, pricing.PricingData{}, bus, nil, persistencetest.NewPlainOSFileSystem())
 
 		require.Error(t, err, "expected error from buildBaseClient failure")
 		assert.Nil(t, gw, "expected nil gateway on error")

@@ -19,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"google.golang.org/genai"
 )
 
@@ -80,7 +81,8 @@ func TestSendChat_MixedMediaStoreRoundTrip(t *testing.T) {
 			tmpDir := t.TempDir()
 			historyFile := filepath.Join(tmpDir, "history.jsonl")
 			archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
-			m := history.NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+			fs := infrapersistence.NewOSFileSystem()
+			m := history.NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 
 			// Seed: model turn (single FunctionCall) then user turn with the
 			// scenario's part order. AddContent → prepareForStorage moves the
@@ -97,7 +99,8 @@ func TestSendChat_MixedMediaStoreRoundTrip(t *testing.T) {
 
 			// Reload from disk: Load re-parses the persisted JSONL where the
 			// blob parts carry AssetID + InlineData{MIMEType} with nil Data.
-			m2 := history.NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+			mfs0 := infrapersistence.NewOSFileSystem()
+			m2 := history.NewManagerWithAssetStore(mfs0, persistencetest.NewAssetStore(mfs0, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 			if err := m2.Load(ctx); err != nil {
 				t.Fatalf("Load: %v", err)
 			}

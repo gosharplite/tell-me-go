@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
@@ -29,7 +30,8 @@ func TestHistory_Rendering(t *testing.T) {
 	ctx := context.Background()
 	tmp := t.TempDir()
 	historyPath := filepath.Join(tmp, "history.json")
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+	fs := infrapersistence.NewOSFileSystem()
+	h := history.NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +79,8 @@ func TestHistory_Rendering(t *testing.T) {
 func TestHistory_Empty(t *testing.T) {
 	tmp := t.TempDir()
 	historyPath := filepath.Join(tmp, "history.json")
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+	mfs0 := infrapersistence.NewOSFileSystem()
+	h := history.NewManagerWithAssetStore(mfs0, persistencetest.NewAssetStore(mfs0, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	var buf bytes.Buffer
 	ui.RenderHistory(&buf, h, 10, ports.HistoryRenderOptions{Raw: true})
 
@@ -90,7 +93,8 @@ func TestHistory_RenderPart_Tool(t *testing.T) {
 	ctx := context.Background()
 	tmp := t.TempDir()
 	historyPath := filepath.Join(tmp, "history.json")
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+	mfs1 := infrapersistence.NewOSFileSystem()
+	h := history.NewManagerWithAssetStore(mfs1, persistencetest.NewAssetStore(mfs1, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "call tool"}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +124,8 @@ func TestHistory_RenderPart_Tool(t *testing.T) {
 func TestStdHistoryRenderer_Render(t *testing.T) {
 	tmp := t.TempDir()
 	historyPath := filepath.Join(tmp, "history.json")
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+	mfs2 := infrapersistence.NewOSFileSystem()
+	h := history.NewManagerWithAssetStore(mfs2, persistencetest.NewAssetStore(mfs2, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 
 	var r ui.StdHistoryRenderer
 	var buf bytes.Buffer
@@ -135,7 +140,8 @@ func TestHistory_NonRaw(t *testing.T) {
 	ctx := context.Background()
 	tmp := t.TempDir()
 	historyPath := filepath.Join(tmp, "history.json")
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+	mfs3 := infrapersistence.NewOSFileSystem()
+	h := history.NewManagerWithAssetStore(mfs3, persistencetest.NewAssetStore(mfs3, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "# Hello"}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +249,8 @@ func TestHistory_RenderTextFallback(t *testing.T) {
 	// Test the raw path and non-raw (renderer) path for renderText
 	tmp := t.TempDir()
 	historyPath := filepath.Join(tmp, "history.json")
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+	mfs4 := infrapersistence.NewOSFileSystem()
+	h := history.NewManagerWithAssetStore(mfs4, persistencetest.NewAssetStore(mfs4, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 
 	ctx := context.Background()
 	if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello world"}}}); err != nil {
@@ -280,7 +287,8 @@ func TestHistory_RenderWrapWidth(t *testing.T) {
 
 	tmp := t.TempDir()
 	historyPath := filepath.Join(tmp, "history.json")
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+	mfs5 := infrapersistence.NewOSFileSystem()
+	h := history.NewManagerWithAssetStore(mfs5, persistencetest.NewAssetStore(mfs5, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 
 	ctx := context.Background()
 	if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}}); err != nil {
@@ -325,7 +333,8 @@ func TestHistory_RenderTextError(t *testing.T) {
 	ctx := context.Background()
 	tmp := t.TempDir()
 	historyPath := filepath.Join(tmp, "history.json")
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+	mfs6 := infrapersistence.NewOSFileSystem()
+	h := history.NewManagerWithAssetStore(mfs6, persistencetest.NewAssetStore(mfs6, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello world"}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +353,8 @@ func TestHistory_RenderTextError(t *testing.T) {
 		ctx := context.Background()
 		tmp := t.TempDir()
 		historyPath := filepath.Join(tmp, "history.json")
-		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+		mfs7 := infrapersistence.NewOSFileSystem()
+		h := history.NewManagerWithAssetStore(mfs7, persistencetest.NewAssetStore(mfs7, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 		if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello world"}}}); err != nil {
 			t.Fatal(err)
 		}
@@ -373,7 +383,8 @@ func TestHistory_ThoughtPromotion(t *testing.T) {
 	historyPath := filepath.Join(tmp, "history.json")
 
 	t.Run("thought rendered when no visible text and showThoughts=false", func(t *testing.T) {
-		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+		mfs8 := infrapersistence.NewOSFileSystem()
+		h := history.NewManagerWithAssetStore(mfs8, persistencetest.NewAssetStore(mfs8, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 		if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "test"}}}); err != nil {
 			t.Fatal(err)
 		}
@@ -395,7 +406,8 @@ func TestHistory_ThoughtPromotion(t *testing.T) {
 	})
 
 	t.Run("thought NOT rendered when visible text exists", func(t *testing.T) {
-		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath+"-2", historyPath+"-2.archive")
+		mfs9 := infrapersistence.NewOSFileSystem()
+		h := history.NewManagerWithAssetStore(mfs9, persistencetest.NewAssetStore(mfs9, filepath.Join(filepath.Dir(historyPath+"-2"), "assets")), historyPath+"-2", historyPath+"-2.archive")
 		if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "test"}}}); err != nil {
 			t.Fatal(err)
 		}

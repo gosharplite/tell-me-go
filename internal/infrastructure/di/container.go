@@ -41,14 +41,14 @@ type Bootstrapper struct {
 
 // NewBootstrapper creates a new Bootstrapper instance.
 func NewBootstrapper(cfg BootstrapperConfig) *Bootstrapper {
-	if cfg.ClientFactory == nil {
-		cfg.ClientFactory = &infra_llm.DefaultClientFactory{}
+	if cfg.FileSystem == nil {
+		cfg.FileSystem = &infra_persistence.OSFileSystem{}
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	if cfg.FileSystem == nil {
-		cfg.FileSystem = &infra_persistence.OSFileSystem{}
+	if cfg.ClientFactory == nil {
+		cfg.ClientFactory = &infra_llm.DefaultClientFactory{FileSystem: infra_persistence.NewDomainFS(cfg.FileSystem)}
 	}
 
 	b := &Bootstrapper{cfg: cfg}
@@ -67,7 +67,7 @@ func NewBootstrapper(cfg BootstrapperConfig) *Bootstrapper {
 	)
 	b.telemetryFactory = newTelemetryFactory(cfg.HomeDir, cfg.FileSystem, cfg.SM, cfg.Logger)
 	b.historyFactory = newHistoryFactory(cfg.HomeDir, cfg.FileSystem, cfg.Logger)
-	b.healthFactory = newHealthFactory()
+	b.healthFactory = newHealthFactory(infra_persistence.NewDomainFS(cfg.FileSystem))
 	b.uiFactory = newUIFactory(cfg.SM, cfg.Stdout, cfg.Stderr, cfg.Logger)
 	b.chatFactory = newChatFactory(cfg.HomeDir, cfg.Version, cfg.Stdout, cfg.Stderr, cfg.SM, cfg.FileSystem, b, b.uiFactory)
 	return b

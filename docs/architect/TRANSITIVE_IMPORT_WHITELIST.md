@@ -114,6 +114,9 @@ allowed: events, llm, persistence, services, telemetry, tools
 ## consumer: internal/infrastructure/mcp
 allowed: config, events, llm, pricing, telemetry, tools
 # P3+P1+P2 (#1396): stdio transport constructor takes domain config (NewStdioClient); closure via config — same approved set as internal/infrastructure/config
+## consumer: internal/infrastructure/persistence/persistencetest
+allowed: persistence, services
+# P3+P4 (#1469): test-double subpackage of the persistence parent; asset_store.go's NewAssetStore helper wraps infrapersistence.NewAssetStore (issue #1469), whose parent closure reaches services via state.go/workspace_policy.go — recorded decision for the T2a closure growth
 ## consumer: internal/infrastructure/telemetry
 allowed: config, events, llm, pricing, security, telemetry, tools
 # P2+P3: config via events/telemetry deps
@@ -129,6 +132,9 @@ allowed: events, llm, persistence, security, services, telemetry, tools
 ## consumer: internal/tools/developer
 allowed: events, llm, persistence, security, services, telemetry, tools
 # P1+P2: llm/telemetry
+## consumer: internal/tools/integrations
+allowed: llm, persistence, security, services, tools
+# P4 (#1469): services via the pre-existing media_test.go persistencetest import (merged test closure); previously self-justifying, now whitelist-governed per the #1469 persistencetest parent-import adjudication
 ## consumer: internal/tools/integrations/ado
 allowed: llm, persistence, security, tools
 # P2+P3: tool deps
@@ -184,9 +190,3 @@ allowed: config, exec, factory, history, llm, logging, mcp, persistence, process
 
 ## infra-sanctioned: llm → auth
 # llm/factory.go constructs auth (issue #1350 item 4, ADR-055 confinement)
-
-## infra-sanctioned: auth → persistence
-# auth/default_fs.go (issue #1350 item 3)
-
-## infra-sanctioned: history → persistence
-# history/default_asset_store.go (issue #1350 item 5)

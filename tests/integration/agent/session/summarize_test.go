@@ -123,7 +123,8 @@ func runSummarizeTest(t *testing.T, tt summarizeTestCase) {
 func setupTestHistory(t *testing.T, turns int) ports.HistoryManager {
 	t.Helper()
 	historyPath := filepath.Join(t.TempDir(), "history.json")
-	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+	fs := persistencetest.NewPlainOSFileSystem()
+	h := history.NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	ctx := context.Background()
 	for i := 1; i <= turns; i++ {
 		_ = h.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "Turn User"}}})
@@ -211,7 +212,8 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	mockCounter := &agenttest.MockTokenCounter{}
 	mockCounter.SetTokens(950000) // Above 90% of 1M
 	strategy := sessctx.NewStrategy(mockCounter)
-	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyFile, historyFile+".archive")
+	mfs0 := persistencetest.NewPlainOSFileSystem()
+	hManager := history.NewManagerWithAssetStore(mfs0, persistencetest.NewAssetStore(mfs0, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, historyFile+".archive")
 
 	ctx := context.Background()
 	// Add 2 turns (4 messages)
@@ -239,7 +241,8 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 
 func TestSummarizeRange_Logging(t *testing.T) {
 	historyFile := filepath.Join(t.TempDir(), "test_logging_history.json")
-	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyFile, historyFile+".archive")
+	mfs1 := persistencetest.NewPlainOSFileSystem()
+	hManager := history.NewManagerWithAssetStore(mfs1, persistencetest.NewAssetStore(mfs1, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, historyFile+".archive")
 	ctx := context.Background()
 
 	// Add 2 turns (4 messages)

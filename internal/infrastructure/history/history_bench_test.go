@@ -36,7 +36,7 @@ func BenchmarkManagerAddContent(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				b.StopTimer()
-				m := NewManager(fs, filePath, archivePath)
+				m := NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(filePath), "assets")), filePath, archivePath)
 				if preSeed > 0 {
 					if err := m.SetContents(ctx, generateContents(preSeed)); err != nil {
 						b.Fatalf("SetContents seed failed: %v", err)
@@ -62,7 +62,7 @@ func BenchmarkManagerSave(b *testing.B) {
 			fs := persistencetest.NewPlainOSFileSystem()
 			filePath := filepath.Join(tmpDir, "history.jsonl")
 			archivePath := filepath.Join(tmpDir, "archive.jsonl")
-			m := NewManager(fs, filePath, archivePath)
+			m := NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(filePath), "assets")), filePath, archivePath)
 
 			if err := m.SetContents(ctx, generateContents(size)); err != nil {
 				b.Fatalf("SetContents seed failed: %v", err)

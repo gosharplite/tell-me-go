@@ -81,24 +81,24 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 	// longer walked on a plain host and its gate row is removed. Its ACCEPTED
 	// catalog entry is retained as the architectural acceptance record.
 	expectedCataloged := map[string]funcComplexity{
-		"TestHistoryManager_SetPinned_WithFunctionCall":             {Line: 392, Complexity: 21, FilePath: "internal/infrastructure/history/history_test.go"},
+		"TestHistoryManager_SetPinned_WithFunctionCall":             {Line: 400, Complexity: 21, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestStartSpinnerLifecycle":                                 {Line: 176, Complexity: 17, FilePath: "internal/ui/renderer_spinner_test.go"},
-		"TestGetModelTurn":                                          {Line: 1446, Complexity: 16, FilePath: "internal/infrastructure/history/history_test.go"},
+		"TestGetModelTurn":                                          {Line: 1473, Complexity: 16, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestPrepareMediaAssets_KimiURL_UploadsVideo":               {Line: 379, Complexity: 16, FilePath: "internal/infrastructure/llm/openai/files_test.go"},
-		"TestHistoryNavigation_CompleteWorkflow":                    {Line: 161, Complexity: 15, FilePath: "tests/e2e/history_flags_test.go"},
+		"TestHistoryNavigation_CompleteWorkflow":                    {Line: 162, Complexity: 15, FilePath: "tests/e2e/history_flags_test.go"},
 		"(*indexer).snapshot":                                       {Line: 112, Complexity: 14, FilePath: "internal/tools/analysis/index_snapshot_test.go"},
 		"(*model).Update":                                           {Line: 252, Complexity: 14, FilePath: "internal/ui/tui/progress/model.go"},
 		"TestFixtureIndexer_ConstructAndHarvest":                    {Line: 158, Complexity: 13, FilePath: "internal/tools/analysis/index_fixture_test.go"},
 		"TestHydrateMediaAssets":                                    {Line: 244, Complexity: 13, FilePath: "internal/infrastructure/llm/openai/client_vision_test.go"},
 		"TestResolveCapabilities":                                   {Line: 10, Complexity: 13, FilePath: "internal/domain/llm/capabilities_test.go"},
-		"assertMissingKeysResult":                                   {Line: 214, Complexity: 13, FilePath: "internal/infrastructure/llm/factory_test.go"},
+		"assertMissingKeysResult":                                   {Line: 215, Complexity: 13, FilePath: "internal/infrastructure/llm/factory_test.go"},
 		"(*RecoveryStep).Process":                                   {Line: 129, Complexity: 12, FilePath: "internal/agent/orchestrator/engine_phases.go"},
 		"(*model).handleDomainEvent":                                {Line: 339, Complexity: 12, FilePath: "internal/ui/tui/progress/model.go"},
 		"TestDeadCodeAnalyzer_Precision":                            {Line: 177, Complexity: 12, FilePath: "internal/tools/analysis/precision_test.go"},
-		"TestHistoryManager_SetPinned_ViaModelID":                   {Line: 494, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
+		"TestHistoryManager_SetPinned_ViaModelID":                   {Line: 503, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestRecoveryStep_EmptyResponse_RetriesUpToLimit":           {Line: 532, Complexity: 13, FilePath: "internal/agent/orchestrator/engine_phases_test.go"},
-		"TestUpdateTurnContent_AddTextWhenNone":                     {Line: 1362, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
-		"TestUpdateTurnContent_ClearText":                           {Line: 1275, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
+		"TestUpdateTurnContent_AddTextWhenNone":                     {Line: 1387, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
+		"TestUpdateTurnContent_ClearText":                           {Line: 1298, Complexity: 12, FilePath: "internal/infrastructure/history/history_test.go"},
 		"TestVision_KimiImagePayload":                               {Line: 129, Complexity: 12, FilePath: "internal/infrastructure/llm/openai/client_vision_test.go"},
 		"createPrecisionWorkspace":                                  {Line: 118, Complexity: 12, FilePath: "internal/tools/analysis/precision_test.go"},
 		"renderHistory":                                             {Line: 26, Complexity: 12, FilePath: "internal/ui/history.go"},
@@ -134,8 +134,8 @@ func TestVerifyNonFixCatalog(t *testing.T) {
 		"TestToSDKContent_MixedUserTurn_OrdersInlineDataFirst":      {Line: 290, Complexity: 13, FilePath: "internal/infrastructure/llm/gemini/adapter_test.go"},
 		"TestToSDKContent_PoisonedPersistedShape_Normalizes":        {Line: 326, Complexity: 15, FilePath: "internal/infrastructure/llm/gemini/adapter_test.go"},
 		"TestToSDKContent_OtherPartsMoveToEnd":                      {Line: 384, Complexity: 15, FilePath: "internal/infrastructure/llm/gemini/adapter_test.go"},
-		"TestSendChat_MixedMediaStoreRoundTrip":                     {Line: 57, Complexity: 15, FilePath: "internal/infrastructure/llm/gemini/mixed_media_roundtrip_test.go"},
-		"validateMixedMediaRoundTripReq":                            {Line: 164, Complexity: 37, FilePath: "internal/infrastructure/llm/gemini/mixed_media_roundtrip_test.go"},
+		"TestSendChat_MixedMediaStoreRoundTrip":                     {Line: 58, Complexity: 15, FilePath: "internal/infrastructure/llm/gemini/mixed_media_roundtrip_test.go"},
+		"validateMixedMediaRoundTripReq":                            {Line: 167, Complexity: 37, FilePath: "internal/infrastructure/llm/gemini/mixed_media_roundtrip_test.go"},
 	}
 
 	require.Equal(t, expectedCataloged, cataloged)

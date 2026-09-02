@@ -19,12 +19,14 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 )
 
 func TestJSONLStore_LargeLine(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "large_history.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs0 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs0, persistencetest.NewAssetStore(mfs0, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	// Create a very large entry (e.g., 200KB, which is > 64KB default bufio.Scanner limit)
@@ -57,7 +59,8 @@ func TestJSONLStore_LargeLine(t *testing.T) {
 func TestJSONLStore_AssetExternalization(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "history.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs1 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs1, persistencetest.NewAssetStore(mfs1, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	data := []byte("fake-image-data")
@@ -160,7 +163,8 @@ func TestJSONLStore_MalformedLine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs2 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs2, persistencetest.NewAssetStore(mfs2, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 	_, err := store.Load(ctx)
 	if err == nil {
@@ -168,21 +172,11 @@ func TestJSONLStore_MalformedLine(t *testing.T) {
 	}
 }
 
-func TestJSONLStore_WithFileSystem(t *testing.T) {
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "fs_test.jsonl")
-	fs := infrapersistence.NewOSFileSystem()
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl")).withFileSystem(fs)
-
-	if store.fs != fs {
-		t.Error("withFileSystem failed to set filesystem on jsonlStore")
-	}
-}
-
 func TestJSONLStore_Append_Cancel(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "cancel.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs3 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs3, persistencetest.NewAssetStore(mfs3, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -195,7 +189,8 @@ func TestJSONLStore_Append_Cancel(t *testing.T) {
 func TestJSONLStore_Load_Cancel(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "cancel_load.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs4 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs4, persistencetest.NewAssetStore(mfs4, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 	_ = store.Save(ctx, []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}})
 
@@ -210,7 +205,8 @@ func TestJSONLStore_Load_Cancel(t *testing.T) {
 func TestJSONLStore_Save_Cancel(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "cancel_save.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs5 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs5, persistencetest.NewAssetStore(mfs5, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -231,7 +227,8 @@ func TestJSONLStore_Save_Cancel(t *testing.T) {
 func TestJSONLStore_PinnedPersistence(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "pinned_history.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs6 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs6, persistencetest.NewAssetStore(mfs6, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	content := &llm.Content{
@@ -286,7 +283,8 @@ func TestJSONLStore_PinnedPersistence(t *testing.T) {
 func TestJSONLStore_NoTransientPartsLeaking(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "transient_test.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs7 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs7, persistencetest.NewAssetStore(mfs7, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	content := &llm.Content{
@@ -327,7 +325,8 @@ func TestJSONLStore_NoTransientPartsLeaking(t *testing.T) {
 func TestJSONLStore_PrepareForStorage_EmptyInput(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "empty_input.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs8 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs8, persistencetest.NewAssetStore(mfs8, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	prepared, err := store.prepareForStorage(ctx, nil)
@@ -347,7 +346,8 @@ func TestJSONLStore_PrepareForStorage_PathPermissionErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	badStore := newJSONLStore(infrapersistence.NewOSFileSystem(), filepath.Join(invalidDir, "history.jsonl"), filepath.Join(invalidDir, "history.archive.jsonl"))
+	mfs9 := infrapersistence.NewOSFileSystem()
+	badStore := newJSONLStoreWithAssetStore(mfs9, persistencetest.NewAssetStore(mfs9, filepath.Join(filepath.Dir(filepath.Join(invalidDir, "history.jsonl")), "assets")), filepath.Join(invalidDir, "history.jsonl"), filepath.Join(invalidDir, "history.archive.jsonl"))
 	ctx := context.Background()
 	content := &llm.Content{
 		Parts: []*llm.Part{
@@ -394,7 +394,8 @@ func verifyPreparedContent(t *testing.T, prepared *llm.Content) {
 func TestJSONLStore_PrepareForStorage_MixedContentParts(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "mixed_parts.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs10 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs10, persistencetest.NewAssetStore(mfs10, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	content := &llm.Content{
@@ -429,7 +430,8 @@ func TestJSONLStore_PrepareForStorage_MixedContentParts(t *testing.T) {
 func TestJSONLStore_UpdateMetadata_SaveAndPatch(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "patches.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs11 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs11, persistencetest.NewAssetStore(mfs11, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	contents := []*llm.Content{
@@ -463,7 +465,8 @@ func TestJSONLStore_UpdateMetadata_SaveAndPatch(t *testing.T) {
 func TestJSONLStore_UpdateMetadata_Compact(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "patches_compact.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs12 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs12, persistencetest.NewAssetStore(mfs12, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	contents := []*llm.Content{
@@ -507,7 +510,8 @@ func TestJSONLStore_Load_EmptyFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs13 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs13, persistencetest.NewAssetStore(mfs13, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 	contents, err := store.Load(ctx)
 	if err != nil {
@@ -528,7 +532,8 @@ func TestJSONLStore_Load_LegacyJSONArray(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs14 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs14, persistencetest.NewAssetStore(mfs14, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 	contents, err := store.Load(ctx)
 	if err != nil {
@@ -552,7 +557,8 @@ func TestJSONLStore_Load_InvalidLegacyJSONArray(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs15 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs15, persistencetest.NewAssetStore(mfs15, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 	_, err := store.Load(ctx)
 	// Fallback to JSONL decoder which will fail on '[' token
@@ -564,7 +570,8 @@ func TestJSONLStore_Load_InvalidLegacyJSONArray(t *testing.T) {
 func TestJSONLStore_MarshalError(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "marshal_error.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs16 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs16, persistencetest.NewAssetStore(mfs16, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	// Inject a channel into Parts to force a json.Marshal error
@@ -596,7 +603,8 @@ func TestJSONLStore_MkdirAllError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filepath.Join(filePath, "history.jsonl"), filepath.Join(filePath, "history.archive.jsonl"))
+	mfs17 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs17, persistencetest.NewAssetStore(mfs17, filepath.Join(filepath.Dir(filepath.Join(filePath, "history.jsonl")), "assets")), filepath.Join(filePath, "history.jsonl"), filepath.Join(filePath, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	// Append requires directory
@@ -622,7 +630,8 @@ func TestJSONLStore_Load_ParseContentError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs18 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs18, persistencetest.NewAssetStore(mfs18, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 	_, err := store.Load(ctx)
 	if err == nil {
@@ -640,7 +649,8 @@ func TestJSONLStore_CompactError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs19 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs19, persistencetest.NewAssetStore(mfs19, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 	err := store.Compact(ctx)
 	if err == nil {
@@ -657,7 +667,8 @@ func TestJSONLStore_Load_ReadFileError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs20 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs20, persistencetest.NewAssetStore(mfs20, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 	_, err := store.Load(ctx)
 	if err == nil {
@@ -969,7 +980,7 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 			mfs := &mockFS{FileSystem: baseFS}
 			tt.setupMock(mfs)
 
-			store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl")).withFileSystem(mfs)
+			store := newJSONLStoreWithAssetStore(mfs, persistencetest.NewAssetStore(mfs, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 
 			err := tt.action(context.Background(), store)
 			if tt.wantErr == "" {
@@ -991,7 +1002,8 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 func TestJSONLStore_UpdateMetadata_MarshalError(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "test.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs21 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs21, persistencetest.NewAssetStore(mfs21, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 
 	// Pass something unmarshalable (like a function or channel)
 	unmarshalable := map[string]interface{}{"bad": make(chan int)}
@@ -1005,7 +1017,8 @@ func TestJSONLStore_UpdateMetadata_MarshalError(t *testing.T) {
 func TestJSONLStore_Append_Empty(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "empty_append.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs22 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs22, persistencetest.NewAssetStore(mfs22, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 
 	err := store.Append(context.Background(), []*llm.Content{})
 	if err != nil {
@@ -1016,7 +1029,8 @@ func TestJSONLStore_Append_Empty(t *testing.T) {
 func TestJSONLStore_AppendParts(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "append_parts_history.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs23 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs23, persistencetest.NewAssetStore(mfs23, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	// 1. Initial history
@@ -1061,7 +1075,8 @@ func TestJSONLStore_AppendParts_ErrorDir(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		invalidDir = `C:\NUL\invalid`
 	}
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filepath.Join(invalidDir, "file.jsonl"), filepath.Join(invalidDir, "archive.jsonl"))
+	mfs24 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs24, persistencetest.NewAssetStore(mfs24, filepath.Join(filepath.Dir(filepath.Join(invalidDir, "file.jsonl")), "assets")), filepath.Join(invalidDir, "file.jsonl"), filepath.Join(invalidDir, "archive.jsonl"))
 	err := store.AppendParts(context.Background(), 0, []*llm.Part{{Text: "test"}})
 	if err == nil {
 		t.Error("expected error appending parts to invalid directory")
@@ -1071,7 +1086,8 @@ func TestJSONLStore_AppendParts_ErrorDir(t *testing.T) {
 func TestJSONLStore_Archive(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "history.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs25 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs25, persistencetest.NewAssetStore(mfs25, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	contents := []*llm.Content{
@@ -1114,7 +1130,8 @@ func verifyArchiveContents(t *testing.T, archivePath string, wantCount int, firs
 		t.Fatal("archive file does not exist")
 	}
 
-	archiveStore := newJSONLStore(infrapersistence.NewOSFileSystem(), archivePath, filepath.Join(filepath.Dir(archivePath), "archive.jsonl"))
+	mfs26 := infrapersistence.NewOSFileSystem()
+	archiveStore := newJSONLStoreWithAssetStore(mfs26, persistencetest.NewAssetStore(mfs26, filepath.Join(filepath.Dir(archivePath), "assets")), archivePath, filepath.Join(filepath.Dir(archivePath), "archive.jsonl"))
 	archivedContents, err := archiveStore.Load(context.Background())
 	if err != nil {
 		t.Fatalf("failed to load archive: %v", err)
@@ -1141,7 +1158,8 @@ func TestJSONLStore_Migration(t *testing.T) {
 	}
 
 	// 2. Initialize store with .jsonl path
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), jsonlPath, filepath.Join(filepath.Dir(jsonlPath), "archive.jsonl"))
+	mfs27 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs27, persistencetest.NewAssetStore(mfs27, filepath.Join(filepath.Dir(jsonlPath), "assets")), jsonlPath, filepath.Join(filepath.Dir(jsonlPath), "archive.jsonl"))
 	ctx := context.Background()
 
 	// 3. Load should trigger migration
@@ -1171,7 +1189,8 @@ func TestJSONLStore_Migration(t *testing.T) {
 func TestJSONLStore_NilPartsSanitization(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "nil_parts.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs28 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs28, persistencetest.NewAssetStore(mfs28, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	// 1. Manually write a JSONL line with a null part
@@ -1218,7 +1237,7 @@ func setupErrorPathTest(t *testing.T, tt storeErrorTestCase) (*jsonlStore, *mock
 		tt.setup(mfs, filePath)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl")).withFileSystem(mfs)
+	store := newJSONLStoreWithAssetStore(mfs, persistencetest.NewAssetStore(mfs, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	return store, mfs, filePath
 }
 
@@ -1520,7 +1539,7 @@ func TestWithAppendFile_SyncCloseErrorPriority(t *testing.T) {
 			mf := &mockSyncCloseFile{syncErr: tt.syncErr, closeErr: tt.closeErr}
 			mfs := &mockFSForSyncClose{FileSystem: infrapersistence.NewOSFileSystem(), file: mf}
 
-			store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl")).withFileSystem(mfs)
+			store := newJSONLStoreWithAssetStore(mfs, persistencetest.NewAssetStore(mfs, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 
 			err := store.withAppendFile(context.Background(), filePath, func(f persistence.File) error {
 				return tt.fnErr
@@ -1561,7 +1580,7 @@ func TestSync_CloseErrorLogged(t *testing.T) {
 	mf := &mockSyncCloseFile{closeErr: closeErr}
 	mfs := &mockFSForSyncClose{FileSystem: infrapersistence.NewOSFileSystem(), file: mf}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl")).withFileSystem(mfs)
+	store := newJSONLStoreWithAssetStore(mfs, persistencetest.NewAssetStore(mfs, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 
 	// Capture log output
 	var buf bytes.Buffer
@@ -1585,7 +1604,8 @@ func TestSync_CloseErrorLogged(t *testing.T) {
 func TestSync_IsNotExist_ReturnsNil(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "nonexistent.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	mfs29 := infrapersistence.NewOSFileSystem()
+	store := newJSONLStoreWithAssetStore(mfs29, persistencetest.NewAssetStore(mfs29, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 
 	err := store.Sync(context.Background())
 	if err != nil {
@@ -1605,7 +1625,7 @@ func TestJSONLStore_Sync_OpenFileError(t *testing.T) {
 	openErr := errors.New("permission denied")
 	mfs := &mockFS{FileSystem: infrapersistence.NewOSFileSystem(), openErr: openErr}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl")).withFileSystem(mfs)
+	store := newJSONLStoreWithAssetStore(mfs, persistencetest.NewAssetStore(mfs, filepath.Join(filepath.Dir(filePath), "assets")), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 
 	err := store.Sync(context.Background())
 	if err == nil {

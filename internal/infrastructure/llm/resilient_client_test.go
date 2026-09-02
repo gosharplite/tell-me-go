@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -115,7 +116,7 @@ func TestNewClient(t *testing.T) {
 			bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 			eventstest.CleanupBus(t, bus)
 
-			client, err := newClient(cfg, pData, bus, nil)
+			client, err := newClient(cfg, pData, bus, nil, persistencetest.NewPlainOSFileSystem())
 
 			if tt.expectErr {
 				require.Error(t, err)

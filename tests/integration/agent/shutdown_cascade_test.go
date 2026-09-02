@@ -78,11 +78,8 @@ func setupShutdownCascadeTest(t *testing.T) *shutdownCascadeFixture {
 
 	// ---- Temp dir & history ----
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(
-		persistencetest.NewPlainOSFileSystem(),
-		filepath.Join(tmpDir, "history.json"),
-		filepath.Join(tmpDir, "history.archive.jsonl"),
-	)
+	fs := persistencetest.NewPlainOSFileSystem()
+	hManager := history.NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
 	// ---- Registry ----
 	reg := registry.New()

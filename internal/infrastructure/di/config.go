@@ -45,10 +45,11 @@ type BootstrapperConfig struct {
 // sensible production defaults. All direct-value fields are zero-valued;
 // factory functions point to the canonical infrastructure implementations.
 func DefaultBootstrapperConfig() BootstrapperConfig {
+	osFS := &infra_persistence.OSFileSystem{}
 	return BootstrapperConfig{
 		Logger:           slog.Default(),
-		FileSystem:       &infra_persistence.OSFileSystem{},
-		ClientFactory:    &infra_llm.DefaultClientFactory{},
+		FileSystem:       osFS,
+		ClientFactory:    &infra_llm.DefaultClientFactory{FileSystem: infra_persistence.NewDomainFS(osFS)},
 		RegisterAllTools: infra_tools.RegisterAll,
 		RegisterMetrics:  telemetry.RegisterMetrics,
 		RotateSession:    infra_persistence.RotateSession,

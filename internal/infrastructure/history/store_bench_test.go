@@ -78,7 +78,7 @@ func BenchmarkJSONLStoreAppend(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				b.StopTimer()
-				store := newJSONLStore(fs, filePath, archivePath)
+				store := newJSONLStoreWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(filePath), "assets")), filePath, archivePath)
 				if preSeed > 0 {
 					seed := generateContents(preSeed)
 					if err := store.Save(ctx, seed); err != nil {
@@ -114,7 +114,7 @@ func BenchmarkJSONLStoreCompact(b *testing.B) {
 					seed[idx].Pinned = true
 				}
 
-				store := newJSONLStore(fs, filePath, archivePath)
+				store := newJSONLStoreWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(filePath), "assets")), filePath, archivePath)
 				if err := store.Save(ctx, seed); err != nil {
 					b.Fatalf("seed Save failed: %v", err)
 				}
@@ -139,7 +139,7 @@ func BenchmarkJSONLStoreSave(b *testing.B) {
 			filePath := filepath.Join(tmpDir, "history.jsonl")
 			archivePath := filepath.Join(tmpDir, "archive.jsonl")
 			fixture := generateContents(size)
-			store := newJSONLStore(fs, filePath, archivePath)
+			store := newJSONLStoreWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(filePath), "assets")), filePath, archivePath)
 
 			b.ResetTimer()
 			b.ReportAllocs()
@@ -158,7 +158,7 @@ func BenchmarkJSONLStoreSave(b *testing.B) {
 			filePath := filepath.Join(tmpDir, "history.jsonl")
 			archivePath := filepath.Join(tmpDir, "archive.jsonl")
 			fixture := generateContentsWithInlineData(size)
-			store := newJSONLStore(fs, filePath, archivePath)
+			store := newJSONLStoreWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(filePath), "assets")), filePath, archivePath)
 
 			b.ResetTimer()
 			b.ReportAllocs()
@@ -184,7 +184,7 @@ func BenchmarkJSONLStoreLoadWithPatches(b *testing.B) {
 			filePath := filepath.Join(tmpDir, "history.jsonl")
 			archivePath := filepath.Join(tmpDir, "archive.jsonl")
 
-			store := newJSONLStore(fs, filePath, archivePath)
+			store := newJSONLStoreWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(filePath), "assets")), filePath, archivePath)
 			seed := generateContents(baseSize)
 			if err := store.Save(ctx, seed); err != nil {
 				b.Fatalf("seed Save failed: %v", err)
