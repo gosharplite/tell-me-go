@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 )
 
 func TestHistoryManager_Basic(t *testing.T) {
@@ -22,7 +23,8 @@ func TestHistoryManager_Basic(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.json")
 	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs0 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs0, persistencetest.NewAssetStore(mfs0, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 	ctx := context.Background()
 
 	// Test AddEntry - Note: Dumb manager does not validate role alternation
@@ -39,7 +41,8 @@ func TestHistoryManager_Basic(t *testing.T) {
 		t.Fatalf("failed to save history: %v", err)
 	}
 
-	m2 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs1 := infrapersistence.NewOSFileSystem()
+	m2 := NewManagerWithAssetStore(mfs1, persistencetest.NewAssetStore(mfs1, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 	if err := m2.Load(ctx); err != nil {
 		t.Fatalf("failed to load history: %v", err)
 	}
@@ -52,7 +55,8 @@ func TestHistoryManager_Basic(t *testing.T) {
 func TestHistoryManager_GetWindow(t *testing.T) {
 
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs2 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs2, persistencetest.NewAssetStore(mfs2, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	_ = m.addEntry(ctx, "user", "1")
@@ -90,7 +94,8 @@ func TestHistoryManager_GetWindow(t *testing.T) {
 }
 
 func TestHistoryManager_Load_NonExistent(t *testing.T) {
-	m := NewManager(infrapersistence.NewOSFileSystem(), "non-existent.json", "non-existent.archive.jsonl")
+	mfs3 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs3, persistencetest.NewAssetStore(mfs3, filepath.Join(filepath.Dir("non-existent.json"), "assets")), "non-existent.json", "non-existent.archive.jsonl")
 	ctx := context.Background()
 	if err := m.Load(ctx); err != nil {
 		t.Errorf("expected no error for non-existent file, got %v", err)
@@ -108,7 +113,8 @@ func TestHistoryManager_Load_Corrupted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs4 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs4, persistencetest.NewAssetStore(mfs4, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 	ctx := context.Background()
 	if err := m.Load(ctx); err == nil {
 		t.Error("expected error for corrupted JSON, got nil")
@@ -125,7 +131,8 @@ func TestHistoryManager_Save_Error(t *testing.T) {
 
 	historyPath := filepath.Join(filePath, "history.json")
 	archivePath := filepath.Join(filePath, "history.archive.jsonl")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyPath, archivePath)
+	mfs5 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs5, persistencetest.NewAssetStore(mfs5, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, archivePath)
 	ctx := context.Background()
 	if err := m.Save(ctx); err == nil {
 		t.Error("expected error when directory creation fails, got nil")
@@ -136,7 +143,8 @@ func TestHistoryManager_Interfaces(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "interfaces.json")
 	archiveFile := filepath.Join(tmpDir, "interfaces.archive.jsonl")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs6 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs6, persistencetest.NewAssetStore(mfs6, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 
 	if m.GetFilePath() != historyFile {
 		t.Errorf("GetFilePath() = %s, want %s", m.GetFilePath(), historyFile)
@@ -146,17 +154,9 @@ func TestHistoryManager_Interfaces(t *testing.T) {
 		t.Error("GetResolver() should not be nil for JSONLStore")
 	}
 
-	fs := infrapersistence.NewOSFileSystem()
-	m.withFileSystem(fs)
-	// Verify it reached the store
-	if s, ok := m.store.(*jsonlStore); ok {
-		if s.fs != fs {
-			t.Error("WithFileSystem did not propagate to store")
-		}
-	} else {
+	if _, ok := m.store.(*jsonlStore); !ok {
 		t.Error("store is not jsonlStore")
 	}
-
 	m.setStore(m.store) // Coverage for SetStore
 }
 
@@ -170,7 +170,8 @@ func (s *mockStore) AppendParts(ctx context.Context, index int, parts []*llm.Par
 
 func TestHistoryManager_GetResolver_Nil(t *testing.T) {
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs7 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs7, persistencetest.NewAssetStore(mfs7, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	m.setStore(&mockStore{})
 	if m.GetResolver() != nil {
 		t.Error("expected nil resolver for mockStore")
@@ -182,7 +183,8 @@ func TestHistoryManager_FileCreation(t *testing.T) {
 	historyFile := filepath.Join(tmpDir, "new_subdir", "history.jsonL")
 	archiveFile := filepath.Join(tmpDir, "new_subdir", "history.archive.jsonl")
 
-	h := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs8 := infrapersistence.NewOSFileSystem()
+	h := NewManagerWithAssetStore(mfs8, persistencetest.NewAssetStore(mfs8, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 	ctx := context.Background()
 
 	// Add an entry to trigger a save
@@ -201,7 +203,8 @@ func TestHistoryManager_SetPinned_WithSystemMessage(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "pin_sys.json")
 	archiveFile := filepath.Join(tmpDir, "pin_sys.archive.jsonl")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs9 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs9, persistencetest.NewAssetStore(mfs9, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 	ctx := context.Background()
 
 	// Setup: system message + 1 turn (3 messages total)
@@ -246,7 +249,8 @@ func TestHistoryManager_PinValidTurn(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "pin_valid.json")
 	archiveFile := filepath.Join(tmpDir, "pin_valid.archive.jsonl")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs10 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs10, persistencetest.NewAssetStore(mfs10, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 	ctx := context.Background()
 
 	// Setup: 2 turns (4 messages)
@@ -276,7 +280,8 @@ func TestHistoryManager_UnpinTurn(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "unpin.json")
 	archiveFile := filepath.Join(tmpDir, "unpin.archive.jsonl")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs11 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs11, persistencetest.NewAssetStore(mfs11, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 	ctx := context.Background()
 
 	// Setup: 1 turn pinned
@@ -301,7 +306,8 @@ func TestHistoryManager_UnpinTurn(t *testing.T) {
 
 func TestHistoryManager_ClonePersistent(t *testing.T) {
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs12 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs12, persistencetest.NewAssetStore(mfs12, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	content := &llm.Content{
@@ -349,7 +355,8 @@ func (s *mockStoreErrorMetadata) UpdateMetadata(ctx context.Context, index int, 
 
 func TestHistoryManager_SetPinned_Error(t *testing.T) {
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs13 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs13, persistencetest.NewAssetStore(mfs13, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	_ = m.addEntry(ctx, "user", "U1")
@@ -377,7 +384,8 @@ func TestHistoryManager_SetPinned_Error(t *testing.T) {
 
 func TestHistoryManager_SetPinned_InvalidIndex(t *testing.T) {
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs14 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs14, persistencetest.NewAssetStore(mfs14, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	_ = m.addEntry(ctx, "user", "U1")
@@ -397,7 +405,8 @@ func TestHistoryManager_SetPinned_WithFunctionCall(t *testing.T) {
 		tmpDir := t.TempDir()
 		historyFile := filepath.Join(tmpDir, "pin_fc.json")
 		archiveFile := filepath.Join(tmpDir, "pin_fc.archive.jsonl")
-		m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+		mfs15 := infrapersistence.NewOSFileSystem()
+		m := NewManagerWithAssetStore(mfs15, persistencetest.NewAssetStore(mfs15, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 		ctx := context.Background()
 
 		if err := m.AddContent(ctx, &llm.Content{
@@ -499,7 +508,8 @@ func TestHistoryManager_SetPinned_ViaModelID(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "pin_model_id.json")
 	archiveFile := filepath.Join(tmpDir, "pin_model_id.archive.jsonl")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs16 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs16, persistencetest.NewAssetStore(mfs16, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 	ctx := context.Background()
 
 	if err := m.AddContent(ctx, &llm.Content{
@@ -552,7 +562,8 @@ func TestHistoryManager_SetPinned_ViaModelID(t *testing.T) {
 
 func TestHistoryManager_SetContents(t *testing.T) {
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs17 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs17, persistencetest.NewAssetStore(mfs17, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	contents := []*llm.Content{
@@ -575,7 +586,8 @@ func TestHistoryManager_SetContents(t *testing.T) {
 
 func TestHistoryManager_AppendParts(t *testing.T) {
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs18 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs18, persistencetest.NewAssetStore(mfs18, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	_ = m.addEntry(ctx, "user", "U1")
@@ -615,7 +627,8 @@ func TestHistoryManager_Archive(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.json")
 	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs19 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs19, persistencetest.NewAssetStore(mfs19, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 	ctx := context.Background()
 
 	contents := []*llm.Content{
@@ -683,7 +696,7 @@ func TestManager_RollbackTurns(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
 			filePath := filepath.Join(tmpDir, "history.jsonl")
-			mgr := NewManager(fs, filePath, "")
+			mgr := NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(filePath), "assets")), filePath, "")
 
 			if len(tt.initialState) > 0 {
 				if err := mgr.SetContents(ctx, tt.initialState); err != nil {
@@ -905,7 +918,7 @@ func TestManager_GetLastUserMessage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := infrapersistence.NewOSFileSystem()
-			mgr := NewManager(fs, "test.jsonl", "archive.jsonl")
+			mgr := NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir("test.jsonl"), "assets")), "test.jsonl", "archive.jsonl")
 			mgr.Contents = tt.contents
 
 			msg, turns, err := mgr.GetLastUserMessage(ctx)
@@ -931,7 +944,8 @@ func TestHistoryManager_AddContent_DurabilityFirst(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.jsonl")
 	archiveFile := filepath.Join(tmpDir, "archive.jsonl")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs20 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs20, persistencetest.NewAssetStore(mfs20, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 	ctx := context.Background()
 
 	// Initial state: empty
@@ -971,7 +985,8 @@ func TestHistoryManager_SetContents_DurabilityFirst(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.jsonl")
 	archiveFile := filepath.Join(tmpDir, "archive.jsonl")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs21 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs21, persistencetest.NewAssetStore(mfs21, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 	ctx := context.Background()
 
 	// Initial state
@@ -1000,7 +1015,8 @@ func TestHistoryManager_AppendParts_DurabilityFirst(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.jsonl")
 	archiveFile := filepath.Join(tmpDir, "archive.jsonl")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs22 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs22, persistencetest.NewAssetStore(mfs22, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 	ctx := context.Background()
 
 	// Initial state
@@ -1051,7 +1067,8 @@ func TestHistoryManager_UpdateTurnContent_DurabilityFirst(t *testing.T) {
 	historyFile := filepath.Join(tmp, "history.jsonl")
 	archiveFile := filepath.Join(tmp, "archive.jsonl")
 
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs23 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs23, persistencetest.NewAssetStore(mfs23, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 
 	if err := m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
 		t.Fatal(err)
@@ -1082,7 +1099,8 @@ func TestHistoryManager_UpdateTurnContent_SaveReceivesEdit(t *testing.T) {
 	historyFile := filepath.Join(tmp, "history.jsonl")
 	archiveFile := filepath.Join(tmp, "archive.jsonl")
 
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs24 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs24, persistencetest.NewAssetStore(mfs24, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 
 	if err := m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
 		t.Fatal(err)
@@ -1130,7 +1148,8 @@ func setupLegacyHistoryWithNoIDs(t *testing.T) (*Manager, string, string) {
 	ctx := context.Background()
 
 	// Write legacy content with no IDs
-	m1 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs25 := infrapersistence.NewOSFileSystem()
+	m1 := NewManagerWithAssetStore(mfs25, persistencetest.NewAssetStore(mfs25, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 	legacyContents := []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}, Pinned: true},
 		{Role: "model", Parts: []*llm.Part{{Text: "Hi"}}},
@@ -1142,7 +1161,8 @@ func setupLegacyHistoryWithNoIDs(t *testing.T) (*Manager, string, string) {
 	}
 
 	// Load via fresh Manager to trigger backfill
-	m2 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs26 := infrapersistence.NewOSFileSystem()
+	m2 := NewManagerWithAssetStore(mfs26, persistencetest.NewAssetStore(mfs26, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 	if err := m2.Load(ctx); err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
@@ -1195,7 +1215,8 @@ func TestLoad_Backfills_IDsStableAcrossReloads(t *testing.T) {
 	}
 
 	// Load a fresh Manager from the same files — IDs must be stable
-	m2 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs27 := infrapersistence.NewOSFileSystem()
+	m2 := NewManagerWithAssetStore(mfs27, persistencetest.NewAssetStore(mfs27, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 	if err := m2.Load(context.Background()); err != nil {
 		t.Fatalf("Second Load failed: %v", err)
 	}
@@ -1239,7 +1260,8 @@ func TestLoad_BackfillSaveFailure_GracefulDegradation(t *testing.T) {
 	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
 	ctx := context.Background()
 
-	m1 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs28 := infrapersistence.NewOSFileSystem()
+	m1 := NewManagerWithAssetStore(mfs28, persistencetest.NewAssetStore(mfs28, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 
 	legacyContents := []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}, Pinned: true},
@@ -1250,7 +1272,8 @@ func TestLoad_BackfillSaveFailure_GracefulDegradation(t *testing.T) {
 		t.Fatalf("SetContents (legacy) failed: %v", err)
 	}
 
-	m2 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs29 := infrapersistence.NewOSFileSystem()
+	m2 := NewManagerWithAssetStore(mfs29, persistencetest.NewAssetStore(mfs29, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 	m2.setStore(&mockLoadRealSaveFailing{
 		realStore: m2.store,
 		err:       errors.New("simulated save error on read-only FS"),
@@ -1278,7 +1301,8 @@ func TestUpdateTurnContent_ClearText(t *testing.T) {
 	historyFile := filepath.Join(tmp, "history.jsonl")
 	archiveFile := filepath.Join(tmp, "archive.jsonl")
 
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs30 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs30, persistencetest.NewAssetStore(mfs30, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 
 	// Setup: user → model turn with text and thought
 	if err := m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
@@ -1329,7 +1353,8 @@ func TestUpdateTurnContent_ReplaceText(t *testing.T) {
 	historyFile := filepath.Join(tmp, "history.jsonl")
 	archiveFile := filepath.Join(tmp, "archive.jsonl")
 
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs31 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs31, persistencetest.NewAssetStore(mfs31, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 
 	if err := m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
 		t.Fatal(err)
@@ -1365,7 +1390,8 @@ func TestUpdateTurnContent_AddTextWhenNone(t *testing.T) {
 	historyFile := filepath.Join(tmp, "history.jsonl")
 	archiveFile := filepath.Join(tmp, "archive.jsonl")
 
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs32 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs32, persistencetest.NewAssetStore(mfs32, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 
 	// Model content with function call only, no text
 	if err := m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "call tool"}}}); err != nil {
@@ -1417,7 +1443,8 @@ func TestUpdateTurnContent_MultiPartText(t *testing.T) {
 	historyFile := filepath.Join(tmp, "history.jsonl")
 	archiveFile := filepath.Join(tmp, "archive.jsonl")
 
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs33 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs33, persistencetest.NewAssetStore(mfs33, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 
 	// Simulate a model turn with two text parts (e.g., multi-part response)
 	m.Contents = []*llm.Content{
@@ -1449,7 +1476,8 @@ func TestGetModelTurn(t *testing.T) {
 	historyFile := filepath.Join(tmp, "history.jsonl")
 	archiveFile := filepath.Join(tmp, "archive.jsonl")
 
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	mfs34 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs34, persistencetest.NewAssetStore(mfs34, filepath.Join(filepath.Dir(historyFile), "assets")), historyFile, archiveFile)
 
 	// Setup: user → model turn
 	if err := m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
@@ -1539,7 +1567,8 @@ func (l *captureLogger) Info(msg string, args ...any)  {}
 func (l *captureLogger) Debug(msg string, args ...any) {}
 
 func TestManager_WithLogger(t *testing.T) {
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "h.json"), filepath.Join(t.TempDir(), "h.archive.jsonl"))
+	mfs35 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs35, persistencetest.NewAssetStore(mfs35, filepath.Join(filepath.Dir(filepath.Join(t.TempDir(), "h.json")), "assets")), filepath.Join(t.TempDir(), "h.json"), filepath.Join(t.TempDir(), "h.archive.jsonl"))
 
 	// Default logger is a NoOpLogger.
 	if _, ok := m.logger.(*ports.NoOpLogger); !ok {
@@ -1573,7 +1602,8 @@ func TestHistoryManager_SetPinned_ModelFunctionCallNoFollowingMessage(t *testing
 	// validateTurnPair rule 0 (model+FunctionCall, forward): i+1 >= total.
 	// contents = [user text, model-with-FunctionCall]; pin the model message.
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs36 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs36, persistencetest.NewAssetStore(mfs36, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	modelFC := &llm.Content{
@@ -1600,7 +1630,8 @@ func TestHistoryManager_SetPinned_UserFunctionResponseNoPrecedingMessage(t *test
 	// validateTurnPair rule 1 (user+FunctionResponse, backward): i-1 < 0.
 	// contents = [user-with-FunctionResponse] alone; pin the user message.
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs37 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs37, persistencetest.NewAssetStore(mfs37, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	userFR := &llm.Content{
@@ -1625,7 +1656,8 @@ func TestHistoryManager_SetPinned_FunctionCallUnexpectedPartnerRole(t *testing.T
 	// role "model" but rule 0 expects "user".
 	// contents = [model-with-FunctionCall, model text]; pin the FC message.
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs38 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs38, persistencetest.NewAssetStore(mfs38, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	modelFC := &llm.Content{
@@ -1653,7 +1685,8 @@ func TestHistoryManager_SetPinned_FunctionCallMismatchedPartnerContent(t *testin
 	// "user" (ok) but the partner has no FunctionResponse → mismatched content.
 	// contents = [model-with-FunctionCall, user text]; pin the FC message.
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs39 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs39, persistencetest.NewAssetStore(mfs39, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	modelFC := &llm.Content{
@@ -1697,7 +1730,8 @@ func TestHistoryManager_SetPinned_InvalidRoleForTurnPairing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
-			m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+			mfs40 := infrapersistence.NewOSFileSystem()
+			m := NewManagerWithAssetStore(mfs40, persistencetest.NewAssetStore(mfs40, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 			ctx := context.Background()
 
 			if err := m.AddContent(ctx, tt.content); err != nil {
@@ -1715,7 +1749,8 @@ func TestHistoryManager_SetPinned_InvalidRoleForTurnPairing(t *testing.T) {
 func TestGetLastModelTurn_EmptyHistory(t *testing.T) {
 	// GetLastModelTurn on an empty history returns ports.ErrHistoryNotFound.
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs41 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs41, persistencetest.NewAssetStore(mfs41, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	_, _, err := m.GetLastModelTurn(ctx)
@@ -1728,7 +1763,8 @@ func TestUpdateTurnContent_OutOfBoundsIndex(t *testing.T) {
 	// UpdateTurnContent rejects indices outside [0, len(Contents)).
 	ctx := context.Background()
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs42 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs42, persistencetest.NewAssetStore(mfs42, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
 	for _, idx := range []int{-1, 0, 5} {
 		err := m.UpdateTurnContent(ctx, idx, "text", "")
@@ -1742,7 +1778,8 @@ func TestUpdateTurnContent_WrongRole(t *testing.T) {
 	// UpdateTurnContent requires the target index to be a model-role entry.
 	ctx := context.Background()
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs43 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs43, persistencetest.NewAssetStore(mfs43, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
 	if err := m.AddContent(ctx, &llm.Content{Role: "user", ID: llm.NewID(), Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
 		t.Fatal(err)
@@ -1759,7 +1796,8 @@ func TestUpdateTurnContent_AppendThoughtWhenNoPriorThought(t *testing.T) {
 	// part; insertThoughtIfPresent then appends the new thought after the text.
 	ctx := context.Background()
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs44 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs44, persistencetest.NewAssetStore(mfs44, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
 	if err := m.AddContent(ctx, &llm.Content{Role: "user", ID: llm.NewID(), Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
 		t.Fatal(err)
@@ -1793,7 +1831,8 @@ func TestUpdateTurnContent_InsertThoughtAtPriorThoughtPosition(t *testing.T) {
 	// inserts the new thought at that in-range position (insertion branch).
 	ctx := context.Background()
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs45 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs45, persistencetest.NewAssetStore(mfs45, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
 	if err := m.AddContent(ctx, &llm.Content{Role: "user", ID: llm.NewID(), Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
 		t.Fatal(err)
@@ -1835,7 +1874,8 @@ func TestUpdateTurnContent_ReplaceTextWhenThoughtPrecedesText(t *testing.T) {
 	// newThought removes the old thought part.
 	ctx := context.Background()
 	tmpDir := t.TempDir()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	mfs46 := infrapersistence.NewOSFileSystem()
+	m := NewManagerWithAssetStore(mfs46, persistencetest.NewAssetStore(mfs46, filepath.Join(filepath.Dir(filepath.Join(tmpDir, "history.json")), "assets")), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
 	if err := m.AddContent(ctx, &llm.Content{Role: "user", ID: llm.NewID(), Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
 		t.Fatal(err)

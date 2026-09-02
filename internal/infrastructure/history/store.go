@@ -42,31 +42,16 @@ type jsonlStore struct {
 	filePath    string
 	archivePath string
 	assetStore  persistence.AssetStore
-	assetDir    string
 	fs          persistence.FileSystem
-}
-
-// newJSONLStore creates a new jsonlStore.
-func newJSONLStore(fs persistence.FileSystem, filePath string, archivePath string) *jsonlStore {
-	assetDir := filepath.Join(filepath.Dir(filePath), "assets")
-	return newJSONLStoreWithAssetStore(fs, defaultAssetStore(fs, assetDir), filePath, archivePath)
 }
 
 func newJSONLStoreWithAssetStore(fs persistence.FileSystem, assetStore persistence.AssetStore, filePath string, archivePath string) *jsonlStore {
 	return &jsonlStore{
 		filePath:    filePath,
 		archivePath: archivePath,
-		assetDir:    filepath.Join(filepath.Dir(filePath), "assets"),
 		assetStore:  assetStore,
 		fs:          fs,
 	}
-}
-
-// withFileSystem sets the filesystem implementation.
-func (s *jsonlStore) withFileSystem(fs persistence.FileSystem) *jsonlStore {
-	s.fs = fs
-	s.assetStore = defaultAssetStore(fs, s.assetDir)
-	return s
 }
 
 // Load reads the history from the JSONL file.

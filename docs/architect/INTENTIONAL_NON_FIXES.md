@@ -804,7 +804,7 @@ catalog a new gap no one reviewed. Policy:
   CC comes from case enumeration and assertion boilerplate, not branching
   business logic. Same acceptance class as `TestHydrateMediaAssets` (CC=13) —
   assertion boilerplate across a coverage matrix. Re-anchored 2026-08 (#1350 item 4): line drifted 211→212 as the llm→auth inversion added a ports import to factory_test.go. Re-anchored 2026-09: line drifted 212→214 as two kimi rows were added to `TestCreateAuthenticator_Strategies` (2026-09 factory seams triage).
-- **See**: `internal/infrastructure/llm/factory_test.go:214`
+- **See**: `internal/infrastructure/llm/factory_test.go:215` (re-anchored 2026-09 (#1469): 214 → :215 — T2b persistencetest import shift in factory_test.go; CC re-verified 13, unchanged)
 
 ### internal/agent/orchestrator/engine_phases_test.go — TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=13)
 
@@ -832,7 +832,7 @@ catalog a new gap no one reviewed. Policy:
   test boilerplate assertions, not branching business logic. Same acceptance
   class as the existing structural concerns — test infrastructure where the cost
   of refactoring outweighs the maintainability benefit.
-- **See**: `tests/e2e/history_flags_test.go:161`
+- **See**: `tests/e2e/history_flags_test.go:162` (re-anchored 2026-09 (#1469): 161 → :162 — T2b persistencetest import shift in history_flags_test.go; CC re-verified 15, unchanged)
 
 ### cmd/tell-me-go/main.go — buildApp os.Getwd error path (non-Linux)
 
@@ -1396,13 +1396,13 @@ to reason about.
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Sequential state-mutation test verifying text clearing and thought preservation through multiple update cycles. Steps are not independent — each mutates shared history state. Splitting would duplicate setup. Same acceptance class as `TestHistoryNavigation_CompleteWorkflow`.
-- **See**: `internal/infrastructure/history/history_test.go:1275` (re-anchored 2026-09, +1 import shift in history_test.go)
+- **See**: `internal/infrastructure/history/history_test.go:1298` (re-anchored 2026-09 (#1469): 1275 → :1298 — NewManagerWithAssetStore migrations + fs hoists grew the file above; CC re-verified 12, unchanged)
 
 ### internal/infrastructure/history/history_test.go — TestUpdateTurnContent_AddTextWhenNone (CC=12)
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Same sequential state-mutation pattern as `TestUpdateTurnContent_ClearText`, verifying the complementary code path. CC is assertion boilerplate across dependent steps.
-- **See**: `internal/infrastructure/history/history_test.go:1362` (re-anchored 2026-09, +1 import shift in history_test.go)
+- **See**: `internal/infrastructure/history/history_test.go:1387` (re-anchored 2026-09 (#1469): 1362 → :1387 — NewManagerWithAssetStore migrations + fs hoists grew the file above; CC re-verified 12, unchanged)
 
 ### internal/domain/llm/capabilities_test.go — TestResolveCapabilities (CC=13)
 
@@ -1438,19 +1438,19 @@ to reason about.
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Table-driven test with 5 subtests covering valid index, OOB negative, OOB pos, non-model role, and deep-copy isolation for `GetModelTurn`. Each subtest contains its own setup (temp dir, `NewManager`, `AddContent`). CC comes from subtest enumeration and assertion boilerplate, not branching business logic. Same acceptance class as `TestUpdateTurnContent_ClearText` (CC=12) and `TestUpdateTurnContent_AddTextWhenNone` (CC=12) in the same file.
-- **See**: `internal/infrastructure/history/history_test.go:1446` (re-anchored 2026-09, +1 import shift in history_test.go)
+- **See**: `internal/infrastructure/history/history_test.go:1473` (re-anchored 2026-09 (#1469): 1446 → :1473 — NewManagerWithAssetStore migrations + fs hoists grew the file above; CC re-verified 16, unchanged)
 
 ### internal/infrastructure/history/history_test.go — TestHistoryManager_SetPinned_WithFunctionCall (CC=21)
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Two-subtest test with a per-subtest `setup` helper that creates a FunctionCall→FunctionResponse turn. The CC=21 is entirely from error-checking boilerplate: `t.Fatalf` on every `AddContent` and `GetWindow` call in setup, plus pin/unpin assertions in each subtest. All branches are guard clauses, not business logic. Same acceptance class as `TestGetModelTurn` (CC=16) and `TestUpdateTurnContent_ClearText` (CC=12).
-- **See**: `internal/infrastructure/history/history_test.go:392` (re-anchored 2026-09, +1 import shift in history_test.go)
+- **See**: `internal/infrastructure/history/history_test.go:400` (re-anchored 2026-09 (#1469): 392 → :400 — NewManagerWithAssetStore migrations + fs hoists grew the file above; CC re-verified 21, unchanged)
 
 ### internal/infrastructure/history/history_test.go — TestHistoryManager_SetPinned_ViaModelID (CC=12)
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Single-scenario test pinning via model message ID in a plain user→model text turn to close the `contentHasFunctionCall` false-return gap. CC=12 is entirely error-checking boilerplate: `t.Fatalf` on `AddContent`, `GetWindow`, and `SetPinned` calls, plus pin/unpin assertions. Same acceptance class as `TestGetModelTurn` (CC=16) and `TestHistoryManager_SetPinned_WithFunctionCall` (CC=21).
-- **See**: `internal/infrastructure/history/history_test.go:494` (re-anchored 2026-09, +1 import shift in history_test.go)
+- **See**: `internal/infrastructure/history/history_test.go:503` (re-anchored 2026-09 (#1469): 494 → :503 — NewManagerWithAssetStore migrations + fs hoists grew the file above; CC re-verified 12, unchanged)
 
 ### internal/tools/toolstest/fake_toolchain_runner_test.go — TestFakeToolchainRunner_PresetValues (CC=28)
 
@@ -1885,13 +1885,13 @@ to reason about.
 
 - **Status**: ACCEPTED (2026-09, issue #1444)
 - **Rationale**: Sequential real-store round-trip wire matrix (Scenarios A/B/C): per-scenario TempDir store setup, seed → reload → SendChat → fingerprint capture, then joint-convergence assertions. CC is harness/assertion boilerplate across dependent sequential scenarios; splitting would duplicate the expensive real-store setup. Same acceptance class as `TestHistoryNavigation_CompleteWorkflow` (CC=15) — sequential workflow where steps depend on prior state.
-- **See**: `internal/infrastructure/llm/gemini/mixed_media_roundtrip_test.go:57`
+- **See**: `internal/infrastructure/llm/gemini/mixed_media_roundtrip_test.go:58` (re-anchored 2026-09 (#1469): 57 → :58 — T2b persistencetest import shift in mixed_media_roundtrip_test.go; CC re-verified 15, unchanged)
 
 ### llm/gemini/mixed_media_roundtrip_test.go — validateMixedMediaRoundTripReq (CC=37)
 
 - **Status**: ACCEPTED (2026-09, issue #1444)
 - **Rationale**: Wire-validation helper for the round-trip matrix: per-key assertion blocks (2 contents/roles, model-turn untouched, 4 user parts in canonical order, base64 hydration, FR identity) plus canonical fingerprint construction. CC is assertion boilerplate across the wire-shape checks, not branching business logic. Same acceptance class as `assertMissingKeysResult` (CC=13) — assertion boilerplate across a coverage matrix.
-- **See**: `internal/infrastructure/llm/gemini/mixed_media_roundtrip_test.go:164`
+- **See**: `internal/infrastructure/llm/gemini/mixed_media_roundtrip_test.go:167` (re-anchored 2026-09 (#1469): 164 → :167 — T2b fs-hoist + import lines grew mixed_media_roundtrip_test.go above; CC re-verified 37, unchanged)
 
 ## Coverage Gaps (ACCEPTED — 2026-09 ADR-074 coverage follow-up, issue #1462)
 

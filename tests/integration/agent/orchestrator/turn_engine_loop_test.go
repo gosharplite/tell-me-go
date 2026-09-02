@@ -26,7 +26,8 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
-	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+	fs := persistencetest.NewPlainOSFileSystem()
+	h := history.NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	counter := &sessctx.HeuristicTokenCounter{}
 	strategy := sessctx.NewStrategy(counter)
 
@@ -91,7 +92,8 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
-	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+	mfs0 := persistencetest.NewPlainOSFileSystem()
+	h := history.NewManagerWithAssetStore(mfs0, persistencetest.NewAssetStore(mfs0, filepath.Join(filepath.Dir(historyPath), "assets")), historyPath, historyPath+".archive")
 	counter := &sessctx.HeuristicTokenCounter{}
 	strategy := sessctx.NewStrategy(counter)
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 )
 
 type failingWriteFS struct {
@@ -38,9 +39,8 @@ func TestJSONLStore_Migration_Failure(t *testing.T) {
 	}
 
 	// 2. Initialize store with failing filesystem
-	baseFS := infrapersistence.NewOSFileSystem()
-	ffs := &failingWriteFS{FileSystem: baseFS, failWrite: true}
-	store := newJSONLStore(baseFS, jsonlPath, filepath.Join(tmpDir, "history.archive.jsonl")).withFileSystem(ffs)
+	ffs := &failingWriteFS{FileSystem: infrapersistence.NewOSFileSystem(), failWrite: true}
+	store := newJSONLStoreWithAssetStore(ffs, persistencetest.NewAssetStore(ffs, filepath.Join(filepath.Dir(jsonlPath), "assets")), jsonlPath, filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	// 3. Load should attempt migration but fail to write .jsonl

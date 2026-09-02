@@ -23,6 +23,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
@@ -496,7 +497,7 @@ func TestGetUnifiedHistoryProvider_FailurePaths(t *testing.T) {
 	b := NewBootstrapper(bcfg)
 	testCfg := &config.Config{Mode: "assistant"}
 
-	hManager := history.NewManager(nil, "history.jsonl", "archive.jsonl")
+	hManager := history.NewManagerWithAssetStore(nil, persistencetest.NewAssetStore(nil, "assets"), "history.jsonl", "archive.jsonl")
 	provider, err := b.GetUnifiedHistoryProvider(ctx, testCfg, hManager)
 
 	assert.Error(t, err)

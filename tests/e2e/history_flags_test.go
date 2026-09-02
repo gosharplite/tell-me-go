@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 )
 
 // historyNavEnv holds the shared test environment for history navigation E2E tests.
@@ -54,7 +55,7 @@ func newHistoryNavEnv(t *testing.T) *historyNavEnv {
 	// 3. Populate session history with 3 distinct prompts directly via
 	// history.Manager (avoids 3 subprocess invocations at ~200ms each).
 	fs := persistence.NewOSFileSystem()
-	mgr := history.NewManager(fs, histPath, histPath+".archive")
+	mgr := history.NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(histPath), "assets")), histPath, histPath+".archive")
 	if err := mgr.Load(context.Background()); err != nil {
 		t.Fatalf("Failed to load history: %v", err)
 	}
@@ -138,7 +139,7 @@ func forceReconcileHistory(t *testing.T, path string) {
 	t.Helper()
 	// Only needed on Windows to handle potential lazy writes or cache delays in E2E tests
 	fs := persistence.NewOSFileSystem()
-	mgr := history.NewManager(fs, path, path+".archive")
+	mgr := history.NewManagerWithAssetStore(fs, persistencetest.NewAssetStore(fs, filepath.Join(filepath.Dir(path), "assets")), path, path+".archive")
 	// Load and Sync will force the OS to reconcile the file state
 	if err := mgr.Load(context.Background()); err != nil {
 		t.Logf("Debug: load during reconciliation: %v", err)

@@ -7,7 +7,7 @@ import (
 	stdctx "context"
 	"io"
 
-	"github.com/gosharplite/tell-me-go/internal/application/suggestions"
+	"github.com/gosharplite/tell-me-go/internal/app/suggestions"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
