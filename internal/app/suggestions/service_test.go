@@ -784,3 +784,25 @@ func TestNewService_LoadTopN_LogsWarning(t *testing.T) {
 		t.Errorf("expected logger to contain warning about failed load, got: %q", got)
 	}
 }
+
+type failingReadDirFile struct {
+	persistence.File
+}
+
+func (f *failingReadDirFile) ReadDir(n int) ([]os.DirEntry, error) {
+	return nil, errors.New("simulated read error")
+}
+
+func (f *failingReadDirFile) Close() error { return nil }
+
+func TestScanFiles_ReadDirNonEOFError(t *testing.T) {
+	fs := &controlledMockFS{file: &failingReadDirFile{}}
+	service := suggestions.NewInternalService(io.Discard)
+	service.SetFS(fs)
+
+	res := service.ScanFiles(context.Background(), "match-me")
+
+	if len(res) != 0 {
+		t.Errorf("expected 0 results on non-EOF ReadDir error, got %v", res)
+	}
+}
