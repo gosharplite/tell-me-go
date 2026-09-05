@@ -230,35 +230,52 @@ func (f *mcpFactory) Client(name string) (tools.MCPClient, bool) {
 // must be skipped (token resolution failed under an auth mode that requires
 // it).
 func (f *mcpFactory) resolveServerToken(name string, serverCfg config.MCPServerConfig) (username, token string, ok bool) {
-	auth := serverCfg.EffectiveAuth()
+	switch serverCfg.EffectiveAuth() {
+	case config.MCPAuthGH:
+		return f.resolveGHAuthToken(name, serverCfg)
+	case config.MCPAuthAuto:
+		return f.resolveAutoAuthToken(name, serverCfg)
+	default:
+		return resolveStaticAuthToken(serverCfg)
+	}
+}
 
-	switch auth {
+// resolveGHAuthToken resolves credentials under the "gh" auth mode: an
+// explicit token wins; otherwise the single-flight resolver runs.
+func (f *mcpFactory) resolveGHAuthToken(name string, serverCfg config.MCPServerConfig) (username, token string, ok bool) {
+	if serverCfg.Token != "" {
+		return "", serverCfg.Token, true
+	}
+	token, ok = f.resolveTokenOrSkip(name, serverCfg.URL)
+	return "", token, ok
+}
+
+// resolveAutoAuthToken resolves credentials under the "auto" auth mode: an
+// explicit token wins; non-GitHub endpoints authenticate anonymously; the
+// rest fall through to the single-flight resolver.
+func (f *mcpFactory) resolveAutoAuthToken(name string, serverCfg config.MCPServerConfig) (username, token string, ok bool) {
+	if serverCfg.Token != "" {
+		return "", serverCfg.Token, true
+	}
+	if !isGitHubHostname(serverCfg.URL) {
+		return "", "", true
+	}
+	token, ok = f.resolveTokenOrSkip(name, serverCfg.URL)
+	return "", token, ok
+}
+
+// resolveStaticAuthToken resolves credentials for the auth modes that never
+// invoke the token resolver: none, bearer, and basic — plus the defensive
+// unknown-mode default (structurally unreachable in correct code; see the
+// catalog entry "di/mcp_factory.go — resolveServerToken default case").
+func resolveStaticAuthToken(serverCfg config.MCPServerConfig) (username, token string, ok bool) {
+	switch serverCfg.EffectiveAuth() {
 	case config.MCPAuthNone:
 		return "", "", true
-
 	case config.MCPAuthBearer:
 		return "", serverCfg.Token, true
-
 	case config.MCPAuthBasic:
 		return serverCfg.Username, serverCfg.Token, true
-
-	case config.MCPAuthGH:
-		if serverCfg.Token != "" {
-			return "", serverCfg.Token, true
-		}
-		token, ok := f.resolveTokenOrSkip(name, serverCfg.URL)
-		return "", token, ok
-
-	case config.MCPAuthAuto:
-		if serverCfg.Token != "" {
-			return "", serverCfg.Token, true
-		}
-		if !isGitHubHostname(serverCfg.URL) {
-			return "", "", true
-		}
-		token, ok := f.resolveTokenOrSkip(name, serverCfg.URL)
-		return "", token, ok
-
 	default:
 		// Unknown modes are rejected by config validation before Build runs;
 		// treat defensively as "none".

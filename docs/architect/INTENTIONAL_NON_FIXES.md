@@ -1583,8 +1583,8 @@ to reason about.
 ### di/mcp_factory.go — resolveServerToken default case
 
 - **Status**: ACCEPTED (2026-09)
-- **Rationale**: the inline comment documents it: unknown auth modes are rejected by config validation before Build runs, so the default treats them defensively as "none". Defensive guard on internal pipeline state — same acceptance class as the 2026-07 Batch Triage defensive nil/empty guards. Re-anchored 2026-08 (#1389): lines drifted 148-151 → 157-160 as the basic-auth DI resolution added the username parameter to the newClient closure. Re-anchored 2026-08 (#1396): lines drifted 157-160 → 223-227 as the stdio factory refactor replaced the newClient seam with newClientFor and split Build into a two-phase pre-pass + concurrent construction. Re-anchored 2026-09 (#1431): lines drifted 223-227 → 246-249 as the two-phase Build pre-pass comment block grew the file above the switch.
-- **See**: `internal/infrastructure/di/mcp_factory.go:246-249`
+- **Rationale**: the inline comment documents it: unknown auth modes are rejected by config validation before Build runs, so the default treats them defensively as "none". Defensive guard on internal pipeline state — same acceptance class as the 2026-07 Batch Triage defensive nil/empty guards. Re-anchored 2026-08 (#1389): lines drifted 148-151 → 157-160 as the basic-auth DI resolution added the username parameter to the newClient closure. Re-anchored 2026-08 (#1396): lines drifted 157-160 → 223-227 as the stdio factory refactor replaced the newClient seam with newClientFor and split Build into a two-phase pre-pass + concurrent construction. Re-anchored 2026-09 (#1431): lines drifted 223-227 → 246-249 as the two-phase Build pre-pass comment block grew the file above the switch. Re-anchored 2026-09 (#1474): lines drifted 246-249 → 279-282 as the #1474 resolveServerToken decomposition moved the defensive default into the resolver-free resolveStaticAuthToken helper; unreachable-only reachability preserved (none/bearer/basic keep dedicated cases).
+- **See**: `internal/infrastructure/di/mcp_factory.go:279-282`
 
 ### di/mcp_factory.go — gh auth token resolver
 
