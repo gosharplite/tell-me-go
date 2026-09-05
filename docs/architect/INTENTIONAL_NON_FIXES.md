@@ -1280,7 +1280,7 @@ to reason about.
 ### CC=10 boundary watch list (2026-09, issue #1431)
 
 - **Status**: ACCEPTED (2026-09, advisory — no gate change)
-- **Rationale**: Seven production functions sit exactly at the policy threshold
+- **Rationale**: Five production functions sit exactly at the policy threshold
   (CC=10). CC ≤ 10 is acceptable by policy (complexity-threshold-policy), so
   no gate change is made; `verify-nonfix-catalog` does not pin them
   (under-threshold pins are enforced at threshold-crossing, by construction).
@@ -1288,10 +1288,12 @@ to reason about.
   must decompose proactively rather than creep past the CC=10 policy
   threshold — one added decision point makes it an over-threshold alert
   requiring either a refactor or a new ACCEPTED entry. `(*mcpFactory).Build`
-  is the highest-risk (DI hot path, already split once in #1396).
-- **Watch list** (all CC=10, verified 2026-09):
-  `(*mcpFactory).Build` — internal/infrastructure/di/mcp_factory.go:98;
-  `resolveServerToken` — internal/infrastructure/di/mcp_factory.go:216;
+  is the highest-risk (DI hot path, already split once in #1396). Two of the
+  seven originally listed functions were decomposed below the watch threshold
+  in 2026-09 (issue #1474): `(*mcpFactory).Build` (CC 10→4) and
+  `resolveServerToken` (CC 10→4) — the refactor-on-touch rule was exercised
+  by the #1474 decomposition rather than by threshold creep.
+- **Watch list** (all CC=10, verified 2026-09; #1474 removed the two mcp factory entries):
   `mediaUploadPurpose` — internal/infrastructure/llm/openai/client.go:706;
   `convertObject` — internal/tools/integrations/mcp/schema.go:74;
   `load` — internal/infrastructure/config/config.go:49;
@@ -1583,8 +1585,8 @@ to reason about.
 ### di/mcp_factory.go — resolveServerToken default case
 
 - **Status**: ACCEPTED (2026-09)
-- **Rationale**: the inline comment documents it: unknown auth modes are rejected by config validation before Build runs, so the default treats them defensively as "none". Defensive guard on internal pipeline state — same acceptance class as the 2026-07 Batch Triage defensive nil/empty guards. Re-anchored 2026-08 (#1389): lines drifted 148-151 → 157-160 as the basic-auth DI resolution added the username parameter to the newClient closure. Re-anchored 2026-08 (#1396): lines drifted 157-160 → 223-227 as the stdio factory refactor replaced the newClient seam with newClientFor and split Build into a two-phase pre-pass + concurrent construction. Re-anchored 2026-09 (#1431): lines drifted 223-227 → 246-249 as the two-phase Build pre-pass comment block grew the file above the switch.
-- **See**: `internal/infrastructure/di/mcp_factory.go:246-249`
+- **Rationale**: the inline comment documents it: unknown auth modes are rejected by config validation before Build runs, so the default treats them defensively as "none". Defensive guard on internal pipeline state — same acceptance class as the 2026-07 Batch Triage defensive nil/empty guards. Re-anchored 2026-08 (#1389): lines drifted 148-151 → 157-160 as the basic-auth DI resolution added the username parameter to the newClient closure. Re-anchored 2026-08 (#1396): lines drifted 157-160 → 223-227 as the stdio factory refactor replaced the newClient seam with newClientFor and split Build into a two-phase pre-pass + concurrent construction. Re-anchored 2026-09 (#1431): lines drifted 223-227 → 246-249 as the two-phase Build pre-pass comment block grew the file above the switch. Re-anchored 2026-09 (#1474): lines drifted 246-249 → 279-282 as the #1474 resolveServerToken decomposition moved the defensive default into the resolver-free resolveStaticAuthToken helper; unreachable-only reachability preserved (none/bearer/basic keep dedicated cases).
+- **See**: `internal/infrastructure/di/mcp_factory.go:279-282`
 
 ### di/mcp_factory.go — gh auth token resolver
 
