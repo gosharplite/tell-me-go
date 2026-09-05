@@ -8,6 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
+	"regexp"
+	"strings"
 	"time"
 
 	domain_callback "github.com/gosharplite/tell-me-go/internal/domain/callback"
@@ -16,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/gosharplite/tell-me-go/internal/pkg/idgen"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui/progress"
@@ -39,6 +43,7 @@ type chatCommand struct {
 	Interactor       *InteractorRef
 	CallbackNotifier domain_callback.CallbackNotifier
 	ModeLocker       domain_persistence.ModeLocker
+	cmd              *cobra.Command
 	capturerOverride ports.CapturerInteractor                                                                                                                                                                // test-only injection
 	capturerFactory  func(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string, disableEscapeSequences bool) domain_security.UserInteractor // test-only injection; defaults to ui.NewCapturer
 }
@@ -58,19 +63,22 @@ func (c *chatCommand) warnf(format string, args ...interface{}) {
 }
 
 type cliOptions struct {
-	configPath     string
-	newSession     bool
-	showTurnsLog   bool
-	diagnostic     bool
-	jsonOutput     bool
-	lastN          int
-	backN          int
-	rawOutput      bool
-	tuiPrompt      bool
-	tuiOutput      bool
-	retry          bool
-	editLast       bool
-	updateTurnText string
+	configPath      string
+	newSession      bool
+	showTurnsLog    bool
+	diagnostic      bool
+	jsonOutput      bool
+	lastN           int
+	backN           int
+	rawOutput       bool
+	tuiPrompt       bool
+	tuiOutput       bool
+	retry           bool
+	editLast        bool
+	updateTurnText  string
+	callbackURL     string
+	callbackID      string
+	callbackHeaders []string
 }
 
 func addChatFlags(fs *pflag.FlagSet, opts *cliOptions) {
@@ -88,6 +96,9 @@ func addChatFlags(fs *pflag.FlagSet, opts *cliOptions) {
 	fs.BoolVar(&opts.retry, "retry", false, "Retry the last user message")
 	fs.BoolVarP(&opts.editLast, "edit-last", "e", false, "Edit the last model response (text and thinking) in an interactive TUI")
 	fs.StringVar(&opts.updateTurnText, "update-turn", "__NOT_SET__", "Replace text of the last model response headlessly; use empty string \"\" to delete the turn instead (for inter-agent refusal recovery)")
+	fs.StringVar(&opts.callbackURL, "callback", "", "Webhook URL to notify upon completion (asynchronous worker mode)")
+	fs.StringVar(&opts.callbackID, "callback-id", "", "Custom correlation ID for callback worker session")
+	fs.StringArrayVar(&opts.callbackHeaders, "callback-header", nil, "Custom HTTP header for webhook callback (format: 'Name: Value', repeatable)")
 }
 
 // newChatCommand creates a new Chat Command as a Cobra command.
@@ -119,11 +130,13 @@ func newChatCommand(ctx *context, opts *cliOptions) *cobra.Command {
 		Short: "Start a chat session (Default)",
 		Long:  `The chat command initiates a session with the AI assistant. You can provide a prompt directly as an argument or enter an interactive session.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			c.cmd = cmd
 			configPath, _ := cmd.Flags().GetString("config") // flag guaranteed by root command; never errors
 			opts.configPath = configPath
 			return c.executeChat(cmd.Context(), opts, args)
 		},
 	}
+	c.cmd = cmd
 
 	addChatFlags(cmd.Flags(), opts)
 
@@ -132,34 +145,57 @@ func newChatCommand(ctx *context, opts *cliOptions) *cobra.Command {
 
 // executeChat runs the chat command logic.
 func (c *chatCommand) executeChat(ctx stdctx.Context, opts *cliOptions, args []string) error {
-	// 1. Load config once for all subsequent paths
 	cfg, err := c.Loader.Load(opts.configPath)
 	if err != nil {
 		return fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
 	}
 
-	// 2. Handle Diagnostic mode
+	if c.isCallbackRequested(opts) {
+		return c.handleCallbackPreflight(ctx, cfg, opts, args)
+	}
+
+	if handled, err := c.handleEarlyWorkflow(ctx, cfg, opts); handled {
+		return err
+	}
+
+	return c.runChatSession(ctx, cfg, opts, args)
+}
+
+func (c *chatCommand) isCallbackRequested(opts *cliOptions) bool {
+	if opts.callbackURL != "" {
+		return true
+	}
+	return c.cmd != nil && c.cmd.Flags().Changed("callback")
+}
+
+func (c *chatCommand) handleCallbackPreflight(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, args []string) error {
+	preflight, err := c.validateCallbackPreflight(ctx, cfg, opts, args)
+	if err != nil {
+		return err
+	}
+	if preflight != nil && preflight.releaseLock != nil {
+		defer preflight.releaseLock()
+	}
+	return nil
+}
+
+func (c *chatCommand) handleEarlyWorkflow(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) (bool, error) {
 	if opts.diagnostic {
-		return c.handleDiagnosticWorkflow(ctx, cfg, opts)
+		return true, c.handleDiagnosticWorkflow(ctx, cfg, opts)
 	}
-
-	// 3. Handle Turns Log streaming
 	if opts.showTurnsLog {
-		return c.handleTurnsLogWorkflow(ctx, cfg, opts)
+		return true, c.handleTurnsLogWorkflow(ctx, cfg, opts)
 	}
-
-	// 4. Handle edit-last: launch the turn editor TUI
 	if opts.editLast {
-		return c.handleEditLastWorkflow(ctx, cfg, opts)
+		return true, c.handleEditLastWorkflow(ctx, cfg, opts)
 	}
-
-	// Handle update-turn: headless last-turn edit for inter-agent refusal recovery.
-	// The sentinel "__NOT_SET__" means the flag was not passed.
 	if opts.updateTurnText != "__NOT_SET__" {
-		return c.handleUpdateTurnWorkflow(ctx, cfg, opts)
+		return true, c.handleUpdateTurnWorkflow(ctx, cfg, opts)
 	}
+	return false, nil
+}
 
-	// 5. Setup chat session (TUI logic + capturer setup)
+func (c *chatCommand) runChatSession(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, args []string) error {
 	capturer, cleanup, err := c.setupChatSession(ctx, cfg, opts, args)
 	if err != nil {
 		return err
@@ -174,8 +210,222 @@ func (c *chatCommand) executeChat(ctx stdctx.Context, opts *cliOptions, args []s
 		_ = cleanup(shutdownCtx)
 	}()
 
-	// 5. Process chat request (prompt capture + delegation)
 	return c.processChatRequest(ctx, cfg, opts, args, capturer)
+}
+
+var (
+	rfc7230TokenRegex    = regexp.MustCompile("^[!#$%&'*+\\-.^_`|~a-zA-Z0-9]+$")
+	callbackIDRegex      = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+	sensitiveHeaderRegex = regexp.MustCompile(`(?i)(auth|token|key|secret|cookie|pass|cred)`)
+)
+
+type callbackPreflightResult struct {
+	sessionID   string
+	prompt      string
+	headers     map[string]string
+	releaseLock func()
+}
+
+// maskSensitiveHeader masks header values in stderr telemetry.
+// If the header name matches case-insensitive auth|token|key|secret|cookie|pass|cred,
+// the value is masked as "***" (or "Bearer ***" if prefixed with "Bearer ").
+func maskSensitiveHeader(name, val string) string {
+	if sensitiveHeaderRegex.MatchString(name) {
+		if strings.HasPrefix(strings.ToLower(val), "bearer ") {
+			return "Bearer ***"
+		}
+		return "***"
+	}
+	return val
+}
+
+func validateBypassGuard(c *chatCommand, cfg *domain_config.Config) error {
+	if cfg == nil || !cfg.BypassConfirmation {
+		c.warnf("error: callback worker mode requires BYPASS_CONFIRMATION: true in config\n")
+		return errors.New("callback worker mode requires BYPASS_CONFIRMATION: true in config")
+	}
+	return nil
+}
+
+func validateWhitelistGuard(c *chatCommand) error {
+	if c.cmd == nil {
+		return nil
+	}
+	allowedFlags := map[string]bool{
+		"config":          true,
+		"new":             true,
+		"callback":        true,
+		"callback-id":     true,
+		"callback-header": true,
+	}
+	var disallowedFlag string
+	c.cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if disallowedFlag != "" {
+			return
+		}
+		if f.Changed && !allowedFlags[f.Name] {
+			disallowedFlag = f.Name
+		}
+	})
+	if disallowedFlag != "" {
+		c.warnf("error: flag --%s is not allowed in callback mode\n", disallowedFlag)
+		return fmt.Errorf("flag --%s is not allowed in callback mode", disallowedFlag)
+	}
+	return nil
+}
+
+func validateCallbackURL(c *chatCommand, rawURL string) error {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
+		c.warnf("error: invalid callback URL %q: must have http or https scheme with non-empty host\n", rawURL)
+		return fmt.Errorf("invalid callback URL %q: must have http or https scheme with non-empty host", rawURL)
+	}
+	return nil
+}
+
+func parseAndValidateHeader(c *chatCommand, h string) (string, string, error) {
+	idx := strings.Index(h, ":")
+	if idx == -1 {
+		c.warnf("error: invalid callback header format %q: expected 'Name: Value'\n", h)
+		return "", "", fmt.Errorf("invalid callback header format %q: expected 'Name: Value'", h)
+	}
+	name := h[:idx]
+	rawVal := h[idx+1:]
+	if !rfc7230TokenRegex.MatchString(name) {
+		c.warnf("error: invalid callback header name %q: must match RFC 7230 token format (value: %s)\n", name, maskSensitiveHeader(name, strings.TrimSpace(rawVal)))
+		return "", "", fmt.Errorf("invalid callback header name %q: must match RFC 7230 token format", name)
+	}
+	if strings.ContainsAny(rawVal, "\r\n") {
+		c.warnf("error: callback header %q value contains illegal CR or LF characters (value: %s)\n", name, maskSensitiveHeader(name, strings.TrimSpace(rawVal)))
+		return "", "", fmt.Errorf("callback header %q value contains illegal CR or LF characters", name)
+	}
+	return name, strings.TrimSpace(rawVal), nil
+}
+
+func validateCallbackHeaders(c *chatCommand, rawHeaders []string) (map[string]string, error) {
+	if len(rawHeaders) == 0 {
+		return nil, nil
+	}
+	headers := make(map[string]string, len(rawHeaders))
+	for _, h := range rawHeaders {
+		name, val, err := parseAndValidateHeader(c, h)
+		if err != nil {
+			return nil, err
+		}
+		headers[name] = val
+	}
+	return headers, nil
+}
+
+func resolveAndValidateCallbackID(c *chatCommand, rawID string) (string, error) {
+	idChanged := c.cmd != nil && c.cmd.Flags().Changed("callback-id")
+	if idChanged {
+		if rawID == "" {
+			c.warnf("error: --callback-id cannot be empty\n")
+			return "", errors.New("--callback-id cannot be empty")
+		}
+		if !callbackIDRegex.MatchString(rawID) {
+			c.warnf("error: invalid --callback-id %q: must match ^[A-Za-z0-9._:-]{1,128}$\n", rawID)
+			return "", fmt.Errorf("invalid --callback-id %q: must match ^[A-Za-z0-9._:-]{1,128}$", rawID)
+		}
+		return rawID, nil
+	}
+	if rawID != "" {
+		if !callbackIDRegex.MatchString(rawID) {
+			c.warnf("error: invalid --callback-id %q: must match ^[A-Za-z0-9._:-]{1,128}$\n", rawID)
+			return "", fmt.Errorf("invalid --callback-id %q: must match ^[A-Za-z0-9._:-]{1,128}$", rawID)
+		}
+		return rawID, nil
+	}
+	return idgen.Generate(), nil
+}
+
+func acquireModeLock(c *chatCommand, cfg *domain_config.Config) (func(), error) {
+	if c.ModeLocker == nil {
+		c.warnf("error: mode locker is not configured\n")
+		return nil, errors.New("mode locker is not configured")
+	}
+	mode := ""
+	if cfg != nil {
+		mode = cfg.Mode
+	}
+	releaseLock, err := c.ModeLocker.TryLockMode(mode)
+	if err != nil {
+		c.warnf("error: failed to acquire mode lock for %q: %v\n", mode, err)
+		return nil, fmt.Errorf("failed to acquire mode lock for %q: %w", mode, err)
+	}
+	return releaseLock, nil
+}
+
+func captureCallbackPrompt(c *chatCommand, args []string) (string, error) {
+	prompt := strings.TrimSpace(strings.Join(args, " "))
+	if prompt == "" && c.Stdin != nil {
+		stdinBytes, err := io.ReadAll(c.Stdin)
+		if err != nil {
+			c.warnf("error: failed to read prompt from stdin: %v\n", err)
+			return "", fmt.Errorf("failed to read prompt from stdin: %w", err)
+		}
+		prompt = strings.TrimSpace(string(stdinBytes))
+	}
+	if prompt == "" {
+		c.warnf("error: prompt cannot be empty in callback mode\n")
+		return "", errors.New("prompt cannot be empty in callback mode")
+	}
+	return prompt, nil
+}
+
+func (c *chatCommand) validateCallbackPreflight(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, args []string) (*callbackPreflightResult, error) {
+	// Step 1: D2 Guard: BYPASS_CONFIRMATION: true required in config
+	if err := validateBypassGuard(c, cfg); err != nil {
+		return nil, err
+	}
+
+	// Step 2: A4 Whitelist Guard: every Changed() flag must be in {"config", "new", "callback", "callback-id", "callback-header"}
+	if err := validateWhitelistGuard(c); err != nil {
+		return nil, err
+	}
+
+	// Step 3: URL Scheme: URL must be parsed and have scheme http or https with non-empty host
+	if err := validateCallbackURL(c, opts.callbackURL); err != nil {
+		return nil, err
+	}
+
+	// Step 4: Header Validation: Each header must be 'Name: Value'.
+	// Name must match RFC 7230 token ^[!#$%&'*+\-.^_`|~a-zA-Z0-9]+$. Value rejects \r and \n.
+	// Mask sensitive values in stderr telemetry.
+	headers, err := validateCallbackHeaders(c, opts.callbackHeaders)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 5: ID Charset / Resolution: If --callback-id changed, reject empty or values not matching ^[A-Za-z0-9._:-]{1,128}$.
+	// If unchanged, generate via idgen.Generate().
+	sessionID, err := resolveAndValidateCallbackID(c, opts.callbackID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 6: Mode Lock: Acquire lock via c.ModeLocker.TryLockMode(cfg.Mode). If contended, fail fast.
+	releaseLock, err := acquireModeLock(c, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 7: Prompt Check: Capture prompt from CLI args (joined) or c.Stdin. If empty, fail fast.
+	prompt, err := captureCallbackPrompt(c, args)
+	if err != nil {
+		if releaseLock != nil {
+			releaseLock()
+		}
+		return nil, err
+	}
+
+	return &callbackPreflightResult{
+		sessionID:   sessionID,
+		prompt:      prompt,
+		headers:     headers,
+		releaseLock: releaseLock,
+	}, nil
 }
 
 func (c *chatCommand) handleDiagnosticWorkflow(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) error {
