@@ -72,6 +72,18 @@ glossary:
     convention is today's observable behavior, made fake-constructible).
     Not an entity — a value type like `CoverageSummary`.
 
+  CallbackNotifier: >
+    The domain port that delivers terminal session outcome webhooks to an
+    external endpoint.
+
+  CallbackPayload: >
+    The standardized closed JSON payload delivered by `CallbackNotifier` upon
+    session completion.
+
+  ModeLocker: >
+    The domain port for acquiring an exclusive, non-blocking lock on a
+    mode directory.
+
 enums:
   APIFamily:
     description: >
