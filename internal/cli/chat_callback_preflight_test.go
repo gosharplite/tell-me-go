@@ -94,7 +94,7 @@ func TestCallbackPreflight_MissingBypass(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				assert.Empty(t, stderr.String())
-				assert.NotContains(t, stdout.String(), "ACK") // No ACK written in preflight
+				assert.Contains(t, stdout.String(), "ACK ")
 			}
 		})
 	}
@@ -200,7 +200,7 @@ func TestCallbackPreflight_AllowedFlags(t *testing.T) {
 	err := executeChatCommand(cmdCtx, args)
 	require.NoError(t, err)
 	assert.Empty(t, stderr.String())
-	assert.NotContains(t, stdout.String(), "ACK")
+	assert.Contains(t, stdout.String(), "ACK custom-session-123\n")
 }
 
 func TestCallbackPreflight_InvalidURL(t *testing.T) {
@@ -399,7 +399,7 @@ func TestCallbackPreflight_CallbackID(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				assert.Empty(t, stderr.String())
-				assert.NotContains(t, stdout.String(), "ACK")
+				assert.Contains(t, stdout.String(), "ACK ")
 			}
 		})
 	}

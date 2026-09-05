@@ -15,11 +15,13 @@ import (
 
 	domain_callback "github.com/gosharplite/tell-me-go/internal/domain/callback"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
+	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_persistence "github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/pkg/idgen"
+	"github.com/gosharplite/tell-me-go/internal/pkg/redirectwriter"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui/progress"
@@ -151,7 +153,7 @@ func (c *chatCommand) executeChat(ctx stdctx.Context, opts *cliOptions, args []s
 	}
 
 	if c.isCallbackRequested(opts) {
-		return c.handleCallbackPreflight(ctx, cfg, opts, args)
+		return c.executeCallbackWorkflow(ctx, cfg, opts, args)
 	}
 
 	if handled, err := c.handleEarlyWorkflow(ctx, cfg, opts); handled {
@@ -168,15 +170,144 @@ func (c *chatCommand) isCallbackRequested(opts *cliOptions) bool {
 	return c.cmd != nil && c.cmd.Flags().Changed("callback")
 }
 
-func (c *chatCommand) handleCallbackPreflight(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, args []string) error {
+func (c *chatCommand) executeCallbackWorkflow(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, args []string) error {
 	preflight, err := c.validateCallbackPreflight(ctx, cfg, opts, args)
 	if err != nil {
 		return err
 	}
-	if preflight != nil && preflight.releaseLock != nil {
-		defer preflight.releaseLock()
+	defer preflight.releaseLock()
+
+	// Step 8: Early-ACK
+	if _, err := fmt.Fprintf(c.Stdout, "ACK %s\n", preflight.sessionID); err != nil {
+		c.warnf("error: failed to write ACK to stdout: %v\n", err)
+		return err
+	}
+
+	// Step 9: Stdout Detach
+	if detacher, ok := c.Stdout.(redirectwriter.Detacher); ok {
+		if err := detacher.Detach(); err != nil {
+			c.warnf("Warning: failed to detach stdout: %v\n", err)
+		}
+	}
+
+	// Step 10: Terminal Wrapper & Execution
+	return c.runCallbackExecution(ctx, cfg, opts, preflight)
+}
+
+func (c *chatCommand) runCallbackExecution(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, preflight *callbackPreflightResult) error {
+	defer func() {
+		if r := recover(); r != nil {
+			errStr := fmt.Sprintf("panic: %v", r)
+			payload := domain_callback.CallbackPayload{
+				SessionID: preflight.sessionID,
+				Status:    domain_callback.StatusError,
+				Response:  "",
+				Error:     &errStr,
+			}
+			_ = c.deliverCallback(opts, preflight, payload)
+			panic(r)
+		}
+	}()
+
+	execErr := c.executeInference(ctx, cfg, opts, preflight)
+	payload := c.assembleCallbackPayload(ctx, cfg, preflight.sessionID, execErr)
+	notifyErr := c.deliverCallback(opts, preflight, payload)
+	if notifyErr != nil {
+		c.warnf("error: callback delivery failed: %v\n", notifyErr)
+		return notifyErr
 	}
 	return nil
+}
+
+func (c *chatCommand) executeInference(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, preflight *callbackPreflightResult) error {
+	capturer, cleanup, err := c.setupChatSession(ctx, cfg, opts, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		timeout := ports.DefaultShutdownTimeout
+		if !opts.tuiPrompt {
+			timeout = 100 * time.Millisecond
+		}
+		shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), timeout)
+		defer cancel()
+		_ = cleanup(shutdownCtx)
+	}()
+
+	var renderer ports.ProgressRenderer
+	if c.Bootstrapper != nil {
+		renderer = progress.NewRenderer(c.Bootstrapper.GetSystemMetricsProvider())
+	}
+
+	cmd := ports.ChatCommand{
+		ConfigPath:       opts.configPath,
+		NewSession:       opts.newSession,
+		RawOutput:        true,
+		ProgressRenderer: renderer,
+		Prompt:           preflight.prompt,
+	}
+
+	if c.ChatService == nil {
+		return errors.New("chat service not configured")
+	}
+	return c.ChatService.ProcessMessage(ctx, cfg, cmd, capturer)
+}
+
+func (c *chatCommand) assembleCallbackPayload(ctx stdctx.Context, cfg *domain_config.Config, sessionID string, execErr error) domain_callback.CallbackPayload {
+	if execErr != nil {
+		errStr := execErr.Error()
+		return domain_callback.CallbackPayload{
+			SessionID: sessionID,
+			Status:    domain_callback.StatusError,
+			Response:  "",
+			Error:     &errStr,
+		}
+	}
+
+	response := c.extractLastModelResponse(ctx, cfg)
+	return domain_callback.CallbackPayload{
+		SessionID: sessionID,
+		Status:    domain_callback.StatusSuccess,
+		Response:  response,
+		Error:     nil,
+	}
+}
+
+func (c *chatCommand) extractLastModelResponse(ctx stdctx.Context, cfg *domain_config.Config) string {
+	if c.Bootstrapper == nil {
+		return ""
+	}
+	hManager, err := c.Bootstrapper.GetHistoryManager(ctx, cfg)
+	if err != nil || hManager == nil {
+		return ""
+	}
+	_, content, err := hManager.GetLastModelTurn(ctx)
+	if err != nil || content == nil {
+		return ""
+	}
+	return extractNonThoughtText(content)
+}
+
+func extractNonThoughtText(content *domain_llm.Content) string {
+	if content == nil {
+		return ""
+	}
+	var sb strings.Builder
+	for _, p := range content.Parts {
+		if p != nil && !p.IsThought && p.Text != "" {
+			sb.WriteString(p.Text)
+		}
+	}
+	return sb.String()
+}
+
+func (c *chatCommand) deliverCallback(opts *cliOptions, preflight *callbackPreflightResult, payload domain_callback.CallbackPayload) error {
+	if c.CallbackNotifier == nil {
+		return errors.New("callback notifier not configured")
+	}
+	notifyCtx, cancel := stdctx.WithTimeout(stdctx.Background(), 15*time.Second)
+	defer cancel()
+	return c.CallbackNotifier.Notify(notifyCtx, opts.callbackURL, preflight.headers, payload)
 }
 
 func (c *chatCommand) handleEarlyWorkflow(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) (bool, error) {
