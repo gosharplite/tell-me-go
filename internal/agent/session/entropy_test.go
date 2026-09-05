@@ -4,7 +4,6 @@
 package session_test
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -39,15 +38,13 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 		},
 	}
 
-	var stderr bytes.Buffer
-
 	factory := func(ctx context.Context, deps ports.ChatterComposer, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return mChatter, nil
 	}
 
 	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
 	mUIRenderer := new(agenttest.MockUIRenderer)
-	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, &stderr, factory, mHistoryRenderer, mUIRenderer, session.WithClock(mClock), session.WithEntropySource(mEntropy))
+	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, session.WithClock(mClock), session.WithEntropySource(mEntropy))
 
 	sCfg := session.NewSessionConfig("", false, 0, false, 0, false, "hello", &config.Config{
 		Model: "model",
@@ -59,11 +56,15 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 	mUIRenderer.SetUseColorFn = func(use bool) {}
 	mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {}
 	mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error { return nil }
-	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error { return nil }
+	var sessionID string
+	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error {
+		sessionID = s.ID
+		return nil
+	}
 	mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer, false)
 	require.NoError(t, err)
 
-	assert.Contains(t, stderr.String(), "[WARN] Entropy source failure, degrading to time-based session ID: os entropy exhaustion")
+	assert.Regexp(t, `^session-\d+$`, sessionID)
 }
