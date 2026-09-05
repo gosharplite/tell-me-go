@@ -1280,7 +1280,7 @@ to reason about.
 ### CC=10 boundary watch list (2026-09, issue #1431)
 
 - **Status**: ACCEPTED (2026-09, advisory — no gate change)
-- **Rationale**: Five production functions sit exactly at the policy threshold
+- **Rationale**: Four production functions sit exactly at the policy threshold
   (CC=10). CC ≤ 10 is acceptable by policy (complexity-threshold-policy), so
   no gate change is made; `verify-nonfix-catalog` does not pin them
   (under-threshold pins are enforced at threshold-crossing, by construction).
@@ -1288,13 +1288,14 @@ to reason about.
   must decompose proactively rather than creep past the CC=10 policy
   threshold — one added decision point makes it an over-threshold alert
   requiring either a refactor or a new ACCEPTED entry. `(*mcpFactory).Build`
-  is the highest-risk (DI hot path, already split once in #1396). Two of the
+  is the highest-risk (DI hot path, already split once in #1396). Three of the
   seven originally listed functions were decomposed below the watch threshold
-  in 2026-09 (issue #1474): `(*mcpFactory).Build` (CC 10→4) and
-  `resolveServerToken` (CC 10→4) — the refactor-on-touch rule was exercised
-  by the #1474 decomposition rather than by threshold creep.
-- **Watch list** (all CC=10, verified 2026-09; #1474 removed the two mcp factory entries):
-  `mediaUploadPurpose` — internal/infrastructure/llm/openai/client.go:706;
+  in 2026-09: two by issue #1474 (`(*mcpFactory).Build` CC 10→4 and
+  `resolveServerToken` CC 10→4) and one by issue #1476 (`mediaUploadPurpose`
+  CC 10→6, decomposed into `deepSeekUploadPurpose` CC=3 and
+  `kimiUploadPurpose` CC=3) — the refactor-on-touch rule was exercised by
+  those decompositions rather than by threshold creep.
+- **Watch list** (all CC=10, verified 2026-09; #1474 removed the two mcp factory entries; #1476 removed the mediaUploadPurpose entry):
   `convertObject` — internal/tools/integrations/mcp/schema.go:74;
   `load` — internal/infrastructure/config/config.go:49;
   `redactRawContent` — internal/infrastructure/config/redact.go:173;
