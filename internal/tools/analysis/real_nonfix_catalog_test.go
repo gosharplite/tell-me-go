@@ -268,7 +268,7 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"resilient_client.go ExtractDocument body", "internal/infrastructure/llm/resilient_client.go", 106, 108},
 		{"clock.go FakeClock fake methods", "internal/pkg/clock/clock.go", 81, 108},
 		{"clock.go FakeTicker methods and realTicker.Stop", "internal/pkg/clock/clock.go", 116, 131},
-		{"mcp_factory.go resolveServerToken default case", "internal/infrastructure/di/mcp_factory.go", 246, 249},
+		{"mcp_factory.go resolveServerToken default case", "internal/infrastructure/di/mcp_factory.go", 279, 282},
 		{"mcp_factory.go gh auth token resolver", "internal/infrastructure/di/mcp_factory.go", 73, 75},
 		{"toolchain_factory.go registerSkillsShTools error", "internal/infrastructure/di/toolchain_factory.go", 132, 134},
 		{"runner.go StdoutPipe error", "internal/infrastructure/process/runner.go", 66, 70},

@@ -40,8 +40,8 @@ type mcpFactory struct {
 
 	// cachedToken memoizes a successfully resolved token so that multiple
 	// servers sharing the same fallback do not spawn `gh` repeatedly.
-	// Written and read only during Build's phase-1 pre-pass
-	// (single-threaded); phase-2 goroutines never call resolveToken.
+	// Written and read only during Build's phase-1 pre-pass —
+	// resolveEntries (single-threaded); phase-2 goroutines never call resolveToken.
 	cachedToken string
 
 	// mu protects clients. Build may be invoked concurrently with Close
@@ -89,6 +89,22 @@ func newMCPFactory(logger *slog.Logger) *mcpFactory {
 	}
 }
 
+// mcpEntry is one phase-1 resolution outcome: the server name, its
+// (credential-stamped) config copy, and whether it survived resolution.
+type mcpEntry struct {
+	name string
+	cfg  config.MCPServerConfig // HTTP: Token/Username stamped; stdio: unchanged
+	ok   bool
+}
+
+// mcpBuildResult is one phase-2 construction outcome for a single server.
+type mcpBuildResult struct {
+	name   string
+	cfg    config.MCPServerConfig
+	client tools.MCPClient
+	err    error
+}
+
 // Build constructs the MCP client dependencies for every configured server.
 // Construction is two-phase: a sequential token pre-pass resolves and stamps
 // credentials into per-server copies (single-flight gh memoization), then
@@ -108,22 +124,42 @@ func (f *mcpFactory) Build(servers map[string]config.MCPServerConfig) map[string
 	}
 	sort.Strings(names)
 
-	// Phase 1 — SEQUENTIAL token pre-pass. Stdio servers short-circuit first:
-	// gh/auto under COMMAND never resolve, never warn, never invoke the
-	// resolver. HTTP servers resolve via resolveServerToken (single-flight gh
-	// memoization via f.cachedToken — written and read only in this phase,
-	// which is single-threaded). Resolved credentials are stamped into a
-	// per-server copy so phase 2 goroutines never touch shared mutable state.
-	type entry struct {
-		name string
-		cfg  config.MCPServerConfig // HTTP: Token/Username stamped; stdio: unchanged
-		ok   bool
+	entries := f.resolveEntries(names, servers)
+
+	// Phase 2 — CONCURRENT construction, mirroring the plugin's own pattern
+	// (internal/tools/integrations/mcp/plugin.go:61-89). Per-server
+	// spawn+handshake is bounded by EffectiveTimeout inside the constructor.
+	// Goroutines write only to their own result slot — no shared writes, no
+	// locks in the hot path. Failures warn+skip per server; no overall bound.
+	results := make([]mcpBuildResult, len(entries))
+	var wg sync.WaitGroup
+	for i, e := range entries {
+		wg.Add(1)
+		go func(i int, e mcpEntry) {
+			defer wg.Done()
+			client, err := f.newClientFor(e.cfg)
+			results[i] = mcpBuildResult{name: e.name, cfg: e.cfg, client: client, err: err}
+		}(i, e)
 	}
-	entries := make([]entry, 0, len(names))
+	wg.Wait()
+
+	f.registerClientResults(results, deps)
+	return deps
+}
+
+// resolveEntries is Build's phase 1 — SEQUENTIAL token pre-pass. Stdio
+// servers short-circuit first: gh/auto under COMMAND never resolve, never
+// warn, never invoke the resolver. HTTP servers resolve via
+// resolveServerToken (single-flight gh memoization via f.cachedToken —
+// written and read only in this phase, which is single-threaded). Resolved
+// credentials are stamped into a per-server copy so phase 2 goroutines
+// never touch shared mutable state.
+func (f *mcpFactory) resolveEntries(names []string, servers map[string]config.MCPServerConfig) []mcpEntry {
+	entries := make([]mcpEntry, 0, len(names))
 	for _, name := range names {
 		serverCfg := servers[name]
 		if serverCfg.IsStdio() {
-			entries = append(entries, entry{name: name, cfg: serverCfg, ok: true})
+			entries = append(entries, mcpEntry{name: name, cfg: serverCfg, ok: true})
 			continue
 		}
 		username, token, ok := f.resolveServerToken(name, serverCfg)
@@ -133,34 +169,15 @@ func (f *mcpFactory) Build(servers map[string]config.MCPServerConfig) map[string
 		resolved := serverCfg
 		resolved.Username = username
 		resolved.Token = token
-		entries = append(entries, entry{name: name, cfg: resolved, ok: true})
+		entries = append(entries, mcpEntry{name: name, cfg: resolved, ok: true})
 	}
+	return entries
+}
 
-	// Phase 2 — CONCURRENT construction, mirroring the plugin's own pattern
-	// (internal/tools/integrations/mcp/plugin.go:61-89). Per-server
-	// spawn+handshake is bounded by EffectiveTimeout inside the constructor.
-	// Goroutines write only to their own result slot — no shared writes, no
-	// locks in the hot path. Failures warn+skip per server; no overall bound.
-	type result struct {
-		name   string
-		cfg    config.MCPServerConfig
-		client tools.MCPClient
-		err    error
-	}
-	results := make([]result, len(entries))
-	var wg sync.WaitGroup
-	for i, e := range entries {
-		wg.Add(1)
-		go func(i int, e entry) {
-			defer wg.Done()
-			client, err := f.newClientFor(e.cfg)
-			results[i] = result{name: e.name, cfg: e.cfg, client: client, err: err}
-		}(i, e)
-	}
-	wg.Wait()
-
-	// Merge deterministically (sorted by name) so warn order and registration
-	// order are stable regardless of goroutine completion order.
+// registerClientResults is Build's phase-2 collation — merge deterministically
+// (sorted by name) so warn order and registration order are stable regardless
+// of goroutine completion order.
+func (f *mcpFactory) registerClientResults(results []mcpBuildResult, deps map[string]plugin.MCPServerDependency) {
 	for _, res := range results {
 		if res.err != nil {
 			f.logger.Warn("mcp_client_init_failed", "server", res.name, "error", res.err)
@@ -181,7 +198,6 @@ func (f *mcpFactory) Build(servers map[string]config.MCPServerConfig) map[string
 			Serial:          res.cfg.EffectiveSerial(),
 		}
 	}
-	return deps
 }
 
 // Close terminates every MCP client constructed by this factory, joining any
@@ -214,35 +230,52 @@ func (f *mcpFactory) Client(name string) (tools.MCPClient, bool) {
 // must be skipped (token resolution failed under an auth mode that requires
 // it).
 func (f *mcpFactory) resolveServerToken(name string, serverCfg config.MCPServerConfig) (username, token string, ok bool) {
-	auth := serverCfg.EffectiveAuth()
+	switch serverCfg.EffectiveAuth() {
+	case config.MCPAuthGH:
+		return f.resolveGHAuthToken(name, serverCfg)
+	case config.MCPAuthAuto:
+		return f.resolveAutoAuthToken(name, serverCfg)
+	default:
+		return resolveStaticAuthToken(serverCfg)
+	}
+}
 
-	switch auth {
+// resolveGHAuthToken resolves credentials under the "gh" auth mode: an
+// explicit token wins; otherwise the single-flight resolver runs.
+func (f *mcpFactory) resolveGHAuthToken(name string, serverCfg config.MCPServerConfig) (username, token string, ok bool) {
+	if serverCfg.Token != "" {
+		return "", serverCfg.Token, true
+	}
+	token, ok = f.resolveTokenOrSkip(name, serverCfg.URL)
+	return "", token, ok
+}
+
+// resolveAutoAuthToken resolves credentials under the "auto" auth mode: an
+// explicit token wins; non-GitHub endpoints authenticate anonymously; the
+// rest fall through to the single-flight resolver.
+func (f *mcpFactory) resolveAutoAuthToken(name string, serverCfg config.MCPServerConfig) (username, token string, ok bool) {
+	if serverCfg.Token != "" {
+		return "", serverCfg.Token, true
+	}
+	if !isGitHubHostname(serverCfg.URL) {
+		return "", "", true
+	}
+	token, ok = f.resolveTokenOrSkip(name, serverCfg.URL)
+	return "", token, ok
+}
+
+// resolveStaticAuthToken resolves credentials for the auth modes that never
+// invoke the token resolver: none, bearer, and basic — plus the defensive
+// unknown-mode default (structurally unreachable in correct code; see the
+// catalog entry "di/mcp_factory.go — resolveServerToken default case").
+func resolveStaticAuthToken(serverCfg config.MCPServerConfig) (username, token string, ok bool) {
+	switch serverCfg.EffectiveAuth() {
 	case config.MCPAuthNone:
 		return "", "", true
-
 	case config.MCPAuthBearer:
 		return "", serverCfg.Token, true
-
 	case config.MCPAuthBasic:
 		return serverCfg.Username, serverCfg.Token, true
-
-	case config.MCPAuthGH:
-		if serverCfg.Token != "" {
-			return "", serverCfg.Token, true
-		}
-		token, ok := f.resolveTokenOrSkip(name, serverCfg.URL)
-		return "", token, ok
-
-	case config.MCPAuthAuto:
-		if serverCfg.Token != "" {
-			return "", serverCfg.Token, true
-		}
-		if !isGitHubHostname(serverCfg.URL) {
-			return "", "", true
-		}
-		token, ok := f.resolveTokenOrSkip(name, serverCfg.URL)
-		return "", token, ok
-
 	default:
 		// Unknown modes are rejected by config validation before Build runs;
 		// treat defensively as "none".
