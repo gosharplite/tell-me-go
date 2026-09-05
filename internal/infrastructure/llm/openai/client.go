@@ -733,31 +733,52 @@ func (c *client) uploadMediaParts(ctx context.Context, parts []*llm.Part, ta *tu
 
 // mediaUploadPurpose returns the file-API purpose for a part under the
 // client's FileUploadMode, or "" when the part must not be uploaded.
+// The upload policy per mode lives in the mode-specific helpers below
+// (deepSeekUploadPurpose, kimiUploadPurpose); the dispatcher retains only
+// the uploadability guard and the mode switch. Kept as the stable entry
+// point for uploadMediaParts so future vision-provider modes (ADR-070/071/073
+// lineage) extend a helper instead of growing this switch past the CC=10
+// policy threshold.
 func (c *client) mediaUploadPurpose(p *llm.Part) string {
 	if p.InlineData == nil || len(p.InlineData.Data) == 0 {
 		return ""
 	}
 	switch c.capabilities.FileUploadMode {
 	case llm.FileUploadDeepSeek:
-		if !strings.HasPrefix(p.InlineData.MIMEType, "image/") {
-			return "" // images only; video is dropped for vision-only models
-		}
-		if len(p.InlineData.Data) <= maxInlineMediaBytes {
-			return "" // small images stay inline (not uploaded)
-		}
-		return "user_data"
+		return c.deepSeekUploadPurpose(p) // images-only, oversized-only → "user_data"
 	case llm.FileUploadKimi:
-		if !isMediaMIME(p.InlineData.MIMEType) {
-			c.logger.Warn("skipping_unsupported_media_mime", "mime", p.InlineData.MIMEType)
-			return ""
-		}
-		if strings.HasPrefix(p.InlineData.MIMEType, "video/") {
-			return "video"
-		}
-		return "image"
+		return c.kimiUploadPurpose(p) // all media → "image"/"video", warn on unsupported MIME
 	default:
 		return ""
 	}
+}
+
+// deepSeekUploadPurpose implements DeepSeek's upload policy (ADR-070):
+// images only (video is dropped for vision-only models) and only when
+// oversized — small images stay inline and are not uploaded. Returns
+// "user_data" for an uploadable image, "" otherwise.
+func (c *client) deepSeekUploadPurpose(p *llm.Part) string {
+	if !strings.HasPrefix(p.InlineData.MIMEType, "image/") {
+		return "" // images only; video is dropped for vision-only models
+	}
+	if len(p.InlineData.Data) <= maxInlineMediaBytes {
+		return "" // small images stay inline (not uploaded)
+	}
+	return "user_data"
+}
+
+// kimiUploadPurpose implements Kimi's upload policy: all media (image/*,
+// video/*) is uploaded; anything else is skipped with an observable
+// warning. Returns "image" or "video" for uploadable media, "" otherwise.
+func (c *client) kimiUploadPurpose(p *llm.Part) string {
+	if !isMediaMIME(p.InlineData.MIMEType) {
+		c.logger.Warn("skipping_unsupported_media_mime", "mime", p.InlineData.MIMEType)
+		return ""
+	}
+	if strings.HasPrefix(p.InlineData.MIMEType, "video/") {
+		return "video"
+	}
+	return "image"
 }
 
 // prepareMediaAssets hydrates and uploads media parts (image and video)
