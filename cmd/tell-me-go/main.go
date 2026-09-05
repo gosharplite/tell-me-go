@@ -20,11 +20,14 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/gosharplite/tell-me-go/internal/cli"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/callback"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/env"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/logging"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/pkg/redirectwriter"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
@@ -146,6 +149,9 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 	// 1. Resolve basic environment
 	homeDir := env.ResolveHomeDir(os.Getenv, os.UserHomeDir)
 
+	// Wrap stdout in redirectwriter so Detach() closes the OS FD and redirects to io.Discard
+	rw := redirectwriter.New(stdout)
+
 	// 2. Initialize Core Infrastructure
 	//
 	// The InteractorRef is the wiring cell that breaks the bootstrap cycle:
@@ -171,7 +177,7 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 	cfg.HomeDir = homeDir
 	cfg.SM = sm
 	cfg.Version = appVersion
-	cfg.Stdout = stdout
+	cfg.Stdout = rw
 	cfg.Stderr = stderr
 	cfg.Logger = logger
 	bootstrapper := di.NewBootstrapper(cfg)
@@ -180,6 +186,9 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 	chatService := bootstrapper.GetChatService()
 
 	// 6. Initialize CLI with pre-wired dependencies
+	httpNotifier := callback.NewHTTPNotifier()
+	modeLocker := persistence.NewFileModeLocker(homeDir)
+
 	wd, err := os.Getwd()
 	if err != nil {
 		wd = "."
@@ -188,16 +197,18 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 		Finder: config.NewDefaultConfigFinder(config.WithBaseDir(wd)),
 	}
 	app, err := cliNewFn(cli.AppDependencies{
-		Version:      appVersion,
-		Stdin:        stdin,
-		Stdout:       stdout,
-		Stderr:       stderr,
-		HomeDir:      homeDir,
-		SM:           sm,
-		Bootstrapper: bootstrapper,
-		ConfigLoader: configLoader,
-		ChatService:  chatService,
-		Interactor:   interactorRef,
+		Version:          appVersion,
+		Stdin:            stdin,
+		Stdout:           rw,
+		Stderr:           stderr,
+		HomeDir:          homeDir,
+		SM:               sm,
+		Bootstrapper:     bootstrapper,
+		ConfigLoader:     configLoader,
+		ChatService:      chatService,
+		Interactor:       interactorRef,
+		CallbackNotifier: httpNotifier,
+		ModeLocker:       modeLocker,
 	}, os.Getenv)
 
 	if err != nil {

@@ -13,7 +13,9 @@ import (
 	"strconv"
 	"syscall"
 
+	domain_callback "github.com/gosharplite/tell-me-go/internal/domain/callback"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
+	domain_persistence "github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/spf13/cobra"
@@ -27,32 +29,36 @@ var (
 
 // AppDependencies encapsulates all dependencies for the CLI application.
 type AppDependencies struct {
-	Version      string
-	Stdin        io.Reader
-	Stdout       io.Writer
-	Stderr       io.Writer
-	HomeDir      string
-	SM           domain_security.Manager
-	Bootstrapper Bootstrapper
-	ConfigLoader domain_config.ConfigLoader
-	ChatService  ports.ChatService
-	Interactor   *InteractorRef
+	Version          string
+	Stdin            io.Reader
+	Stdout           io.Writer
+	Stderr           io.Writer
+	HomeDir          string
+	SM               domain_security.Manager
+	Bootstrapper     Bootstrapper
+	ConfigLoader     domain_config.ConfigLoader
+	ChatService      ports.ChatService
+	Interactor       *InteractorRef
+	CallbackNotifier domain_callback.CallbackNotifier
+	ModeLocker       domain_persistence.ModeLocker
 }
 
 // App represents the tell-me-go application.
 type App struct {
-	Version      string
-	Stdin        io.Reader
-	Stdout       io.Writer
-	Stderr       io.Writer
-	homeDir      string
-	sm           domain_security.Manager
-	bootstrapper Bootstrapper
-	configLoader domain_config.ConfigLoader
-	chatService  ports.ChatService
-	interactor   *InteractorRef
-	mockPrompt   string
-	mockAnswer   string
+	Version          string
+	Stdin            io.Reader
+	Stdout           io.Writer
+	Stderr           io.Writer
+	homeDir          string
+	sm               domain_security.Manager
+	bootstrapper     Bootstrapper
+	configLoader     domain_config.ConfigLoader
+	chatService      ports.ChatService
+	interactor       *InteractorRef
+	callbackNotifier domain_callback.CallbackNotifier
+	modeLocker       domain_persistence.ModeLocker
+	mockPrompt       string
+	mockAnswer       string
 }
 
 // New creates a new App instance with explicit dependency injection.
@@ -84,18 +90,20 @@ func New(deps AppDependencies, getenv func(string) string) (*App, error) {
 	}
 
 	return &App{
-		Version:      deps.Version,
-		Stdin:        stdin,
-		Stdout:       stdout,
-		Stderr:       stderr,
-		homeDir:      deps.HomeDir,
-		sm:           deps.SM,
-		bootstrapper: deps.Bootstrapper,
-		configLoader: deps.ConfigLoader,
-		chatService:  deps.ChatService,
-		interactor:   deps.Interactor,
-		mockPrompt:   getenv("TELL_ME_MOCK_PROMPT"),
-		mockAnswer:   getenv("TELL_ME_MOCK_ANSWER"),
+		Version:          deps.Version,
+		Stdin:            stdin,
+		Stdout:           stdout,
+		Stderr:           stderr,
+		homeDir:          deps.HomeDir,
+		sm:               deps.SM,
+		bootstrapper:     deps.Bootstrapper,
+		configLoader:     deps.ConfigLoader,
+		chatService:      deps.ChatService,
+		interactor:       deps.Interactor,
+		callbackNotifier: deps.CallbackNotifier,
+		modeLocker:       deps.ModeLocker,
+		mockPrompt:       getenv("TELL_ME_MOCK_PROMPT"),
+		mockAnswer:       getenv("TELL_ME_MOCK_ANSWER"),
 	}, nil
 }
 
@@ -112,18 +120,20 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 	}
 
 	cmdCtx := &context{
-		Version:      a.Version,
-		Stdin:        a.Stdin,
-		Stdout:       a.Stdout,
-		Stderr:       a.Stderr,
-		HomeDir:      a.homeDir,
-		SM:           a.sm,
-		ChatService:  a.chatService,
-		Bootstrapper: a.bootstrapper,
-		Loader:       a.configLoader,
-		MockPrompt:   a.mockPrompt,
-		MockAnswer:   a.mockAnswer,
-		Interactor:   a.interactor,
+		Version:          a.Version,
+		Stdin:            a.Stdin,
+		Stdout:           a.Stdout,
+		Stderr:           a.Stderr,
+		HomeDir:          a.homeDir,
+		SM:               a.sm,
+		ChatService:      a.chatService,
+		Bootstrapper:     a.bootstrapper,
+		Loader:           a.configLoader,
+		MockPrompt:       a.mockPrompt,
+		MockAnswer:       a.mockAnswer,
+		Interactor:       a.interactor,
+		CallbackNotifier: a.callbackNotifier,
+		ModeLocker:       a.modeLocker,
 	}
 
 	chatCmd := newChatCommand(cmdCtx, nil)

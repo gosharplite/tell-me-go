@@ -10,7 +10,9 @@ import (
 	"io"
 	"time"
 
+	domain_callback "github.com/gosharplite/tell-me-go/internal/domain/callback"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
+	domain_persistence "github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
@@ -35,6 +37,8 @@ type chatCommand struct {
 	MockPrompt       string
 	MockAnswer       string
 	Interactor       *InteractorRef
+	CallbackNotifier domain_callback.CallbackNotifier
+	ModeLocker       domain_persistence.ModeLocker
 	capturerOverride ports.CapturerInteractor                                                                                                                                                                // test-only injection
 	capturerFactory  func(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string, disableEscapeSequences bool) domain_security.UserInteractor // test-only injection; defaults to ui.NewCapturer
 }
@@ -89,18 +93,20 @@ func addChatFlags(fs *pflag.FlagSet, opts *cliOptions) {
 // newChatCommand creates a new Chat Command as a Cobra command.
 func newChatCommand(ctx *context, opts *cliOptions) *cobra.Command {
 	c := &chatCommand{
-		Version:      ctx.Version,
-		Stdin:        ctx.Stdin,
-		Stdout:       ctx.Stdout,
-		Stderr:       ctx.Stderr,
-		SM:           ctx.SM,
-		ChatService:  ctx.ChatService,
-		Bootstrapper: ctx.Bootstrapper,
-		Loader:       ctx.Loader,
-		HomeDir:      ctx.HomeDir,
-		MockPrompt:   ctx.MockPrompt,
-		MockAnswer:   ctx.MockAnswer,
-		Interactor:   ctx.Interactor,
+		Version:          ctx.Version,
+		Stdin:            ctx.Stdin,
+		Stdout:           ctx.Stdout,
+		Stderr:           ctx.Stderr,
+		SM:               ctx.SM,
+		ChatService:      ctx.ChatService,
+		Bootstrapper:     ctx.Bootstrapper,
+		Loader:           ctx.Loader,
+		HomeDir:          ctx.HomeDir,
+		MockPrompt:       ctx.MockPrompt,
+		MockAnswer:       ctx.MockAnswer,
+		Interactor:       ctx.Interactor,
+		CallbackNotifier: ctx.CallbackNotifier,
+		ModeLocker:       ctx.ModeLocker,
 	}
 	c.capturerFactory = ui.NewCapturer
 

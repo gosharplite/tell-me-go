@@ -6,6 +6,7 @@ package callback_test
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -63,67 +64,37 @@ func TestCallbackPayload_JSONError(t *testing.T) {
 	}
 }
 
+func assertPayloadRoundTrip(t *testing.T, payload callback.CallbackPayload) {
+	t.Helper()
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	var unmarshaled callback.CallbackPayload
+	if err := json.Unmarshal(data, &unmarshaled); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	if !reflect.DeepEqual(unmarshaled, payload) {
+		t.Errorf("payload round-trip mismatch: got %+v, want %+v", unmarshaled, payload)
+	}
+}
+
 func TestCallbackPayload_RoundTrip(t *testing.T) {
 	errStr := "network failure"
-	cases := []struct {
-		name    string
-		payload callback.CallbackPayload
-	}{
-		{
-			name: "success payload",
-			payload: callback.CallbackPayload{
-				SessionID: "sess-abc",
-				Status:    callback.StatusSuccess,
-				Response:  "all done",
-				Error:     nil,
-			},
-		},
-		{
-			name: "error payload",
-			payload: callback.CallbackPayload{
-				SessionID: "sess-def",
-				Status:    callback.StatusError,
-				Response:  "",
-				Error:     &errStr,
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			data, err := json.Marshal(tc.payload)
-			if err != nil {
-				t.Fatalf("Marshal failed: %v", err)
-			}
-
-			var unmarshaled callback.CallbackPayload
-			if err := json.Unmarshal(data, &unmarshaled); err != nil {
-				t.Fatalf("Unmarshal failed: %v", err)
-			}
-
-			if unmarshaled.SessionID != tc.payload.SessionID {
-				t.Errorf("SessionID mismatch: got %q, want %q", unmarshaled.SessionID, tc.payload.SessionID)
-			}
-			if unmarshaled.Status != tc.payload.Status {
-				t.Errorf("Status mismatch: got %q, want %q", unmarshaled.Status, tc.payload.Status)
-			}
-			if unmarshaled.Response != tc.payload.Response {
-				t.Errorf("Response mismatch: got %q, want %q", unmarshaled.Response, tc.payload.Response)
-			}
-			if tc.payload.Error == nil {
-				if unmarshaled.Error != nil {
-					t.Errorf("Error should be nil, got %q", *unmarshaled.Error)
-				}
-			} else {
-				if unmarshaled.Error == nil {
-					t.Fatal("Error should not be nil")
-				}
-				if *unmarshaled.Error != *tc.payload.Error {
-					t.Errorf("Error mismatch: got %q, want %q", *unmarshaled.Error, *tc.payload.Error)
-				}
-			}
-		})
-	}
+	assertPayloadRoundTrip(t, callback.CallbackPayload{
+		SessionID: "sess-abc",
+		Status:    callback.StatusSuccess,
+		Response:  "all done",
+		Error:     nil,
+	})
+	assertPayloadRoundTrip(t, callback.CallbackPayload{
+		SessionID: "sess-def",
+		Status:    callback.StatusError,
+		Response:  "",
+		Error:     &errStr,
+	})
 }
 
 type mockNotifier struct {

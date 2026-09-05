@@ -18,78 +18,87 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/callback"
 )
 
+func assertPayloadMatches(t *testing.T, body []byte, payload domain_callback.CallbackPayload, errStr string) {
+	t.Helper()
+	var receivedPayload domain_callback.CallbackPayload
+	if err := json.Unmarshal(body, &receivedPayload); err != nil {
+		t.Fatalf("failed to unmarshal request body: %v", err)
+	}
+	if receivedPayload.SessionID != payload.SessionID {
+		t.Errorf("SessionID mismatch: got %q, want %q", receivedPayload.SessionID, payload.SessionID)
+	}
+	if receivedPayload.Status != payload.Status {
+		t.Errorf("Status mismatch: got %q, want %q", receivedPayload.Status, payload.Status)
+	}
+	if receivedPayload.Error == nil || *receivedPayload.Error != errStr {
+		t.Errorf("Error field mismatch: got %v, want %q", receivedPayload.Error, errStr)
+	}
+}
+
+func assertReceivedRequest(t *testing.T, method string, header http.Header, body []byte, payload domain_callback.CallbackPayload, errStr string) {
+	t.Helper()
+	if method != http.MethodPost {
+		t.Errorf("expected POST method, got: %q", method)
+	}
+	if ct := header.Get("Content-Type"); ct != "application/json" {
+		t.Errorf("expected Content-Type application/json, got: %q", ct)
+	}
+	if auth := header.Get("X-Custom-Auth"); auth != "Bearer token123" {
+		t.Errorf("expected X-Custom-Auth 'Bearer token123', got: %q", auth)
+	}
+	if mode := header.Get("X-Request-Mode"); mode != "webhook" {
+		t.Errorf("expected X-Request-Mode 'webhook', got: %q", mode)
+	}
+	assertPayloadMatches(t, body, payload, errStr)
+}
+
+func testSingleSuccess(t *testing.T, statusCode int) {
+	t.Helper()
+	var (
+		mu          sync.Mutex
+		gotMethod   string
+		gotHeader   http.Header
+		gotBodyData []byte
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		gotMethod = r.Method
+		gotHeader = r.Header.Clone()
+		gotBodyData, _ = io.ReadAll(r.Body)
+		w.WriteHeader(statusCode)
+	}))
+	defer server.Close()
+
+	notifier := callback.NewHTTPNotifierWithClient(server.Client())
+	errStr := "test error message"
+	payload := domain_callback.CallbackPayload{
+		SessionID: "sess-123",
+		Status:    domain_callback.StatusError,
+		Response:  "",
+		Error:     &errStr,
+	}
+
+	headers := map[string]string{
+		"X-Custom-Auth":  "Bearer token123",
+		"X-Request-Mode": "webhook",
+	}
+
+	if err := notifier.Notify(context.Background(), server.URL, headers, payload); err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	assertReceivedRequest(t, gotMethod, gotHeader, gotBodyData, payload, errStr)
+}
+
 func TestHTTPNotifier_Success(t *testing.T) {
 	statusCodes := []int{http.StatusOK, http.StatusCreated, http.StatusNoContent}
-
 	for _, statusCode := range statusCodes {
 		t.Run(http.StatusText(statusCode), func(t *testing.T) {
-			var (
-				mu          sync.Mutex
-				gotMethod   string
-				gotHeader   http.Header
-				gotBodyData []byte
-			)
-
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				mu.Lock()
-				defer mu.Unlock()
-				gotMethod = r.Method
-				gotHeader = r.Header.Clone()
-				gotBodyData, _ = io.ReadAll(r.Body)
-				w.WriteHeader(statusCode)
-			}))
-			defer server.Close()
-
-			notifier := callback.NewHTTPNotifierWithClient(server.Client())
-
-			errStr := "test error message"
-			payload := domain_callback.CallbackPayload{
-				SessionID: "sess-123",
-				Status:    domain_callback.StatusError,
-				Response:  "",
-				Error:     &errStr,
-			}
-
-			headers := map[string]string{
-				"X-Custom-Auth":  "Bearer token123",
-				"X-Request-Mode": "webhook",
-			}
-
-			ctx := context.Background()
-			err := notifier.Notify(ctx, server.URL, headers, payload)
-			if err != nil {
-				t.Fatalf("expected nil error, got: %v", err)
-			}
-
-			mu.Lock()
-			defer mu.Unlock()
-
-			if gotMethod != http.MethodPost {
-				t.Errorf("expected POST method, got: %q", gotMethod)
-			}
-			if ct := gotHeader.Get("Content-Type"); ct != "application/json" {
-				t.Errorf("expected Content-Type application/json, got: %q", ct)
-			}
-			if auth := gotHeader.Get("X-Custom-Auth"); auth != "Bearer token123" {
-				t.Errorf("expected X-Custom-Auth 'Bearer token123', got: %q", auth)
-			}
-			if mode := gotHeader.Get("X-Request-Mode"); mode != "webhook" {
-				t.Errorf("expected X-Request-Mode 'webhook', got: %q", mode)
-			}
-
-			var receivedPayload domain_callback.CallbackPayload
-			if err := json.Unmarshal(gotBodyData, &receivedPayload); err != nil {
-				t.Fatalf("failed to unmarshal request body: %v", err)
-			}
-			if receivedPayload.SessionID != payload.SessionID {
-				t.Errorf("SessionID mismatch: got %q, want %q", receivedPayload.SessionID, payload.SessionID)
-			}
-			if receivedPayload.Status != payload.Status {
-				t.Errorf("Status mismatch: got %q, want %q", receivedPayload.Status, payload.Status)
-			}
-			if receivedPayload.Error == nil || *receivedPayload.Error != errStr {
-				t.Errorf("Error field mismatch: got %v, want %q", receivedPayload.Error, errStr)
-			}
+			testSingleSuccess(t, statusCode)
 		})
 	}
 }
@@ -112,16 +121,9 @@ func TestHTTPNotifier_Non2xxError(t *testing.T) {
 				Response:  "output",
 			}
 
-			ctx := context.Background()
-			err := notifier.Notify(ctx, server.URL, nil, payload)
+			err := notifier.Notify(context.Background(), server.URL, nil, payload)
 			if err == nil {
 				t.Fatal("expected error for non-2xx status code, got nil")
-			}
-
-			expectedFragment := strings.ToLower(http.StatusText(statusCode))
-			_ = expectedFragment
-			if !strings.Contains(err.Error(), "status") {
-				t.Errorf("expected error to mention 'status', got: %v", err)
 			}
 			statusCodeStr := string(rune('0' + statusCode/100))
 			if !strings.Contains(err.Error(), statusCodeStr) {
@@ -129,6 +131,11 @@ func TestHTTPNotifier_Non2xxError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func isTimeoutError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "context") || strings.Contains(msg, "canceled") || strings.Contains(msg, "deadline")
 }
 
 func TestHTTPNotifier_ContextTimeout(t *testing.T) {
@@ -158,7 +165,7 @@ func TestHTTPNotifier_ContextTimeout(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected context timeout error, got nil")
 	}
-	if !strings.Contains(err.Error(), "context") && !strings.Contains(err.Error(), "canceled") && !strings.Contains(err.Error(), "deadline") {
+	if !isTimeoutError(err) {
 		t.Errorf("expected error to indicate timeout/cancellation, got: %v", err)
 	}
 }

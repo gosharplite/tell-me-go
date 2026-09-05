@@ -302,7 +302,7 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"sqlite_store.go Update RowsAffected", "internal/infrastructure/persistence/sqlite_store.go", 207, 209},
 		{"sqlite_store.go Delete RowsAffected", "internal/infrastructure/persistence/sqlite_store.go", 224, 226},
 		{"mcp_factory.go gh token resolver success", "internal/infrastructure/di/mcp_factory.go", 78, 78},
-		{"main.go buildApp os.Getwd error branch", "cmd/tell-me-go/main.go", 184, 186},
+		{"main.go buildApp os.Getwd error branch", "cmd/tell-me-go/main.go", 193, 195},
 		{"container.go GetMCPClient nil-guard", "internal/infrastructure/di/container.go", 284, 286},
 		{"imports.go format.Node error branch", "internal/tools/analysis/imports.go", 50, 52},
 		{"process_executor.go RunCommand empty-parts guard", "internal/tools/workspace/process_executor.go", 73, 78},

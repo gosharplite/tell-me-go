@@ -153,15 +153,17 @@ func TestNew_MissingDependencies(t *testing.T) {
 
 func defaultTestDeps() AppDependencies {
 	return AppDependencies{
-		Version:      "1.0.0",
-		HomeDir:      ".",
-		SM:           &mockSM{},
-		Bootstrapper: &simpleMockBootstrapper{},
-		ConfigLoader: &cliMockLoader{},
-		ChatService:  &clitest.MockChatService{},
-		Stdin:        strings.NewReader(""),
-		Stdout:       new(bytes.Buffer),
-		Stderr:       new(bytes.Buffer),
+		Version:          "1.0.0",
+		HomeDir:          ".",
+		SM:               &mockSM{},
+		Bootstrapper:     &simpleMockBootstrapper{},
+		ConfigLoader:     &cliMockLoader{},
+		ChatService:      &clitest.MockChatService{},
+		CallbackNotifier: &clitest.MockCallbackNotifier{},
+		ModeLocker:       &clitest.MockModeLocker{},
+		Stdin:            strings.NewReader(""),
+		Stdout:           new(bytes.Buffer),
+		Stderr:           new(bytes.Buffer),
 	}
 }
 
