@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/pkg/redirectwriter"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1391,4 +1392,60 @@ func TestReadSingleKey_PipeNotTTY(t *testing.T) {
 	if !strings.Contains(err.Error(), "confirmation required but not running in a terminal") {
 		t.Errorf("expected 'confirmation required' error, got: %v", err)
 	}
+	if !strings.Contains(err.Error(), "BYPASS_CONFIRMATION: true") {
+		t.Errorf("expected error to mention BYPASS_CONFIRMATION: true, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "--bypass-confirmation") {
+		t.Errorf("error must not reference nonexistent flag --bypass-confirmation, got: %v", err)
+	}
+}
+
+type customUnwrapOnly struct {
+	inner io.Writer
+}
+
+func (u *customUnwrapOnly) Write(p []byte) (int, error) {
+	return u.inner.Write(p)
+}
+
+func (u *customUnwrapOnly) Unwrap() io.Writer {
+	return u.inner
+}
+
+func TestIsTTY_WithRedirectWriter(t *testing.T) {
+	t.Parallel()
+
+	pr, pw, err := os.Pipe()
+	require.NoError(t, err)
+	defer func() {
+		_ = pr.Close()
+		_ = pw.Close()
+	}()
+
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		_ = c.Close(context.Background())
+	})
+
+	t.Run("redirectwriter wrapping os.Pipe returns false", func(t *testing.T) {
+		rw := redirectwriter.New(pw)
+		assert.False(t, c.IsTTY(rw))
+	})
+
+	t.Run("detached redirectwriter returns false", func(t *testing.T) {
+		rw := redirectwriter.New(pw)
+		require.NoError(t, rw.Detach())
+		assert.False(t, c.IsTTY(rw))
+	})
+
+	t.Run("redirectwriter wrapping non-FD bytes.Buffer returns false", func(t *testing.T) {
+		rw := redirectwriter.New(&bytes.Buffer{})
+		assert.False(t, c.IsTTY(rw))
+	})
+
+	t.Run("custom unwrapper wrapping redirectwriter unwraps and returns false", func(t *testing.T) {
+		rw := redirectwriter.New(pw)
+		wrapper := &customUnwrapOnly{inner: rw}
+		assert.False(t, c.IsTTY(wrapper))
+	})
 }

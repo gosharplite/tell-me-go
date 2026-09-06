@@ -24,8 +24,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/gosharplite/tell-me-go/internal/pkg/redirectwriter"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/gosharplite/tell-me-go/internal/ui"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStdUIRenderer_BasicLogging(t *testing.T) {
@@ -1106,6 +1109,56 @@ func TestStdUIRenderer_IsTerminalContext(t *testing.T) {
 		if !r.IsTerminalContext() {
 			t.Error("expected IsTerminalContext() = true when stderrIsTerminalFn returns true")
 		}
+	})
+
+	testRedirectWriterSubtests(t)
+}
+
+func testRedirectWriterSubtests(t *testing.T) {
+	t.Run("redirectwriter wrapping os.Pipe with injected stderrIsTerminalFn returns true", func(t *testing.T) {
+		pr, pw, err := os.Pipe()
+		require.NoError(t, err)
+		defer func() { _ = pr.Close() }()
+		defer func() { _ = pw.Close() }()
+
+		rw := redirectwriter.New(pr)
+		var buf bytes.Buffer
+		lock := ui.NewMockLocker()
+		r := ui.NewRenderer(lock, &buf, &buf, nil, nil).(*ui.StdUIRenderer)
+		r.SetWriters(&buf, rw)
+		r.SetStderrIsTerminalFn(func(fd int) bool { return true })
+
+		assert.True(t, r.IsTerminalContext(), "expected IsTerminalContext() = true when redirectwriter wraps os.Pipe and stderrIsTerminalFn returns true")
+	})
+
+	t.Run("detached redirectwriter returns false even if stderrIsTerminalFn returns true", func(t *testing.T) {
+		pr, pw, err := os.Pipe()
+		require.NoError(t, err)
+		defer func() { _ = pr.Close() }()
+		defer func() { _ = pw.Close() }()
+
+		rw := redirectwriter.New(pr)
+		require.NoError(t, rw.Detach())
+
+		var buf bytes.Buffer
+		lock := ui.NewMockLocker()
+		r := ui.NewRenderer(lock, &buf, &buf, nil, nil).(*ui.StdUIRenderer)
+		r.SetWriters(&buf, rw)
+		r.SetStderrIsTerminalFn(func(fd int) bool { return true })
+
+		assert.False(t, r.IsTerminalContext(), "expected IsTerminalContext() = false for detached redirectwriter even when stderrIsTerminalFn returns true")
+	})
+
+	t.Run("redirectwriter wrapping bytes.Buffer returns false", func(t *testing.T) {
+		rw := redirectwriter.New(&bytes.Buffer{})
+
+		var buf bytes.Buffer
+		lock := ui.NewMockLocker()
+		r := ui.NewRenderer(lock, &buf, &buf, nil, nil).(*ui.StdUIRenderer)
+		r.SetWriters(&buf, rw)
+		r.SetStderrIsTerminalFn(func(fd int) bool { return true })
+
+		assert.False(t, r.IsTerminalContext(), "expected IsTerminalContext() = false for redirectwriter wrapping bytes.Buffer")
 	})
 }
 

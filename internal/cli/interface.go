@@ -6,7 +6,9 @@ package cli
 import (
 	"io"
 
+	domain_callback "github.com/gosharplite/tell-me-go/internal/domain/callback"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
+	domain_persistence "github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
@@ -27,16 +29,18 @@ type Bootstrapper interface {
 
 // context provides shared dependencies for commands.
 type context struct {
-	Version      string
-	Stdin        io.Reader
-	Stdout       io.Writer
-	Stderr       io.Writer
-	HomeDir      string
-	SM           domain_security.Manager
-	ChatService  ports.ChatService
-	Bootstrapper Bootstrapper
-	Loader       domain_config.ConfigLoader
-	MockPrompt   string
-	MockAnswer   string
-	Interactor   *InteractorRef
+	Version          string
+	Stdin            io.Reader
+	Stdout           io.Writer
+	Stderr           io.Writer
+	HomeDir          string
+	SM               domain_security.Manager
+	ChatService      ports.ChatService
+	Bootstrapper     Bootstrapper
+	Loader           domain_config.ConfigLoader
+	MockPrompt       string
+	MockAnswer       string
+	Interactor       *InteractorRef
+	CallbackNotifier domain_callback.CallbackNotifier
+	ModeLocker       domain_persistence.ModeLocker
 }

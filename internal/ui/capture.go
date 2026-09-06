@@ -88,13 +88,32 @@ func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.M
 	return c
 }
 
-// IsTTY returns true if the value (usually an *os.File) is a terminal.
+type fdValuer interface {
+	Fd() uintptr
+}
+
+type unwrapper interface {
+	Unwrap() io.Writer
+}
+
+// IsTTY returns true if the value (usually an *os.File or a wrapper providing Fd/Unwrap) is a terminal.
 func (c *capturer) IsTTY(v any) bool {
 	if c.isTTYOverride != nil {
 		return *c.isTTYOverride
 	}
-	if f, ok := v.(*os.File); ok {
-		return term.IsTerminal(int(f.Fd()))
+	for v != nil {
+		if f, ok := v.(fdValuer); ok {
+			fd := f.Fd()
+			if fd == ^uintptr(0) {
+				return false
+			}
+			return term.IsTerminal(int(fd))
+		}
+		if u, ok := v.(unwrapper); ok {
+			v = u.Unwrap()
+			continue
+		}
+		break
 	}
 	return false
 }
@@ -355,7 +374,7 @@ func (c *capturer) ReadSingleKey(ctx context.Context) (string, error) {
 		if os.Getenv("GO_WANT_HELPER_PROCESS") != "" || c.disableEscapeSequences {
 			return c.readByteFallback(ctx)
 		}
-		return "", fmt.Errorf("confirmation required but not running in a terminal. Use --bypass-confirmation to skip if running in a non-interactive environment")
+		return "", fmt.Errorf("confirmation required but not running in a terminal. Set BYPASS_CONFIRMATION: true in config to skip if running in a non-interactive environment")
 	}
 
 	state, err := term.MakeRaw(fd)

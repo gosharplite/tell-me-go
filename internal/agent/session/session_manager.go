@@ -6,7 +6,6 @@ package session
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/gosharplite/tell-me-go/internal/pkg/idgen"
 	"github.com/gosharplite/tell-me-go/internal/pkg/metricsfmt"
 )
 
@@ -223,14 +223,11 @@ func (o *sessionManager) teardownSession(
 }
 
 // generateSessionID creates a unique session identifier using the configured
-// entropy source. Falls back to a time-based ID if entropy is unavailable.
+// entropy source. Format is unified via internal/pkg/idgen.
 func (o *sessionManager) generateSessionID() string {
-	b := make([]byte, 8)
-	if _, err := io.ReadFull(o.EntropySource, b); err != nil {
+	return idgen.GenerateWithEntropy(o.EntropySource, func(err error) {
 		_, _ = fmt.Fprintf(o.Stderr, "[WARN] Entropy source failure, degrading to time-based session ID: %v\n", err)
-		return fmt.Sprintf("session-%d", o.Clock.Now().UnixNano())
-	}
-	return fmt.Sprintf("session-%s", hex.EncodeToString(b))
+	})
 }
 
 // Rollback deletes the specified number of turns from history.

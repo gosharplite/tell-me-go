@@ -576,6 +576,7 @@ Significant architectural decisions are documented in our [Architecture Decision
 *   **[ADR-072](docs/adr/2026-09-glm-reasoning-content-capability.md)** — native `reasoning_content` round-trip for Z.AI GLM models via a separate always-on reasoning allowlist (`glm-5.3`, `glm-5.3-flash`): capability flag + tests + ADR mirror of the ADR-071 vision pattern on an independent capability axis; zero transport changes (issue #1451).
 *   **[ADR-073](docs/adr/2026-09-gpt5x-responses-vision.md)** — gpt-5.x vision via the OpenAI Responses API: full-history sticky image routing (D1), all gpt-5+ vision-capable via `isGpt5OrNewer` with gpt-5.0–5.3 on the Chat Completions `image_url` path (D2), and a 2048px longest-edge dimension guard via the domain-typed `MediaSizeError` (D3) (issue #1448).
 *   **[ADR-074](docs/adr/2026-09-process-runner-injection.md)** — inject the process runner into the tools layer (ProcessRunner domain port) (issue #1460).
+*   **[ADR-076](docs/adr/2026-09-callback-worker-pattern.md)** — asynchronous webhook callback worker pattern (`--callback`): early-ACK execution model, CLI-layer terminal wrapper, cross-platform mode locking, and closed webhook payload contract (issue #1483).
 
 For the evolution of the shell-based environment management tooling — from simple bash aliases through Toby, Dobby, Porter, Sprawl, Winky, Flopsy, and Niffler — see [Evolution of Environment Management](docs/architect/environments/environment-management-evolution.md).
 
