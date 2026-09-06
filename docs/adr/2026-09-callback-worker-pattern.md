@@ -89,6 +89,8 @@ If `--callback-id` is provided, it must match regex `^[A-Za-z0-9._:-]{1,128}$`; 
 | `ACK <id>\n` then EOF | Request accepted. Wait for webhook delivery. |
 | Anything else (empty, usage error, stderr output) | Pre-flight rejection. Webhook will not fire; fail workflow node immediately. |
 
+> **Note on root flags**: Cobra intercepts root-level flags (`--version`, `--help`) before command `RunE` executes. An invocation like `tell-me-go --version --callback <url> <prompt>` outputs version text and exits 0 without emitting `ACK`. This conforms to the stdout discriminator contract: the orchestrator observes version or usage text rather than `ACK <session_id>\n`, correctly treating it as a non-started invocation.
+
 **Exit Codes:**
 | Scenario | Webhook Delivery | Process Exit Code |
 |---|---|---|
@@ -106,6 +108,7 @@ If `--callback-id` is provided, it must match regex `^[A-Za-z0-9._:-]{1,128}$`; 
 
 ### Positive
 - **Workflow Decoupling**: Orchestrators (n8n, Airflow) receive an immediate early-ACK and release resources while `tell-me-go` executes in background.
+- **Global Stdout Passthrough**: In `cmd/tell-me-go/main.go` (`buildApp`), `redirectwriter.Writer` wraps `stdout` globally across all modes as an atomic passthrough. In standard interactive and streaming executions, it acts as a zero-overhead passthrough; in callback mode, it enables early `Detach()` to close the underlying OS file descriptor while cleanly absorbing trailing writes via `io.Discard`.
 - **Clean Architecture Adherence**: `ChatService` and `domain/ports` remain completely callback-agnostic. Ports live in `internal/domain/callback` and `internal/domain/persistence`.
 - **Strict Concurrency Safety**: Exclusive mode lock prevents concurrent process corruption.
 - **Fail-Fast Observability**: Pre-flight validation rejects invalid inputs before execution begins, guaranteeing that an ACKed execution will attempt delivery.

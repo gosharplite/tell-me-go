@@ -66,7 +66,6 @@ allowed: config, events, llm, persistence, pricing, security, services, skills, 
 ## consumer: internal/cli
 allowed: callback, config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
 # P1+P2+P5: CLI command deps; callback via callback worker domain port
-
 ## consumer: internal/cli/clitest
 allowed: callback, config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
 # P4: test package mirroring CLI surface including callback test doubles

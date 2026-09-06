@@ -1062,6 +1062,24 @@ scenarios:
     invariants_touched:
       [memory-injection-fail-open, memory-injection-budgeted, memory-single-block, memory-learn-tier-exclusive, context-within-budget, history-persisted-after-turn]
 
+  - name: Asynchronous callback worker turn
+    description: >
+      An orchestrator invokes `tell-me-go` with `--callback` to execute a task in the
+      background. The worker validates pre-flight constraints, acquires the mode lock,
+      writes an early ACK to stdout, detaches stdout to unblock the caller, executes
+      the `Turn` in the foreground, persists the outcome to `History`, and delivers a
+      terminal webhook payload to the callback URL.
+    actors: [Orchestrator, Session, Turn, History]
+    steps:
+      - Orchestrator invokes `tell-me-go` with `--callback` and a prompt.
+      - Pre-flight checks pass (bypass confirmation, flag whitelist, URL and header validation, mode lock).
+      - The worker writes `ACK <session_id>\n` to stdout and detaches stdout.
+      - The `Turn` executes inference and tool execution in the foreground.
+      - The completed `Turn` is persisted to `History`.
+      - A standardized JSON payload is delivered via HTTP POST to the callback URL.
+      - The worker exits with code 0.
+    invariants_touched: [history-persisted-after-turn]
+
 invariants:
   - id: deterministic-cost-audit
     statement: >

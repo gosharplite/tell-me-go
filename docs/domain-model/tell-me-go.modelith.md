@@ -798,3 +798,23 @@ A correction taught in one persona's `Session` is automatically recalled into an
 - **context-within-budget** — `tokenCount` must not exceed the model's `Pricing.contextWindow`.
 - **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
 
+### Asynchronous callback worker turn
+
+An orchestrator invokes `tell-me-go` with `--callback` to execute a task in the background. The worker validates pre-flight constraints, acquires the mode lock, writes an early ACK to stdout, detaches stdout to unblock the caller, executes the `Turn` in the foreground, persists the outcome to `History`, and delivers a terminal webhook payload to the callback URL.
+
+**Actors:** Orchestrator, Session, Turn, History
+
+**Steps**
+
+1. Orchestrator invokes `tell-me-go` with `--callback` and a prompt.
+2. Pre-flight checks pass (bypass confirmation, flag whitelist, URL and header validation, mode lock).
+3. The worker writes `ACK <session_id>\n` to stdout and detaches stdout.
+4. The `Turn` executes inference and tool execution in the foreground.
+5. The completed `Turn` is persisted to `History`.
+6. A standardized JSON payload is delivered via HTTP POST to the callback URL.
+7. The worker exits with code 0.
+
+**Invariants touched**
+
+- **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
+
