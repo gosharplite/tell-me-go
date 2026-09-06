@@ -6,9 +6,12 @@ A high-performance CLI assistant that unifies reasoning engines (Gemini, OpenAI,
 
 ## Glossary
 
+- **`CallbackNotifier`** — The domain port that delivers terminal session outcome webhooks to an external endpoint.
+- **`CallbackPayload`** — The standardized closed JSON payload delivered by `CallbackNotifier` upon session completion.
 - **`Chatter`** — The conversation interface between the `Orchestrator` and the `Provider` gateway. Defines how prompts are sent, responses are streamed, and chat sessions are configured. Not an entity — it is a behavioral role with no persisted state, analogous to `Orchestrator` and `SecurityManager`.
 - **`CoverageSummary`** — The tools-layer view of a coverage run, returned by the Go toolchain runner: the passed-test count, whether the package has no Go files, the coverage percentage, and the summary output. It is the consumer-facing projection of the infrastructure-internal coverage report, which stays infrastructure-internal by design (ADR-060). Not an entity — a value type with no relationships or lifecycle.
 - **`ExitError`** — The domain-typed exit-status failure carried by `ProcessHandle`'s Wait: a process exit code, with -1 meaning signal-killed (ADR-074 — the -1 convention is today's observable behavior, made fake-constructible). Not an entity — a value type like `CoverageSummary`.
+- **`ModeLocker`** — The domain port for acquiring an exclusive, non-blocking lock on a mode directory.
 - **`Orchestrator`** — The top-level loop that drives a `Session`: receives a user prompt, delegates to the active `Provider`, dispatches `Tool` calls, and manages the `Turn` lifecycle.
 - **`ProcessHandle`** — The running-process view returned by `ProcessRunner`: stdout and stderr readers valid only after the owning start returns, and the Wait method, which surfaces process failures as `ExitError`. Not an entity — a behavioral handle with no persisted state.
 - **`ProcessRunner`** — The domain port that starts external processes: its Start method assembles and starts a child process from a `ProcessSpec` and returns a `ProcessHandle`. Implemented by the infrastructure process adapter and consumed by the workspace tools (ADR-074). Not an entity — a behavioral port with no persisted state, analogous to `Chatter`.
@@ -793,5 +796,25 @@ A correction taught in one persona's `Session` is automatically recalled into an
 - **memory-single-block** — At most one `Memory` block is present in the assembled `Context` system message; fresh recall replaces, never appends.
 - **memory-learn-tier-exclusive** — Exactly one MemoryLearnTier is active; `batch` and `full` are never combined.
 - **context-within-budget** — `tokenCount` must not exceed the model's `Pricing.contextWindow`.
+- **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
+
+### Asynchronous callback worker turn
+
+An orchestrator invokes `tell-me-go` with `--callback` to execute a task in the background. The worker validates pre-flight constraints, acquires the mode lock, writes an early ACK to stdout, detaches stdout to unblock the caller, executes the `Turn` in the foreground, persists the outcome to `History`, and delivers a terminal webhook payload to the callback URL.
+
+**Actors:** Orchestrator, Session, Turn, History
+
+**Steps**
+
+1. Orchestrator invokes `tell-me-go` with `--callback` and a prompt.
+2. Pre-flight checks pass (bypass confirmation, flag whitelist, URL and header validation, mode lock).
+3. The worker writes `ACK <session_id>\n` to stdout and detaches stdout.
+4. The `Turn` executes inference and tool execution in the foreground.
+5. The completed `Turn` is persisted to `History`.
+6. A standardized JSON payload is delivered via HTTP POST to the callback URL.
+7. The worker exits with code 0.
+
+**Invariants touched**
+
 - **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
 

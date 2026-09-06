@@ -21,28 +21,28 @@ import (
 // it never blocks. NewTicker() returns a *MockTicker fed from the
 // same After() channel.
 type MockClock struct {
-	mu          sync.Mutex
-	currentTime time.Time
+	mu         sync.Mutex
+	storedTime time.Time
 }
 
 // SetCurrentTime safely sets the fixed clock time for tests.
 func (m *MockClock) SetCurrentTime(t time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.currentTime = t
+	m.storedTime = t
 }
 
-// CurrentTime returns the stored fixed time (race-safe).
+// currentTime returns the stored fixed time (race-safe).
 // Returns the zero time.Time if never set.
-func (m *MockClock) CurrentTime() time.Time {
+func (m *MockClock) currentTime() time.Time {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.currentTime
+	return m.storedTime
 }
 
 func (m *MockClock) Now() time.Time {
 	m.mu.Lock()
-	t := m.currentTime
+	t := m.storedTime
 	m.mu.Unlock()
 
 	if t.IsZero() {
@@ -57,13 +57,13 @@ func (m *MockClock) Since(t time.Time) time.Duration {
 
 func (m *MockClock) Sleep(d time.Duration) {
 	m.mu.Lock()
-	m.currentTime = m.currentTime.Add(d)
+	m.storedTime = m.storedTime.Add(d)
 	m.mu.Unlock()
 }
 
 func (m *MockClock) After(d time.Duration) <-chan time.Time {
 	m.mu.Lock()
-	t := m.currentTime.Add(d)
+	t := m.storedTime.Add(d)
 	m.mu.Unlock()
 
 	c := make(chan time.Time, 1)

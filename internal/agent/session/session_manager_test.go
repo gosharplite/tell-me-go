@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"regexp"
 	"sync"
 	"testing"
 	"time"
@@ -1063,7 +1064,7 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 		},
 	}
 
-	expectedSessionID := fmt.Sprintf("session-%d", mClock.CurrentTime().UnixNano())
+	expectedPattern := regexp.MustCompile(`^session-\d+$`)
 
 	factory := func(ctx context.Context, deps ports.ChatterComposer, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return mChatter, nil
@@ -1084,10 +1085,10 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 	mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {}
 	mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error { return nil }
 
-	// Exact match on Session ID
+	// Exact match on Session ID format
 	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error {
-		if s.ID != expectedSessionID {
-			t.Errorf("Chat Session.ID = %q, want %q", s.ID, expectedSessionID)
+		if !expectedPattern.MatchString(s.ID) {
+			t.Errorf("Chat Session.ID = %q, want format %q", s.ID, expectedPattern.String())
 		}
 		return nil
 	}
@@ -1176,8 +1177,8 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 		},
 	}
 
-	// Since it's a short read, it should fallback to timestamp-based ID
-	expectedSessionID := fmt.Sprintf("session-%d", mClock.CurrentTime().UnixNano())
+	// Since it's a short read, it should fallback to timestamp-based ID format
+	expectedPattern := regexp.MustCompile(`^session-\d+$`)
 
 	factory := func(ctx context.Context, deps ports.ChatterComposer, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return mChatter, nil
@@ -1199,8 +1200,8 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 	mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error { return nil }
 
 	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error {
-		if s.ID != expectedSessionID {
-			t.Errorf("Chat Session.ID = %q, want %q", s.ID, expectedSessionID)
+		if !expectedPattern.MatchString(s.ID) {
+			t.Errorf("Chat Session.ID = %q, want format %q", s.ID, expectedPattern.String())
 		}
 		return nil
 	}

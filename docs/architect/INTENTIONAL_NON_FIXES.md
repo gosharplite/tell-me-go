@@ -842,10 +842,10 @@ catalog a new gap no one reviewed. Policy:
   `TestBuildApp_GetwdError`. On macOS and Windows, the kernel caches the
   working directory path, making the error structurally unreachable.
   Same acceptance class as platform-specific branches.
-  Pin added 2026-09 (#1431): the gap at main.go:184-186 surfaced as
+  Pin added 2026-09 (#1431): the gap at main.go:193-195 surfaced as
   uncataloged because the See ref was file-only; the coverage matcher
   requires a line spec.
-- **See**: `cmd/tell-me-go/main.go:184-186` (`buildApp`, `os.Getwd` error branch),
+- **See**: `cmd/tell-me-go/main.go:193-195` (`buildApp`, `os.Getwd` error branch),
   `cmd/tell-me-go/main_test.go` (`TestBuildApp_GetwdError`)
 
 ### agent/agent.go — configRefreshHook.BeforeTurn/AfterTurn no-op stubs

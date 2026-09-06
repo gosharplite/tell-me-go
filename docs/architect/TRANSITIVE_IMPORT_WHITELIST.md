@@ -31,8 +31,8 @@ edge is why the derived constant spans 9 families.
 allowed: events, llm, persistence, security, services, telemetry, tools
 # P2+P1: analysis/security toolchain surface; telemetry via events (recorded decision)
 ## consumer: cmd/tell-me-go
-allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
-# P1+P2+P5: full hub surface via agent/analysis/cli deps
+allowed: callback, config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
+# P1+P2+P5: full hub surface via agent/analysis/cli deps; callback via CLI callback worker adapter wiring
 ## consumer: internal/agent
 allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
 # P5+P1: services via tools; telemetry via events
@@ -64,11 +64,11 @@ allowed: config, events, llm, persistence, pricing, security, services, skills, 
 allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
 # P1+P2+P5: memory adapters (plurInjector/plurHook) via orchestrator + sessctx deps
 ## consumer: internal/cli
-allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
-# P1+P2+P5: CLI command deps
+allowed: callback, config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
+# P1+P2+P5: CLI command deps; callback via callback worker domain port
 ## consumer: internal/cli/clitest
-allowed: config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
-# P4: test package mirroring CLI surface
+allowed: callback, config, events, llm, persistence, pricing, security, services, skills, telemetry, tools
+# P4: test package mirroring CLI surface including callback test doubles
 ## consumer: internal/domain/config
 allowed: events, llm, pricing, telemetry, tools
 # P1+P2: llm/telemetry/tools via events
