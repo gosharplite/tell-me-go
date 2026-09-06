@@ -331,44 +331,87 @@ func TestWriter_Unwrap(t *testing.T) {
 	})
 }
 
-type einvalSyncer struct {
+type stubSyncer struct {
 	syncErr error
 }
 
-func (e *einvalSyncer) Write(p []byte) (int, error) {
+func (s *stubSyncer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (e *einvalSyncer) Sync() error {
-	return e.syncErr
+func (s *stubSyncer) Sync() error {
+	return s.syncErr
 }
 
-func TestWriter_Detach_SyncEINVAL(t *testing.T) {
+func TestWriter_Detach_SyncIgnoredErrors(t *testing.T) {
 	t.Parallel()
 
-	t.Run("PathError wrapping syscall.EINVAL", func(t *testing.T) {
-		w := redirectwriter.New(&einvalSyncer{
+	tests := []struct {
+		name    string
+		syncErr error
+		wantErr bool
+	}{
+		{
+			name:    "PathError wrapping syscall.EINVAL",
 			syncErr: &fs.PathError{Op: "sync", Path: "/dev/stdout", Err: syscall.EINVAL},
-		})
-		err := w.Detach()
-		assert.NoError(t, err)
-	})
-
-	t.Run("direct syscall.EINVAL", func(t *testing.T) {
-		w := redirectwriter.New(&einvalSyncer{
+			wantErr: false,
+		},
+		{
+			name:    "direct syscall.EINVAL",
 			syncErr: syscall.EINVAL,
-		})
-		err := w.Detach()
-		assert.NoError(t, err)
-	})
+			wantErr: false,
+		},
+		{
+			name:    "PathError wrapping syscall.EBADF (Darwin pipe/stream)",
+			syncErr: &fs.PathError{Op: "sync", Path: "|1", Err: syscall.EBADF},
+			wantErr: false,
+		},
+		{
+			name:    "direct syscall.EBADF",
+			syncErr: syscall.EBADF,
+			wantErr: false,
+		},
+		{
+			name:    "PathError wrapping syscall.ENOTSUP",
+			syncErr: &fs.PathError{Op: "sync", Path: "/dev/stdout", Err: syscall.ENOTSUP},
+			wantErr: false,
+		},
+		{
+			name:    "direct syscall.ENOTSUP",
+			syncErr: syscall.ENOTSUP,
+			wantErr: false,
+		},
+		{
+			name:    "PathError wrapping syscall.ENOTTY",
+			syncErr: &fs.PathError{Op: "sync", Path: "/dev/stdout", Err: syscall.ENOTTY},
+			wantErr: false,
+		},
+		{
+			name:    "direct syscall.ENOTTY",
+			syncErr: syscall.ENOTTY,
+			wantErr: false,
+		},
+		{
+			name:    "non-ignored sync error is retained",
+			syncErr: syscall.EIO,
+			wantErr: true,
+		},
+	}
 
-	t.Run("non-EINVAL sync error is retained", func(t *testing.T) {
-		syncErr := syscall.EIO
-		w := redirectwriter.New(&einvalSyncer{
-			syncErr: syncErr,
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			w := redirectwriter.New(&stubSyncer{
+				syncErr: tt.syncErr,
+			})
+			err := w.Detach()
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, tt.syncErr)
+			} else {
+				assert.NoError(t, err)
+			}
 		})
-		err := w.Detach()
-		require.Error(t, err)
-		assert.ErrorIs(t, err, syncErr)
-	})
+	}
 }

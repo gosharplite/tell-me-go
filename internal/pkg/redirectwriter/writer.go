@@ -84,7 +84,7 @@ func (w *Writer) Detach() error {
 	}
 
 	if syncer, ok := w.base.(interface{ Sync() error }); ok {
-		if err := syncer.Sync(); err != nil && !errors.Is(err, syscall.EINVAL) {
+		if err := syncer.Sync(); err != nil && !isIgnoredSyncError(err) {
 			errs = append(errs, err)
 		}
 	}
@@ -98,6 +98,18 @@ func (w *Writer) Detach() error {
 	w.target.Store(&discardTarget)
 	w.detachErr = errors.Join(errs...)
 	return w.detachErr
+}
+
+// isIgnoredSyncError reports whether err indicates that the underlying stream
+// does not support synchronization (e.g. pipes, FIFOs, sockets, or character devices).
+// - Linux: fsync on a pipe/FIFO returns EINVAL (invalid argument).
+// - Darwin (macOS): fcntl(fd, F_FULLFSYNC, 0) on non-vnodes (pipes, sockets) returns EBADF (bad file descriptor).
+// - Other POSIX systems: fsync on unsupported descriptors may return ENOTSUP or ENOTTY.
+func isIgnoredSyncError(err error) bool {
+	return errors.Is(err, syscall.EINVAL) ||
+		errors.Is(err, syscall.EBADF) ||
+		errors.Is(err, syscall.ENOTSUP) ||
+		errors.Is(err, syscall.ENOTTY)
 }
 
 // Fd returns the underlying file descriptor if base implements interface{ Fd() uintptr }.
