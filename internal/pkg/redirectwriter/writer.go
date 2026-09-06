@@ -8,6 +8,7 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"syscall"
 )
 
 var discardTarget io.Writer = io.Discard
@@ -17,9 +18,21 @@ type Detacher interface {
 	Detach() error
 }
 
+// FdValuer defines the capability to retrieve a file descriptor.
+type FdValuer interface {
+	Fd() uintptr
+}
+
+// Unwrapper defines the capability to unwrap an underlying writer.
+type Unwrapper interface {
+	Unwrap() io.Writer
+}
+
 var (
 	_ io.Writer = (*Writer)(nil)
 	_ Detacher  = (*Writer)(nil)
+	_ FdValuer  = (*Writer)(nil)
+	_ Unwrapper = (*Writer)(nil)
 )
 
 // Writer wraps an underlying base io.Writer with an atomic target.
@@ -71,7 +84,7 @@ func (w *Writer) Detach() error {
 	}
 
 	if syncer, ok := w.base.(interface{ Sync() error }); ok {
-		if err := syncer.Sync(); err != nil {
+		if err := syncer.Sync(); err != nil && !errors.Is(err, syscall.EINVAL) {
 			errs = append(errs, err)
 		}
 	}
@@ -85,4 +98,33 @@ func (w *Writer) Detach() error {
 	w.target.Store(&discardTarget)
 	w.detachErr = errors.Join(errs...)
 	return w.detachErr
+}
+
+// Fd returns the underlying file descriptor if base implements interface{ Fd() uintptr }.
+// When detached, or if base does not provide an FD, it returns ^uintptr(0).
+func (w *Writer) Fd() uintptr {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.detached {
+		return ^uintptr(0)
+	}
+	curr := w.base
+	for curr != nil {
+		if f, ok := curr.(interface{ Fd() uintptr }); ok {
+			return f.Fd()
+		}
+		if u, ok := curr.(interface{ Unwrap() io.Writer }); ok {
+			curr = u.Unwrap()
+			continue
+		}
+		break
+	}
+	return ^uintptr(0)
+}
+
+// Unwrap returns the underlying base writer.
+func (w *Writer) Unwrap() io.Writer {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.base
 }
