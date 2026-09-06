@@ -10,7 +10,7 @@ import (
 )
 
 // =============================================================================
-// MockClock: SetCurrentTime + CurrentTime
+// MockClock: SetCurrentTime + currentTime
 // =============================================================================
 
 func TestMockClock_SetCurrentTime_CurrentTime_RoundTrip(t *testing.T) {
@@ -22,9 +22,9 @@ func TestMockClock_SetCurrentTime_CurrentTime_RoundTrip(t *testing.T) {
 		m := &MockClock{}
 		want := time.Date(2026, 1, 15, 10, 30, 0, 0, time.UTC)
 		m.SetCurrentTime(want)
-		got := m.CurrentTime()
+		got := m.currentTime()
 		if !got.Equal(want) {
-			t.Errorf("CurrentTime() = %v; want %v", got, want)
+			t.Errorf("currentTime() = %v; want %v", got, want)
 		}
 	})
 
@@ -32,9 +32,9 @@ func TestMockClock_SetCurrentTime_CurrentTime_RoundTrip(t *testing.T) {
 		t.Parallel()
 
 		m := &MockClock{}
-		got := m.CurrentTime()
+		got := m.currentTime()
 		if !got.IsZero() {
-			t.Errorf("CurrentTime() = %v; want zero time", got)
+			t.Errorf("currentTime() = %v; want zero time", got)
 		}
 	})
 
@@ -44,9 +44,9 @@ func TestMockClock_SetCurrentTime_CurrentTime_RoundTrip(t *testing.T) {
 		m := &MockClock{}
 		m.SetCurrentTime(time.Date(2026, 1, 15, 10, 30, 0, 0, time.UTC))
 		m.SetCurrentTime(time.Time{}) // explicitly zero
-		got := m.CurrentTime()
+		got := m.currentTime()
 		if !got.IsZero() {
-			t.Errorf("CurrentTime() after explicit zero set = %v; want zero time", got)
+			t.Errorf("currentTime() after explicit zero set = %v; want zero time", got)
 		}
 	})
 
@@ -62,22 +62,22 @@ func TestMockClock_SetCurrentTime_CurrentTime_RoundTrip(t *testing.T) {
 		}
 		for _, want := range times {
 			m.SetCurrentTime(want)
-			got := m.CurrentTime()
+			got := m.currentTime()
 			if !got.Equal(want) {
-				t.Errorf("CurrentTime() = %v; want %v", got, want)
+				t.Errorf("currentTime() = %v; want %v", got, want)
 			}
 		}
 	})
 
-	t.Run("zero CurrentTime does NOT fall through to wall clock", func(t *testing.T) {
+	t.Run("zero currentTime does NOT fall through to wall clock", func(t *testing.T) {
 		t.Parallel()
 
 		m := &MockClock{}
-		// CurrentTime() returns the stored value (zero), not wall clock.
+		// currentTime() returns the stored value (zero), not wall clock.
 		// Only Now() has the fall-through logic.
-		got := m.CurrentTime()
+		got := m.currentTime()
 		if !got.IsZero() {
-			t.Fatalf("CurrentTime() = %v; expected zero — getter bypasses wall-clock fallback", got)
+			t.Fatalf("currentTime() = %v; expected zero — getter bypasses wall-clock fallback", got)
 		}
 		// Confirm wall clock is NOT zero.
 		wallNow := time.Now()
@@ -88,7 +88,7 @@ func TestMockClock_SetCurrentTime_CurrentTime_RoundTrip(t *testing.T) {
 }
 
 // TestMockClock_SetCurrentTime_Concurrency ensures that concurrent calls
-// to SetCurrentTime and CurrentTime do not trigger the race detector.
+// to SetCurrentTime and currentTime do not trigger the race detector.
 // This test must NOT use t.Parallel() because it depends on the shared
 // mock and must not interfere with other tests.
 func TestMockClock_SetCurrentTime_Concurrency(t *testing.T) {
@@ -109,13 +109,13 @@ func TestMockClock_SetCurrentTime_Concurrency(t *testing.T) {
 		}(g)
 	}
 
-	// Readers: call CurrentTime concurrently.
+	// Readers: call currentTime concurrently.
 	wg.Add(goroutines)
 	for g := 0; g < goroutines; g++ {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < iterations; i++ {
-				_ = m.CurrentTime()
+				_ = m.currentTime()
 			}
 		}()
 	}
@@ -124,7 +124,7 @@ func TestMockClock_SetCurrentTime_Concurrency(t *testing.T) {
 
 	// After all goroutines finish, the stored time should be readable
 	// without racing.
-	got := m.CurrentTime()
+	got := m.currentTime()
 	_ = got // merely checking no panic/race
 }
 
