@@ -1906,19 +1906,19 @@ to reason about.
 
 ### process/proc_posix.go — cmd.Cancel nil-Process guard (defensive guard)
 
-- **Status**: ACCEPTED (2026-09, issue #1462 — PROPOSED; maintainer approval at PR review)
+- **Status**: ACCEPTED (2026-09, issue #1462; PROPOSED → ACCEPTED at PR review — maintainer sign-off, issue #1488)
 - **Rationale**: `cmd.Cancel` fires only after `Start` (Go's `exec.Cmd` contract), so `cmd.Process` is non-nil whenever Cancel runs; the nil guard is defensive on internal lifecycle state that callers never produce. Same acceptance class as defensive nil guards on internal pipeline state (2026-07 Batch Triage).
 - **See**: `internal/infrastructure/process/proc_posix.go:47-49`
 
 ### process/proc_posix.go — non-ESRCH killGroup error branch (fault-injection required)
 
-- **Status**: ACCEPTED (2026-09, issue #1462 — PROPOSED; maintainer approval at PR review)
+- **Status**: ACCEPTED (2026-09, issue #1462; PROPOSED → ACCEPTED at PR review — maintainer sign-off, issue #1488)
 - **Rationale**: the `!errors.Is(err, syscall.ESRCH)` branch requires `syscall.Kill(-pid, SIGKILL)` to fail with something other than ESRCH against a live process group (e.g. a permission race) — not deterministically reproducible. Same acceptance class as the 2026-07 fault-injection gaps.
 - **See**: `internal/infrastructure/process/proc_posix.go:59-61`
 
 ### process/proc_posix.go — checkAlive ErrProcessDone branch (fault-injection required)
 
-- **Status**: ACCEPTED (2026-09, issue #1462 — PROPOSED; maintainer approval at PR review)
+- **Status**: ACCEPTED (2026-09, issue #1462; PROPOSED → ACCEPTED at PR review — maintainer sign-off, issue #1488)
 - **Rationale**: requires the child to exit in the window between the group-kill attempt's ESRCH and the liveness probe (`kill(pid, 0)`) — a timing race not deterministically reproducible. Same acceptance class as the `processWatcherEvents` goroutine-timing acceptance (2026-07 Batch Triage).
 - **See**: `internal/infrastructure/process/proc_posix.go:64-66`
 
