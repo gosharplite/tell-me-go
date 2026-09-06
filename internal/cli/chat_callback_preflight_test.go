@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"bytes"
 	stdctx "context"
 	"fmt"
 	"io"
@@ -645,4 +646,47 @@ func TestMaskSensitiveHeader(t *testing.T) {
 			assert.Equal(t, tt.expected, got)
 		})
 	}
+}
+func TestCallbackPreflight_RootFlags_Version(t *testing.T) {
+	t.Parallel()
+
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+
+	deps := defaultTestDeps()
+	deps.Version = "v1.9.18"
+	deps.Stdout = stdout
+	deps.Stderr = stderr
+
+	app, err := New(deps, func(string) string { return "" })
+	require.NoError(t, err)
+
+	// Cobra intercepts --version before RunE, bypassing chatCommand logic
+	err = app.Run(stdctx.Background(), []string{"tell-me-go", "--version", "--callback", "http://example.com/webhook", "test prompt"})
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "tell-me-go version v1.9.18")
+	assert.NotContains(t, out, "ACK", "root flag --version must not emit ACK")
+}
+
+func TestCallbackPreflight_RootFlags_Help(t *testing.T) {
+	t.Parallel()
+
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+
+	deps := defaultTestDeps()
+	deps.Stdout = stdout
+	deps.Stderr = stderr
+
+	app, err := New(deps, func(string) string { return "" })
+	require.NoError(t, err)
+
+	err = app.Run(stdctx.Background(), []string{"tell-me-go", "--help", "--callback", "http://example.com/webhook", "test prompt"})
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "Usage:")
+	assert.NotContains(t, out, "ACK", "root flag --help must not emit ACK")
 }

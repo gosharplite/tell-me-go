@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -450,4 +451,71 @@ func TestCallbackExecution_CustomIDAndHeaders(t *testing.T) {
 	assert.Equal(t, "trace-abc-123", receivedHeaders.Get("X-Trace-Id"))
 	assert.Equal(t, "Bearer token-xyz-789", receivedHeaders.Get("Authorization"))
 	assert.Equal(t, "application/json", receivedHeaders.Get("Content-Type"))
+}
+func TestCallbackExecution_PipeUnblocking_RealPipe(t *testing.T) {
+	t.Parallel()
+
+	rPipe, wPipe, err := os.Pipe()
+	require.NoError(t, err)
+	defer rPipe.Close()
+
+	rw := redirectwriter.New(wPipe)
+
+	inferenceStarted := make(chan struct{})
+	inferenceRelease := make(chan struct{})
+
+	ms := &clitest.MockChatService{
+		ProcessMessageFunc: func(ctx stdctx.Context, cfg *config.Config, cmd ports.ChatCommand, capturer ports.CapturerInteractor) error {
+			close(inferenceStarted)
+			<-inferenceRelease
+			return nil
+		},
+	}
+
+	var receivedPayload domain_callback.CallbackPayload
+	var mu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		_ = json.NewDecoder(r.Body).Decode(&receivedPayload)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	notifier := &testHTTPNotifier{client: server.Client()}
+
+	var stderr strings.Builder
+	cmdCtx, _ := setupExecutionTestContext(strings.NewReader(""), rw, &stderr, nil, ms, nil, notifier)
+
+	execDone := make(chan error, 1)
+	go func() {
+		args := []string{"--callback", server.URL, "test pipe unblocking prompt"}
+		execDone <- executeChatCommand(cmdCtx, args)
+	}()
+
+	// Wait until inference has started.
+	// At this point, Early-ACK and Detach() must have completed.
+	<-inferenceStarted
+
+	// Read from rPipe while inference is STILL blocked.
+	// If Detach() closed the underlying OS file descriptor, io.ReadAll will receive EOF
+	// immediately and unblock, rather than hanging waiting for the process to exit.
+	pipeOutput, readErr := io.ReadAll(rPipe)
+	require.NoError(t, readErr)
+
+	outStr := string(pipeOutput)
+	assert.Regexp(t, `^ACK session-[0-9a-f]{16}\n$`, outStr)
+
+	// Release inference now that pipe unblocking is proven
+	close(inferenceRelease)
+
+	err = <-execDone
+	require.NoError(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, domain_callback.StatusSuccess, receivedPayload.Status)
+	expectedSessionID := strings.TrimPrefix(strings.TrimSuffix(outStr, "\n"), "ACK ")
+	assert.Equal(t, expectedSessionID, receivedPayload.SessionID)
 }
