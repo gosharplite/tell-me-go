@@ -5,11 +5,14 @@ package persistence_test
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
 	domain_persistence "github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFileModeLocker_Uncontended(t *testing.T) {
@@ -112,4 +115,37 @@ func TestFileModeLocker_ReleaseIdempotent(t *testing.T) {
 
 func TestFileModeLocker_InterfaceSatisfaction(t *testing.T) {
 	var _ domain_persistence.ModeLocker = persistence.NewFileModeLocker(t.TempDir())
+}
+
+// TestFileModeLocker_MkdirAllError_ParentPathIsFile covers the MkdirAll error
+// branch in TryLockMode (lock_common.go:23-25). <home>/output exists as a
+// regular file, so MkdirAll(<home>/output/architect) fails structurally with
+// ENOTDIR — deterministic even when running as root. Error-ness only is
+// asserted, not the errno text (Windows portability).
+func TestFileModeLocker_MkdirAllError_ParentPathIsFile(t *testing.T) {
+	home := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(home, "output"), []byte("x"), 0600))
+
+	locker := persistence.NewFileModeLocker(home)
+	_, err := locker.TryLockMode("architect")
+	require.Error(t, err)
+	assert.False(t, errors.Is(err, domain_persistence.ErrModeLocked),
+		"a structural MkdirAll failure must not be misreported as a contention lock")
+}
+
+// TestFileModeLocker_OpenFileError_LockPathIsDirectory covers the OpenFile
+// error branch in TryLockMode (lock_common.go:28-30). ModeDir exists so the
+// MkdirAll succeeds, but the lock path exists as a directory, so
+// os.OpenFile(lockPath, O_CREATE|O_RDWR, 0600) fails structurally (EISDIR) —
+// deterministic even when running as root. Error-ness only is asserted, not
+// the errno text (Windows portability).
+func TestFileModeLocker_OpenFileError_LockPathIsDirectory(t *testing.T) {
+	home := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(home, "output", "architect"), 0755))
+	require.NoError(t, os.Mkdir(filepath.Join(home, "output", "architect", ".mode.lock"), 0755))
+
+	_, err := persistence.NewFileModeLocker(home).TryLockMode("architect")
+	require.Error(t, err)
+	assert.False(t, errors.Is(err, domain_persistence.ErrModeLocked),
+		"a structural OpenFile failure must not be misreported as a contention lock")
 }
