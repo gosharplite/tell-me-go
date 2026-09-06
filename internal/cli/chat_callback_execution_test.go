@@ -457,7 +457,7 @@ func TestCallbackExecution_PipeUnblocking_RealPipe(t *testing.T) {
 
 	rPipe, wPipe, err := os.Pipe()
 	require.NoError(t, err)
-	defer rPipe.Close()
+	defer func() { _ = rPipe.Close() }()
 
 	rw := redirectwriter.New(wPipe)
 
