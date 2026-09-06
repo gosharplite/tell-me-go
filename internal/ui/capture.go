@@ -88,13 +88,32 @@ func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.M
 	return c
 }
 
-// IsTTY returns true if the value (usually an *os.File) is a terminal.
+type fdValuer interface {
+	Fd() uintptr
+}
+
+type unwrapper interface {
+	Unwrap() io.Writer
+}
+
+// IsTTY returns true if the value (usually an *os.File or a wrapper providing Fd/Unwrap) is a terminal.
 func (c *capturer) IsTTY(v any) bool {
 	if c.isTTYOverride != nil {
 		return *c.isTTYOverride
 	}
-	if f, ok := v.(*os.File); ok {
-		return term.IsTerminal(int(f.Fd()))
+	for v != nil {
+		if f, ok := v.(fdValuer); ok {
+			fd := f.Fd()
+			if fd == ^uintptr(0) {
+				return false
+			}
+			return term.IsTerminal(int(fd))
+		}
+		if u, ok := v.(unwrapper); ok {
+			v = u.Unwrap()
+			continue
+		}
+		break
 	}
 	return false
 }

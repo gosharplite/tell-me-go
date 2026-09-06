@@ -388,8 +388,21 @@ func (r *stdUIRenderer) IsTerminalContext() bool {
 	r.mu.RLock()
 	isTerminal := r.stderrIsTerminalFn
 	r.mu.RUnlock()
-	if f, ok := ui.stderr.(*os.File); ok && isTerminal(int(f.Fd())) {
-		return true
+
+	v := any(ui.stderr)
+	for v != nil {
+		if f, ok := v.(fdValuer); ok {
+			fd := f.Fd()
+			if fd == ^uintptr(0) {
+				return false
+			}
+			return isTerminal(int(fd))
+		}
+		if u, ok := v.(unwrapper); ok {
+			v = u.Unwrap()
+			continue
+		}
+		break
 	}
 	return false
 }

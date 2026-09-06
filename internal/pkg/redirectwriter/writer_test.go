@@ -6,7 +6,10 @@ package redirectwriter_test
 import (
 	"bytes"
 	"errors"
+	"io/fs"
+	"os"
 	"sync"
+	"syscall"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/pkg/redirectwriter"
@@ -202,4 +205,170 @@ func TestWriter_Detach_ErrorPropagation(t *testing.T) {
 	// Idempotent error return
 	err2 := w.Detach()
 	assert.Equal(t, err, err2)
+}
+func TestWriter_Fd(t *testing.T) {
+	t.Parallel()
+
+	t.Run("pre-detach with os.File", func(t *testing.T) {
+		pr, pw, err := os.Pipe()
+		require.NoError(t, err)
+		defer func() {
+			_ = pr.Close()
+			_ = pw.Close()
+		}()
+
+		w := redirectwriter.New(pw)
+		assert.Equal(t, pw.Fd(), w.Fd())
+	})
+
+	t.Run("post-detach returns invalid FD", func(t *testing.T) {
+		pr, pw, err := os.Pipe()
+		require.NoError(t, err)
+		defer func() {
+			_ = pr.Close()
+			_ = pw.Close()
+		}()
+
+		w := redirectwriter.New(pw)
+		require.NoError(t, w.Detach())
+		assert.Equal(t, ^uintptr(0), w.Fd())
+	})
+
+	t.Run("non-FD base returns invalid FD", func(t *testing.T) {
+		var buf bytes.Buffer
+		w := redirectwriter.New(&buf)
+		assert.Equal(t, ^uintptr(0), w.Fd())
+	})
+
+	t.Run("nil base returns invalid FD", func(t *testing.T) {
+		w := redirectwriter.New(nil)
+		assert.Equal(t, ^uintptr(0), w.Fd())
+	})
+
+	t.Run("nested wrappers resolve FD", func(t *testing.T) {
+		pr, pw, err := os.Pipe()
+		require.NoError(t, err)
+		defer func() {
+			_ = pr.Close()
+			_ = pw.Close()
+		}()
+
+		w1 := redirectwriter.New(pw)
+		w2 := redirectwriter.New(w1)
+		assert.Equal(t, pw.Fd(), w2.Fd())
+
+		// When inner w1 is detached, w2.Fd() returns invalid FD
+		require.NoError(t, w1.Detach())
+		assert.Equal(t, ^uintptr(0), w2.Fd())
+	})
+
+	t.Run("nested wrappers outer detached", func(t *testing.T) {
+		pr, pw, err := os.Pipe()
+		require.NoError(t, err)
+		defer func() {
+			_ = pr.Close()
+			_ = pw.Close()
+		}()
+
+		w1 := redirectwriter.New(pw)
+		w2 := redirectwriter.New(w1)
+		require.NoError(t, w2.Detach())
+		assert.Equal(t, ^uintptr(0), w2.Fd())
+	})
+}
+
+func TestWriter_Unwrap(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns underlying base", func(t *testing.T) {
+		var buf bytes.Buffer
+		w := redirectwriter.New(&buf)
+		assert.Same(t, &buf, w.Unwrap())
+	})
+
+	t.Run("concurrency with Fd, Unwrap, Write, and Detach", func(t *testing.T) {
+		pr, pw, err := os.Pipe()
+		require.NoError(t, err)
+		defer func() {
+			_ = pr.Close()
+			_ = pw.Close()
+		}()
+
+		w := redirectwriter.New(pw)
+
+		var wg sync.WaitGroup
+		const callers = 10
+		const iterations = 50
+
+		for i := 0; i < callers; i++ {
+			wg.Add(4)
+			go func() {
+				defer wg.Done()
+				for j := 0; j < iterations; j++ {
+					_ = w.Fd()
+				}
+			}()
+			go func() {
+				defer wg.Done()
+				for j := 0; j < iterations; j++ {
+					_ = w.Unwrap()
+				}
+			}()
+			go func() {
+				defer wg.Done()
+				for j := 0; j < iterations; j++ {
+					_, _ = w.Write([]byte("concurrent"))
+				}
+			}()
+			go func() {
+				defer wg.Done()
+				_ = w.Detach()
+			}()
+		}
+
+		wg.Wait()
+		assert.Equal(t, ^uintptr(0), w.Fd())
+	})
+}
+
+type einvalSyncer struct {
+	syncErr error
+}
+
+func (e *einvalSyncer) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (e *einvalSyncer) Sync() error {
+	return e.syncErr
+}
+
+func TestWriter_Detach_SyncEINVAL(t *testing.T) {
+	t.Parallel()
+
+	t.Run("PathError wrapping syscall.EINVAL", func(t *testing.T) {
+		w := redirectwriter.New(&einvalSyncer{
+			syncErr: &fs.PathError{Op: "sync", Path: "/dev/stdout", Err: syscall.EINVAL},
+		})
+		err := w.Detach()
+		assert.NoError(t, err)
+	})
+
+	t.Run("direct syscall.EINVAL", func(t *testing.T) {
+		w := redirectwriter.New(&einvalSyncer{
+			syncErr: syscall.EINVAL,
+		})
+		err := w.Detach()
+		assert.NoError(t, err)
+	})
+
+	t.Run("non-EINVAL sync error is retained", func(t *testing.T) {
+		syncErr := syscall.EIO
+		w := redirectwriter.New(&einvalSyncer{
+			syncErr: syncErr,
+		})
+		err := w.Detach()
+		require.Error(t, err)
+		assert.ErrorIs(t, err, syncErr)
+	})
 }
