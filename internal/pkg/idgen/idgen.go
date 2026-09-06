@@ -18,10 +18,16 @@ func Generate() string {
 }
 
 // GenerateWithEntropy creates a session identifier using the provided entropy source.
-// If reading 8 bytes from r fails, it falls back to a timestamp: "session-%d" (UnixNano).
-func GenerateWithEntropy(r io.Reader) string {
+// If reading 8 bytes from r fails, onFallback callbacks (if provided) are invoked with the error,
+// and it falls back to a timestamp: "session-%d" (UnixNano).
+func GenerateWithEntropy(r io.Reader, onFallback ...func(error)) string {
 	b := make([]byte, 8)
 	if _, err := io.ReadFull(r, b); err != nil {
+		for _, fn := range onFallback {
+			if fn != nil {
+				fn(err)
+			}
+		}
 		return fmt.Sprintf("session-%d", time.Now().UnixNano())
 	}
 	return fmt.Sprintf("session-%s", hex.EncodeToString(b))

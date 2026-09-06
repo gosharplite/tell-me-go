@@ -47,6 +47,19 @@ func TestGenerateWithEntropy_Fallback(t *testing.T) {
 	assert.Regexp(t, pattern, id)
 }
 
+func TestGenerateWithEntropy_Fallback_Callback(t *testing.T) {
+	t.Parallel()
+	expectedErr := io.ErrUnexpectedEOF
+	reader := &failingReader{err: expectedErr}
+	var calledWith error
+	id := idgen.GenerateWithEntropy(reader, func(err error) {
+		calledWith = err
+	})
+	pattern := regexp.MustCompile(`^session-\d+$`)
+	assert.Regexp(t, pattern, id)
+	assert.Equal(t, expectedErr, calledWith)
+}
+
 func TestGenerate_Uniqueness(t *testing.T) {
 	t.Parallel()
 	const count = 1000

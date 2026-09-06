@@ -4,6 +4,7 @@
 package session_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -44,7 +45,8 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 
 	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
 	mUIRenderer := new(agenttest.MockUIRenderer)
-	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, session.WithClock(mClock), session.WithEntropySource(mEntropy))
+	stderr := new(bytes.Buffer)
+	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, stderr, factory, mHistoryRenderer, mUIRenderer, session.WithClock(mClock), session.WithEntropySource(mEntropy))
 
 	sCfg := session.NewSessionConfig("", false, 0, false, 0, false, "hello", &config.Config{
 		Model: "model",
@@ -67,4 +69,5 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Regexp(t, `^session-\d+$`, sessionID)
+	assert.Contains(t, stderr.String(), "[WARN] Entropy source failure, degrading to time-based session ID: os entropy exhaustion")
 }

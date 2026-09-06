@@ -225,7 +225,9 @@ func (o *sessionManager) teardownSession(
 // generateSessionID creates a unique session identifier using the configured
 // entropy source. Format is unified via internal/pkg/idgen.
 func (o *sessionManager) generateSessionID() string {
-	return idgen.GenerateWithEntropy(o.EntropySource)
+	return idgen.GenerateWithEntropy(o.EntropySource, func(err error) {
+		_, _ = fmt.Fprintf(o.Stderr, "[WARN] Entropy source failure, degrading to time-based session ID: %v\n", err)
+	})
 }
 
 // Rollback deletes the specified number of turns from history.

@@ -100,7 +100,7 @@ func addChatFlags(fs *pflag.FlagSet, opts *cliOptions) {
 	fs.StringVar(&opts.updateTurnText, "update-turn", "__NOT_SET__", "Replace text of the last model response headlessly; use empty string \"\" to delete the turn instead (for inter-agent refusal recovery)")
 	fs.StringVar(&opts.callbackURL, "callback", "", "Webhook URL to notify upon completion (asynchronous worker mode)")
 	fs.StringVar(&opts.callbackID, "callback-id", "", "Custom correlation ID for callback worker session")
-	fs.StringArrayVar(&opts.callbackHeaders, "callback-header", nil, "Custom HTTP header for webhook callback (format: 'Name: Value', repeatable)")
+	fs.StringArrayVar(&opts.callbackHeaders, "callback-header", nil, "Custom HTTP header for webhook callback (format: 'Name: Value', repeatable, case-insensitive header names are merged)")
 }
 
 // newChatCommand creates a new Chat Command as a Cobra command.
@@ -132,7 +132,6 @@ func newChatCommand(ctx *context, opts *cliOptions) *cobra.Command {
 		Short: "Start a chat session (Default)",
 		Long:  `The chat command initiates a session with the AI assistant. You can provide a prompt directly as an argument or enter an interactive session.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c.cmd = cmd
 			configPath, _ := cmd.Flags().GetString("config") // flag guaranteed by root command; never errors
 			opts.configPath = configPath
 			return c.executeChat(cmd.Context(), opts, args)
@@ -204,7 +203,9 @@ func (c *chatCommand) runCallbackExecution(ctx stdctx.Context, cfg *domain_confi
 				Response:  "",
 				Error:     &errStr,
 			}
-			_ = c.deliverCallback(opts, preflight, payload)
+			if notifyErr := c.deliverCallback(opts, preflight, payload); notifyErr != nil {
+				c.warnf("callback delivery failed: %v\n", notifyErr)
+			}
 			panic(r)
 		}
 	}()
@@ -219,20 +220,22 @@ func (c *chatCommand) runCallbackExecution(ctx stdctx.Context, cfg *domain_confi
 	return nil
 }
 
+func deferSessionCleanup(cleanup func(stdctx.Context) error, tuiPrompt bool) {
+	timeout := ports.DefaultShutdownTimeout
+	if !tuiPrompt {
+		timeout = 100 * time.Millisecond
+	}
+	shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), timeout)
+	defer cancel()
+	_ = cleanup(shutdownCtx)
+}
+
 func (c *chatCommand) executeInference(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, preflight *callbackPreflightResult) error {
 	capturer, cleanup, err := c.setupChatSession(ctx, cfg, opts, nil)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		timeout := ports.DefaultShutdownTimeout
-		if !opts.tuiPrompt {
-			timeout = 100 * time.Millisecond
-		}
-		shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), timeout)
-		defer cancel()
-		_ = cleanup(shutdownCtx)
-	}()
+	defer deferSessionCleanup(cleanup, opts.tuiPrompt)
 
 	var renderer ports.ProgressRenderer
 	if c.Bootstrapper != nil {
@@ -331,15 +334,7 @@ func (c *chatCommand) runChatSession(ctx stdctx.Context, cfg *domain_config.Conf
 	if err != nil {
 		return err
 	}
-	defer func() {
-		timeout := ports.DefaultShutdownTimeout
-		if !opts.tuiPrompt {
-			timeout = 100 * time.Millisecond
-		}
-		shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), timeout)
-		defer cancel()
-		_ = cleanup(shutdownCtx)
-	}()
+	defer deferSessionCleanup(cleanup, opts.tuiPrompt)
 
 	return c.processChatRequest(ctx, cfg, opts, args, capturer)
 }
@@ -461,6 +456,8 @@ func resolveAndValidateCallbackID(c *chatCommand, rawID string) (string, error) 
 		}
 		return rawID, nil
 	}
+	// Defensive guard: when invoked directly in tests without a cobra command (c.cmd == nil),
+	// validate rawID if populated in cliOptions.
 	if rawID != "" {
 		if !callbackIDRegex.MatchString(rawID) {
 			c.warnf("error: invalid --callback-id %q: must match ^[A-Za-z0-9._:-]{1,128}$\n", rawID)
