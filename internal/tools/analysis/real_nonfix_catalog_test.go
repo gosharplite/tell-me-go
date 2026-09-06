@@ -326,6 +326,10 @@ func TestVerifyCoveragePinsMatchLiveCatalog(t *testing.T) {
 		{"helpers.go StubEventBus.WaitStarted", "internal/agent/agenttest/helpers.go", 360, 360},
 		{"helpers.go StubCapturer.Warn", "internal/agent/agenttest/helpers.go", 390, 390},
 		{"helpers.go StubCapturer.Prompt", "internal/agent/agenttest/helpers.go", 391, 391},
+		{"chat_command.go ChatService nil guard", "internal/cli/chat_command.go", 253, 255},
+		{"chat_command.go CallbackNotifier nil guard", "internal/cli/chat_command.go", 308, 310},
+		{"chat_command.go ModeLocker nil guard", "internal/cli/chat_command.go", 472, 475},
+		{"http_notifier.go CallbackPayload marshal error", "internal/infrastructure/callback/http_notifier.go", 49, 51},
 	}
 
 	for _, tt := range tests {
