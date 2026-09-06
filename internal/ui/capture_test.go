@@ -1392,6 +1392,12 @@ func TestReadSingleKey_PipeNotTTY(t *testing.T) {
 	if !strings.Contains(err.Error(), "confirmation required but not running in a terminal") {
 		t.Errorf("expected 'confirmation required' error, got: %v", err)
 	}
+	if !strings.Contains(err.Error(), "BYPASS_CONFIRMATION: true") {
+		t.Errorf("expected error to mention BYPASS_CONFIRMATION: true, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "--bypass-confirmation") {
+		t.Errorf("error must not reference nonexistent flag --bypass-confirmation, got: %v", err)
+	}
 }
 
 type customUnwrapOnly struct {

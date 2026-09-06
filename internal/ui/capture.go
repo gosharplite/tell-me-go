@@ -374,7 +374,7 @@ func (c *capturer) ReadSingleKey(ctx context.Context) (string, error) {
 		if os.Getenv("GO_WANT_HELPER_PROCESS") != "" || c.disableEscapeSequences {
 			return c.readByteFallback(ctx)
 		}
-		return "", fmt.Errorf("confirmation required but not running in a terminal. Use --bypass-confirmation to skip if running in a non-interactive environment")
+		return "", fmt.Errorf("confirmation required but not running in a terminal. Set BYPASS_CONFIRMATION: true in config to skip if running in a non-interactive environment")
 	}
 
 	state, err := term.MakeRaw(fd)
