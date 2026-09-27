@@ -2,6 +2,15 @@
 Copyright (c) 2026 gosharplite@gmail.com
 SPDX-License-Identifier: MIT
 -->
+
+> [!NOTE]
+> **Development direction: future development has moved to [`tellme`](https://github.com/gosharplite/tellme).**
+> `tell-me-go` — the original implementation of this project — remains the canonical **capability and
+> architecture reference**, but active development now continues in **`tellme`**, a disciplined BDD
+> re-specification that revisits this project's scope through an engineering-grade, test-first process
+> and makes its own deliberate, operator-declared divergences. New work should land in `tellme`; this
+> repository is maintained as a stable reference.
+
 <p align="center">
   <img src="assets/tell-me-go.png" alt="tell-me-go logo" width="250">
 </p>
@@ -500,16 +509,15 @@ brew install gh
 sudo apt install gh
 ```
 
-To work with the domain model, install **modelith**. The modelith binary used
-across this ecosystem is built from the
-[`gosharplite/modelith`](https://github.com/gosharplite/modelith) fork at the
-`feat/self-domain-model` branch — a fork of
-[`stacklok/modelith`](https://github.com/stacklok/modelith). Build it from a
-checkout of that branch (`task build` / `go install`) rather than installing
-the upstream release, or behavior may differ:
+To work with the domain model, install **modelith** from the
+[`stacklok/modelith`](https://github.com/stacklok/modelith) `main` branch,
+pinned to the commit this repository is currently aligned with. Build it from
+that commit (`task build` / `go install`) rather than installing a tagged
+release, or behavior may differ:
 
 ```bash
-go install github.com/gosharplite/modelith/cmd/modelith@feat/self-domain-model
+# pinned: stacklok/modelith @ main (2026-09-27)
+go install github.com/stacklok/modelith/cmd/modelith@9008354f19ff13f24273a7c71395c63698c7fbac
 ```
 
 Then run the standard Go workflow:
@@ -538,17 +546,21 @@ that govern them, and scenario narratives that stress-test the whole.
 
 The model is authored as a `*.modelith.yaml` file and rendered to Markdown with
 embedded Mermaid ER diagrams using **modelith** — the
-[`gosharplite/modelith`](https://github.com/gosharplite/modelith) fork at
-`feat/self-domain-model`, a fork of the [Stacklok](https://stacklok.com)
+[Stacklok](https://stacklok.com)
 [modelith](https://github.com/stacklok/modelith) domain-model-as-code
-toolchain. The Markdown is regenerated and checked for drift in CI
-(`make modelith-check`).
+toolchain, pinned to a specific commit on its `main` branch. The Markdown is
+regenerated and checked for drift in CI (`make modelith-check`).
 
 ```sh
 make modelith-lint     # validate the YAML
 make modelith-render   # regenerate the Markdown
 make modelith-check    # CI gate: fail if the committed .md is stale
 ```
+
+These targets run the pinned commit via `go run`, so CI and local machines
+render identically regardless of any `modelith` on `PATH`. To use a local
+pre-built binary instead (must be the same revision), pass
+`MODELITH_CMD=/path/to/modelith`.
 
 See [docs/domain-model/README.md](docs/domain-model/README.md) for conventions,
 the 3-pass build order, and design rationale.
