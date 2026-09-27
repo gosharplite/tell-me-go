@@ -923,16 +923,18 @@ else
 endif
 
 # Domain model validation (modelith).
-# Requires modelith built from the gosharplite fork at feat/self-domain-model
-# (a fork of stacklok/modelith — upstream may behave differently):
-#   go install github.com/gosharplite/modelith/cmd/modelith@feat/self-domain-model
-# Falls back to 'go run' if the binary is not on PATH.
-ifeq ($(OS),Windows_NT)
-    MODELITH := $(shell where modelith 2>NUL)
-else
-    MODELITH := $(shell command -v modelith 2>/dev/null)
-endif
-MODELITH_CMD := $(if $(MODELITH),$(MODELITH),go run github.com/gosharplite/modelith/cmd/modelith@feat/self-domain-model)
+# MODELITH_PIN is the exact stacklok/modelith commit whose output the committed
+# *.modelith.md artifacts are generated from. Deterministic by default: every
+# modelith-* target runs this pinned commit via `go run`, so CI and every dev
+# machine render with the identical toolchain regardless of what (if anything)
+# is on PATH. To use a local / pre-built binary instead (faster, but it MUST be
+# the same revision or modelith-check may report false drift), override it:
+#   make modelith-check MODELITH_CMD=$HOME/go/bin/modelith
+# Keep MODELITH_PIN in sync with README.md and docs/domain-model/README.md, and
+# install the matching toolchain with:
+#   go install github.com/stacklok/modelith/cmd/modelith@<MODELITH_PIN>
+MODELITH_PIN := 9008354f19ff13f24273a7c71395c63698c7fbac
+MODELITH_CMD ?= go run github.com/stacklok/modelith/cmd/modelith@$(MODELITH_PIN)
 # All canonical models in this repo — lint, render, and the CI drift gate cover
 # every one of them so none can rot silently.
 MODELITH_MODELS := docs/domain-model/tell-me-go.modelith.yaml \

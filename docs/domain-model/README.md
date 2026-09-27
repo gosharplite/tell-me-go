@@ -2,11 +2,10 @@
 
 This folder contains the canonical domain model for tell-me-go, built with
 **modelith** — the
-[`gosharplite/modelith`](https://github.com/gosharplite/modelith) fork at
-`feat/self-domain-model`, a fork of
-[`stacklok/modelith`](https://github.com/stacklok/modelith). Install from the
-fork branch (`go install github.com/gosharplite/modelith/cmd/modelith@feat/self-domain-model`),
-not the upstream release — behavior may differ.
+[`stacklok/modelith`](https://github.com/stacklok/modelith) domain-model-as-code
+toolchain, pinned to a specific commit on its `main` branch
+(`go install github.com/stacklok/modelith/cmd/modelith@9008354f19ff13f24273a7c71395c63698c7fbac`),
+not a tagged release — behavior may differ.
 
 ## Files
 
@@ -24,6 +23,13 @@ make modelith-check    # CI gate: fail if the committed .md is stale
 ```
 
 `modelith-check` is wired into `make check` and `make check-full`.
+
+The `make modelith-*` targets are deterministic: they run the pinned
+`MODELITH_PIN` commit (see the Makefile) via `go run`, so CI and every dev
+machine render with the identical toolchain no matter what is on `PATH`. To use
+a local pre-built binary instead — same revision required, or the drift check
+may report false positives — override it:
+`make modelith-check MODELITH_CMD=$HOME/go/bin/modelith`.
 
 ## What we learned about modelith
 
